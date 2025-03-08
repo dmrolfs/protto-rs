@@ -1,6 +1,7 @@
 //! # proto_convert_derive
 //!
-//! Automatically derive conversions between Protobuf messages and native Rust types.
+//! Automatically derive conversions between Protobuf-compiled prost types and
+//! your native Rust types.
 //!
 //! ## Overview
 //!
