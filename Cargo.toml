@@ -8,7 +8,7 @@ repository = "https://github.com/protortyp/proto_convert_derive"
 license = "Apache-2.0"
 documentation = "https://docs.rs/proto_convert_derive"
 keywords = ["protobuf", "protocol", "derive"]
-categories = ["development-tools", "code-generation"]
+categories = ["development-tools"]
 
 [lib]
 proc-macro = true
