@@ -1,19 +1,9 @@
-[package]
-name = "proto_convert_derive"
-version = "0.1.1"
-edition = "2021"
-authors = ["Christian Engel <cascade.nab0p@icloud.com>"]
-description = "Automatically derive Protobuf and Rust conversions."
-repository = "https://github.com/protortyp/proto_convert_derive"
-license = "Apache-2.0"
-documentation = "https://docs.rs/proto_convert_derive"
-keywords = ["protobuf", "protocol", "derive"]
-categories = ["development-tools"]
+[workspace]
+members = [
+    "proto_convert_derive",
+    "grpc-example",
+]
+resolver = "2"
 
-[lib]
-proc-macro = true
-
-[dependencies]
-proc-macro2 = "1.0"
-quote = "1.0"
-syn = { version = "2.0", features = ["full"] }
+[workspace.package]
+publish = false
