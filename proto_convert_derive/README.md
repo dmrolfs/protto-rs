@@ -12,7 +12,7 @@ Automatically derive conversions between Protobuf-compiled prost types and your 
 - Direct mapping for primitive types.
 - Unwraps optional fields with `.expect`.
 - Supports newtype wrappers.
-- Customizable Protobuf module (default is `proto` via `#[proto_module = "your_module"]`).
+- Customizable Protobuf module (default is `proto` via `#[proto(module = "your_module")]`).
 
 
 ## Usage
@@ -30,7 +30,7 @@ pub struct Request {
 }
 
 #[derive(ProtoConvert, PartialEq, Debug, Clone)]
-#[proto_module = "proto"]
+#[proto(module = "proto")]
 pub struct Track {
     #[proto(transparent)]
     id: TrackId, // newtype

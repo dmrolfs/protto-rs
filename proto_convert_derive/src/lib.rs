@@ -15,7 +15,7 @@
 //! - Directly maps primitive types.
 //! - Automatically unwraps optional fields for message types using `.expect`.
 //! - By default searches for prost types in a `proto` module, but this is
-//!   customizable via the `#[proto_module = "your_own_proto"]` attribute.
+//!   customizable via the `#[proto(module="your_own_proto")]` attribute.
 //!
 //! ## Usage
 //!
@@ -36,7 +36,7 @@
 //! }
 //!
 //! #[derive(ProtoConvert, PartialEq, Debug, Clone)]
-//! #[proto_module = "proto"]
+//! #[proto(module="proto")]
 //! pub struct Track {
 //!     #[proto(transparent)]
 //!     id: TrackId,
@@ -53,10 +53,11 @@
 //! - Assumes certain patterns for primitive and message type conversion.
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{self, Attribute, DeriveInput, Field};
-use syn::{Expr, Lit, Meta};
+use syn::parse::Parser;
+use syn::{self, Attribute, DeriveInput, Expr, Field, Lit, Meta};
+use syn::{punctuated::Punctuated, token::Comma};
 
-#[proc_macro_derive(ProtoConvert, attributes(proto_module, proto))]
+#[proc_macro_derive(ProtoConvert, attributes(proto))]
 pub fn proto_convert_derive(input: TokenStream) -> TokenStream {
     let ast: DeriveInput = syn::parse(input).unwrap();
     let name = &ast.ident;
@@ -66,7 +67,6 @@ pub fn proto_convert_derive(input: TokenStream) -> TokenStream {
     match &ast.data {
         syn::Data::Struct(data_struct) => {
             match &data_struct.fields {
-                // Handle structs with named fields
                 syn::Fields::Named(fields_named) => {
                     let fields = &fields_named.named;
                     let primitives = ["i32", "u32", "i64", "u64", "f32", "f64", "bool", "String"];
@@ -179,18 +179,22 @@ pub fn proto_convert_derive(input: TokenStream) -> TokenStream {
 
 fn get_proto_module(attrs: &[Attribute]) -> Option<String> {
     for attr in attrs {
-        if attr.path().is_ident("proto_module") {
-            match &attr.meta {
-                Meta::NameValue(meta) => {
-                    if let Expr::Lit(expr_lit) = &meta.value {
-                        if let Lit::Str(lit_str) = &expr_lit.lit {
-                            return Some(lit_str.value());
+        if attr.path().is_ident("proto") {
+            if let Meta::List(meta_list) = &attr.meta {
+                let nested_metas: Punctuated<Meta, Comma> = Punctuated::parse_terminated
+                    .parse2(meta_list.tokens.clone())
+                    .unwrap_or_else(|e| panic!("Failed to parse proto attribute: {}", e));
+                for meta in nested_metas {
+                    if let Meta::NameValue(meta_nv) = meta {
+                        if meta_nv.path.is_ident("module") {
+                            if let Expr::Lit(expr_lit) = meta_nv.value {
+                                if let Lit::Str(lit_str) = expr_lit.lit {
+                                    return Some(lit_str.value());
+                                }
+                            }
+                            panic!("module value must be a string literal, e.g., #[proto(module = \"path\")]");
                         }
                     }
-                    panic!("proto_module attribute must be a string literal, e.g., #[proto_module = \"path\"]");
-                }
-                _ => {
-                    panic!("proto_module attribute must be in the form #[proto_module = \"path\"]");
                 }
             }
         }
