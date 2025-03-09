@@ -61,7 +61,6 @@ mod proto {
 
 // Overwrite the prost Request type.
 #[derive(ProtoConvert, PartialEq, Debug, Clone)]
-#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct Request {
     // Here we take the prost Header type instaed
     pub header: proto::Header,
@@ -70,24 +69,20 @@ pub struct Request {
 
 #[derive(ProtoConvert, PartialEq, Debug, Clone)]
 #[proto(module = "proto")]
-#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct Track {
     #[proto(transparent, rename = "track_id")]
     id: TrackId,
 }
 
 #[derive(ProtoConvert, PartialEq, Debug, Clone)]
-#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct TrackId(u64);
 
 #[derive(ProtoConvert, PartialEq, Debug, Clone)]
-#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct State {
     pub tracks: Vec<Track>, // we support collections as well!
 }
 
 #[derive(ProtoConvert, PartialEq, Debug, Clone)]
-#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct HasOptional {
     pub track: Option<Track>,
 }
