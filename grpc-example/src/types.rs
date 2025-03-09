@@ -12,7 +12,7 @@ pub struct Request {
 #[derive(ProtoConvert, PartialEq, Debug, Clone)]
 #[proto(module = "proto")]
 pub struct Track {
-    #[proto(transparent)]
+    #[proto(transparent, rename = "track_id")]
     id: TrackId,
 }
 

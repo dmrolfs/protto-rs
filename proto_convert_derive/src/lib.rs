@@ -16,6 +16,12 @@
 //! - Automatically unwraps optional fields for message types using `.expect`.
 //! - By default searches for prost types in a `proto` module, but this is
 //!   customizable via the `#[proto(module="your_own_proto")]` attribute.
+//! - Supports field renaming with `#[proto(rename = "protobuf_field_name")]`,
+//!   allowing fields in the Rust struct to map to differently named fields in
+//!   the Protobuf message.
+//! - Use `#[proto(transparent)]` for fields that should be converted directly
+//!   using `From` and `Into`, especially useful for newtypes or when the
+//!   Protobuf field type differs from the Rust field type.
 //!
 //! ## Usage
 //!
@@ -30,15 +36,15 @@
 //! // Overwrite the prost Request type.
 //! #[derive(ProtoConvert)]
 //! pub struct Request {
-//!     // Here we take the prost Header type instaed
+//!     // Here we take the prost Header type instead
 //!     pub header: proto::Header,
 //!     pub payload: String,
 //! }
 //!
 //! #[derive(ProtoConvert, PartialEq, Debug, Clone)]
-//! #[proto(module="proto")]
+//! #[proto(module = "proto")]
 //! pub struct Track {
-//!     #[proto(transparent)]
+//!     #[proto(transparent, rename = "trackId")]
 //!     id: TrackId,
 //! }
 //!
@@ -72,11 +78,16 @@ pub fn proto_convert_derive(input: TokenStream) -> TokenStream {
                     let primitives = ["i32", "u32", "i64", "u64", "f32", "f64", "bool", "String"];
                     let from_proto_fields = fields.iter().map(|field| {
                         let field_name = field.ident.as_ref().unwrap();
+                        let proto_field_ident = if let Some(rename) = get_proto_rename(field) {
+                            syn::Ident::new(&rename, proc_macro2::Span::call_site())
+                        } else {
+                            field_name.clone()
+                        };
                         let field_type = &field.ty;
                         let is_transparent = has_transparent_attr(field);
                         if is_transparent {
                             quote! {
-                                #field_name: <#field_type>::from(proto_struct.#field_name)
+                                #field_name: <#field_type>::from(proto_struct.#proto_field_ident)
                             }
                         } else if let syn::Type::Path(type_path) = field_type {
                             let is_primitive = type_path.path.segments.len() == 1 &&
@@ -84,14 +95,14 @@ pub fn proto_convert_derive(input: TokenStream) -> TokenStream {
                             let is_proto_type = type_path.path.segments.first()
                                 .map_or(false, |segment| segment.ident == proto_module.as_str());
                             if is_primitive {
-                                quote! { #field_name: proto_struct.#field_name }
+                                quote! { #field_name: proto_struct.#proto_field_ident }
                             } else if is_proto_type {
                                 quote! {
-                                    #field_name: proto_struct.#field_name.expect(concat!("no ", stringify!(#field_name), " in proto"))
+                                    #field_name: proto_struct.#proto_field_ident.expect(concat!("no ", stringify!(#proto_field_ident), " in proto"))
                                 }
                             } else {
                                 quote! {
-                                    #field_name: proto_struct.#field_name.expect(concat!("no ", stringify!(#field_name), " in proto")).into()
+                                    #field_name: proto_struct.#proto_field_ident.expect(concat!("no ", stringify!(#proto_field_ident), " in proto")).into()
                                 }
                             }
                         } else {
@@ -101,11 +112,16 @@ pub fn proto_convert_derive(input: TokenStream) -> TokenStream {
 
                     let from_my_fields = fields.iter().map(|field| {
                         let field_name = field.ident.as_ref().unwrap();
+                        let proto_field_ident = if let Some(rename) = get_proto_rename(field) {
+                            syn::Ident::new(&rename, proc_macro2::Span::call_site())
+                        } else {
+                            field_name.clone()
+                        };
                         let field_type = &field.ty;
                         let is_transparent = has_transparent_attr(field);
                         if is_transparent {
                             quote! {
-                                #field_name: my_struct.#field_name.into()
+                                #proto_field_ident: my_struct.#field_name.into()
                             }
                         } else if let syn::Type::Path(type_path) = field_type {
                             let is_primitive = type_path.path.segments.len() == 1
@@ -118,11 +134,11 @@ pub fn proto_convert_derive(input: TokenStream) -> TokenStream {
                                 });
 
                             if is_primitive {
-                                quote! { #field_name: my_struct.#field_name }
+                                quote! { #proto_field_ident: my_struct.#field_name }
                             } else if is_proto_type {
-                                quote! { #field_name: Some(my_struct.#field_name) }
+                                quote! { #proto_field_ident: Some(my_struct.#field_name) }
                             } else {
-                                quote! { #field_name: Some(my_struct.#field_name.into()) }
+                                quote! { #proto_field_ident: Some(my_struct.#field_name.into()) }
                             }
                         } else {
                             panic!("Only path types are supported for field '{}'", field_name);
@@ -177,6 +193,7 @@ pub fn proto_convert_derive(input: TokenStream) -> TokenStream {
     }
 }
 
+// The `#[proto(...)]` logic.
 fn get_proto_module(attrs: &[Attribute]) -> Option<String> {
     for attr in attrs {
         if attr.path().is_ident("proto") {
@@ -202,6 +219,7 @@ fn get_proto_module(attrs: &[Attribute]) -> Option<String> {
     None
 }
 
+// Enable `proto(transparent)` entries.
 fn has_transparent_attr(field: &Field) -> bool {
     for attr in &field.attrs {
         if attr.path().is_ident("proto") {
@@ -215,4 +233,30 @@ fn has_transparent_attr(field: &Field) -> bool {
         }
     }
     false
+}
+
+// Enable `proto(rename="xyz")` entries.
+fn get_proto_rename(field: &Field) -> Option<String> {
+    for attr in &field.attrs {
+        if attr.path().is_ident("proto") {
+            if let Meta::List(meta_list) = &attr.meta {
+                let nested_metas: Punctuated<Meta, Comma> = Punctuated::parse_terminated
+                    .parse2(meta_list.tokens.clone())
+                    .unwrap_or_else(|e| panic!("Failed to parse proto attribute: {}", e));
+                for meta in nested_metas {
+                    if let Meta::NameValue(meta_nv) = meta {
+                        if meta_nv.path.is_ident("rename") {
+                            if let Expr::Lit(expr_lit) = &meta_nv.value {
+                                if let Lit::Str(lit_str) = &expr_lit.lit {
+                                    return Some(lit_str.value());
+                                }
+                            }
+                            panic!("rename value must be a string literal, e.g., rename = \"xyz\"");
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
 }
