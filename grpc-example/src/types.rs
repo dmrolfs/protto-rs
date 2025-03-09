@@ -1,3 +1,5 @@
+use std::{collections::HashMap, sync::atomic::AtomicU64};
+
 use crate::proto;
 use proto_convert_derive::ProtoConvert;
 
@@ -18,7 +20,7 @@ pub struct Track {
     id: TrackId,
 }
 
-#[derive(ProtoConvert, PartialEq, Debug, Clone)]
+#[derive(ProtoConvert, PartialEq, Debug, Clone, Hash, Eq)]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct TrackId(u64);
 
@@ -39,6 +41,42 @@ pub struct ProtoState {
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct HasOptional {
     pub track: Option<Track>,
+}
+
+#[derive(ProtoConvert, PartialEq, Debug, Clone)]
+#[proto(rename = "State")]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
+pub struct MapState {
+    #[proto(derive_from_with = "into_map", derive_into_with = "from_map")]
+    pub tracks: HashMap<TrackId, Track>,
+}
+
+pub fn into_map(tracks: Vec<proto::Track>) -> HashMap<TrackId, Track> {
+    tracks
+        .into_iter()
+        .map(|proto_track| {
+            let track: Track = proto_track.into();
+            let key = track.id.clone();
+            (key, track)
+        })
+        .collect()
+}
+
+pub fn from_map(tracks: HashMap<TrackId, Track>) -> Vec<proto::Track> {
+    tracks.into_values().map(|track| track.into()).collect()
+}
+
+#[derive(PartialEq, Debug, Clone)]
+pub struct LaunchId(u64);
+
+#[derive(ProtoConvert, Debug)]
+#[proto(rename = "State")]
+pub struct ComplexState {
+    pub tracks: Vec<Track>,
+    #[proto(ignore)]
+    pub launches: HashMap<TrackId, LaunchId>,
+    #[proto(ignore)]
+    pub counter: AtomicU64,
 }
 
 #[cfg(test)]
@@ -66,6 +104,31 @@ mod proptests {
             let rust_state: ProtoState = proto_state.clone().into();
             let back_to_proto: proto::State = rust_state.into();
             assert_eq!(proto_state, back_to_proto);
+        }
+
+        #[test]
+        fn roundtrip_map_state(proto_state in any::<proto::State>()) {
+            let rust_state: MapState = proto_state.clone().into();
+            let back_to_proto: proto::State = rust_state.into();
+            let mut original_tracks: Vec<_> = proto_state.tracks.clone();
+            original_tracks.sort_by_key(|track| track.track_id);
+            let mut converted_tracks: Vec<_> = back_to_proto.tracks.clone();
+            converted_tracks.sort_by_key(|track| track.track_id);
+            assert_eq!(original_tracks, converted_tracks);
+        }
+
+        #[test]
+        fn roundtrip_complex_state(proto_state in any::<proto::State>()) {
+            let rust_state: ComplexState = proto_state.clone().into();
+            assert_eq!(rust_state.launches, HashMap::new());
+            assert_eq!(rust_state.counter.load(std::sync::atomic::Ordering::Relaxed), 0);
+
+            let back_to_proto: proto::State = rust_state.into();
+            assert_eq!(proto_state.tracks, back_to_proto.tracks); // Only tracks should match
+
+            let rust_state_again: ComplexState = back_to_proto.into();
+            assert_eq!(rust_state_again.launches, HashMap::new());
+            assert_eq!(rust_state_again.counter.load(std::sync::atomic::Ordering::Relaxed), 0);
         }
 
         #[test]
