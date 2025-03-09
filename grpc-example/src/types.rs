@@ -29,6 +29,13 @@ pub struct State {
 }
 
 #[derive(ProtoConvert, PartialEq, Debug, Clone)]
+#[proto(rename = "State")]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
+pub struct ProtoState {
+    pub tracks: Vec<proto::Track>, // we support collections as well!
+}
+
+#[derive(ProtoConvert, PartialEq, Debug, Clone)]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct HasOptional {
     pub track: Option<Track>,
@@ -42,7 +49,7 @@ mod proptests {
     proptest! {
         #[test]
         fn roundtrip_track(proto_track in any::<proto::Track>()) {
-            let rust_track: Track = proto_track.clone().into();
+            let rust_track: Track = proto_track.into();
             let back_to_proto: proto::Track = rust_track.into();
             assert_eq!(proto_track, back_to_proto);
         }
@@ -50,6 +57,13 @@ mod proptests {
         #[test]
         fn roundtrip_state(proto_state in any::<proto::State>()) {
             let rust_state: State = proto_state.clone().into();
+            let back_to_proto: proto::State = rust_state.into();
+            assert_eq!(proto_state, back_to_proto);
+        }
+
+        #[test]
+        fn roundtrip_proto_state(proto_state in any::<proto::State>()) {
+            let rust_state: ProtoState = proto_state.clone().into();
             let back_to_proto: proto::State = rust_state.into();
             assert_eq!(proto_state, back_to_proto);
         }
@@ -66,7 +80,7 @@ mod proptests {
 
         #[test]
         fn roundtrip_has_optional(proto_has_optional in any::<proto::HasOptional>()) {
-            let rust_has_optional: HasOptional = proto_has_optional.clone().into();
+            let rust_has_optional: HasOptional = proto_has_optional.into();
             let back_to_proto: proto::HasOptional = rust_has_optional.into();
             assert_eq!(proto_has_optional, back_to_proto);
         }
@@ -83,7 +97,7 @@ mod proptests {
     #[test]
     fn test_has_optional_none() {
         let proto_msg = proto::HasOptional { track: None };
-        let rust_msg: HasOptional = proto_msg.clone().into();
+        let rust_msg: HasOptional = proto_msg.into();
         assert_eq!(rust_msg.track, None);
 
         let back_to_proto: proto::HasOptional = rust_msg.into();

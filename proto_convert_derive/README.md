@@ -83,6 +83,12 @@ pub struct State {
 }
 
 #[derive(ProtoConvert, PartialEq, Debug, Clone)]
+#[proto(rename = "State")]
+pub struct ProtoState {
+    pub tracks: Vec<proto::Track>, // we support collections as well!
+}
+
+#[derive(ProtoConvert, PartialEq, Debug, Clone)]
 pub struct HasOptional {
     pub track: Option<Track>,
 }

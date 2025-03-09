@@ -34,9 +34,9 @@
 //! }
 //!
 //! // Overwrite the prost Request type.
-//! #[derive(ProtoConvert)]
+//! #[derive(ProtoConvert, PartialEq, Debug, Clone)]
 //! pub struct Request {
-//!     // Here we take the prost Header type instead
+//!     // Here we take the prost Header type instaed
 //!     pub header: proto::Header,
 //!     pub payload: String,
 //! }
@@ -44,19 +44,29 @@
 //! #[derive(ProtoConvert, PartialEq, Debug, Clone)]
 //! #[proto(module = "proto")]
 //! pub struct Track {
-//!     #[proto(transparent, rename = "trackId")]
+//!     #[proto(transparent, rename = "track_id")]
 //!     id: TrackId,
 //! }
 //!
 //! #[derive(ProtoConvert, PartialEq, Debug, Clone)]
 //! pub struct TrackId(u64);
+//!
+//! #[derive(ProtoConvert, PartialEq, Debug, Clone)]
+//! pub struct State {
+//!     pub tracks: Vec<Track>, // we support collections as well!
+//! }
+//!
+//! #[derive(ProtoConvert, PartialEq, Debug, Clone)]
+//! #[proto(rename = "State")]
+//! pub struct ProtoState {
+//!     pub tracks: Vec<proto::Track>, // we support collections as well!
+//! }
+//!
+//! #[derive(ProtoConvert, PartialEq, Debug, Clone)]
+//! pub struct HasOptional {
+//!     pub track: Option<Track>,
+//! }
 //! ```
-//!
-//! ## Limitations
-//!
-//! - Not all primitive types are implemented.
-//! - Only supports structs with named fields.
-//! - Assumes certain patterns for primitive and message type conversion.
 use proc_macro::TokenStream;
 use proc_macro2::Span;
 use quote::quote;
@@ -69,7 +79,9 @@ pub fn proto_convert_derive(input: TokenStream) -> TokenStream {
     let ast: DeriveInput = syn::parse(input).unwrap();
     let name = &ast.ident;
     let proto_module = get_proto_module(&ast.attrs).unwrap_or_else(|| "proto".to_string());
-    let proto_path = syn::parse_str::<syn::Path>(&format!("{}::{}", proto_module, name)).unwrap();
+    let proto_name = get_proto_struct_rename(&ast.attrs).unwrap_or_else(|| name.to_string());
+    let proto_path =
+        syn::parse_str::<syn::Path>(&format!("{}::{}", proto_module, proto_name)).unwrap();
 
     match &ast.data {
         syn::Data::Struct(data_struct) => {
@@ -103,11 +115,22 @@ pub fn proto_convert_derive(input: TokenStream) -> TokenStream {
                                 }
                             }
                         } else if is_vec_type(field_type) {
-                            quote! {
-                                #field_name: proto_struct.#proto_field_ident.into_iter().map(Into::into).collect()
+                            if let Some(inner_type) = get_inner_type_from_vec(field_type) {
+                                if is_proto_type_with_module(&inner_type, &proto_module) {
+                                    quote! {
+                                        #field_name: proto_struct.#proto_field_ident
+                                    }
+                                } else {
+                                    quote! {
+                                        #field_name: proto_struct.#proto_field_ident.into_iter().map(Into::into).collect()
+                                    }
+                                }
+                            } else {
+                                quote! {
+                                    #field_name: proto_struct.#proto_field_ident.into_iter().map(Into::into).collect()
+                                }
                             }
-                        }
-                        else if let syn::Type::Path(type_path) = field_type {
+                        } else if let syn::Type::Path(type_path) = field_type {
                             let is_primitive = type_path.path.segments.len() == 1 &&
                                 primitives.iter().any(|&p| type_path.path.segments[0].ident == p);
                             let is_proto_type = type_path.path.segments.first()
@@ -144,7 +167,7 @@ pub fn proto_convert_derive(input: TokenStream) -> TokenStream {
                             }
                         } else if is_option_type(field_type) {
                             let inner_type = get_inner_type_from_option(field_type).unwrap();
-                             if is_vec_type(&inner_type) {
+                            if is_vec_type(&inner_type) {
                                 quote! {
                                     #proto_field_ident: my_struct.#field_name.into_iter().map(Into::into).collect()
                                 }
@@ -154,11 +177,23 @@ pub fn proto_convert_derive(input: TokenStream) -> TokenStream {
                                 }
                             }
                         } else if is_vec_type(field_type) {
-                            quote! {
-                                #proto_field_ident: my_struct.#field_name.into_iter().map(Into::into).collect()
+                            // Check if the inner type is already a proto type.
+                            if let Some(inner_type) = get_inner_type_from_vec(field_type) {
+                                if is_proto_type_with_module(&inner_type, &proto_module) {
+                                    quote! {
+                                        #proto_field_ident: my_struct.#field_name
+                                    }
+                                } else {
+                                    quote! {
+                                        #proto_field_ident: my_struct.#field_name.into_iter().map(Into::into).collect()
+                                    }
+                                }
+                            } else {
+                                quote! {
+                                    #proto_field_ident: my_struct.#field_name.into_iter().map(Into::into).collect()
+                                }
                             }
-                        }
-                        else if let syn::Type::Path(type_path) = field_type {
+                        } else if let syn::Type::Path(type_path) = field_type {
                             let is_primitive = type_path.path.segments.len() == 1
                                 && primitives
                                     .iter()
@@ -229,6 +264,7 @@ pub fn proto_convert_derive(input: TokenStream) -> TokenStream {
     }
 }
 
+// Checks if a type is Option<T>
 fn is_option_type(ty: &Type) -> bool {
     if let Type::Path(type_path) = ty {
         if type_path.path.segments.len() == 1 && type_path.path.segments[0].ident == "Option" {
@@ -238,15 +274,14 @@ fn is_option_type(ty: &Type) -> bool {
     false
 }
 
+// Extracts inner type T from Option<T>
 fn get_inner_type_from_option(ty: &Type) -> Option<Type> {
     if let Type::Path(type_path) = ty {
         if type_path.path.segments.len() == 1 && type_path.path.segments[0].ident == "Option" {
             if let syn::PathArguments::AngleBracketed(angle_bracketed) =
                 &type_path.path.segments[0].arguments
             {
-                if let syn::GenericArgument::Type(inner_type) =
-                    angle_bracketed.args.first().unwrap()
-                {
+                if let Some(syn::GenericArgument::Type(inner_type)) = angle_bracketed.args.first() {
                     return Some(inner_type.clone());
                 }
             }
@@ -255,7 +290,7 @@ fn get_inner_type_from_option(ty: &Type) -> Option<Type> {
     None
 }
 
-// Enable conversion of `Vec<prost_type>`.
+// Checks if a type is Vec<T>
 fn is_vec_type(ty: &Type) -> bool {
     if let Type::Path(type_path) = ty {
         if type_path.path.segments.len() == 1 && type_path.path.segments[0].ident == "Vec" {
@@ -265,7 +300,33 @@ fn is_vec_type(ty: &Type) -> bool {
     false
 }
 
-// The `#[proto(...)]` logic.
+// Extracts inner type T from Vec<T>
+fn get_inner_type_from_vec(ty: &Type) -> Option<Type> {
+    if let Type::Path(type_path) = ty {
+        if type_path.path.segments.len() == 1 && type_path.path.segments[0].ident == "Vec" {
+            if let syn::PathArguments::AngleBracketed(angle_bracketed) =
+                &type_path.path.segments[0].arguments
+            {
+                if let Some(syn::GenericArgument::Type(inner_type)) = angle_bracketed.args.first() {
+                    return Some(inner_type.clone());
+                }
+            }
+        }
+    }
+    None
+}
+
+// Checks if a type is a proto type based on the proto module name.
+fn is_proto_type_with_module(ty: &Type, proto_module: &str) -> bool {
+    if let Type::Path(type_path) = ty {
+        if let Some(segment) = type_path.path.segments.first() {
+            return segment.ident == proto_module;
+        }
+    }
+    false
+}
+
+// Extracts the proto module name from struct-level attributes.
 fn get_proto_module(attrs: &[Attribute]) -> Option<String> {
     for attr in attrs {
         if attr.path().is_ident("proto") {
@@ -291,7 +352,33 @@ fn get_proto_module(attrs: &[Attribute]) -> Option<String> {
     None
 }
 
-// Enable `proto(transparent)` entries.
+// Supports struct-level renaming via #[proto(rename = "...")]
+fn get_proto_struct_rename(attrs: &[Attribute]) -> Option<String> {
+    for attr in attrs {
+        if attr.path().is_ident("proto") {
+            if let Meta::List(meta_list) = &attr.meta {
+                let nested_metas: Punctuated<Meta, Comma> = Punctuated::parse_terminated
+                    .parse2(meta_list.tokens.clone())
+                    .unwrap_or_else(|e| panic!("Failed to parse proto attribute: {}", e));
+                for meta in nested_metas {
+                    if let Meta::NameValue(meta_nv) = meta {
+                        if meta_nv.path.is_ident("rename") {
+                            if let Expr::Lit(expr_lit) = meta_nv.value {
+                                if let Lit::Str(lit_str) = expr_lit.lit {
+                                    return Some(lit_str.value());
+                                }
+                            }
+                            panic!("rename value must be a string literal, e.g., #[proto(rename = \"...\")]");
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+// Checks for transparent attribute on a field.
 fn has_transparent_attr(field: &Field) -> bool {
     for attr in &field.attrs {
         if attr.path().is_ident("proto") {
@@ -307,7 +394,7 @@ fn has_transparent_attr(field: &Field) -> bool {
     false
 }
 
-// Enable `proto(rename="xyz")` entries.
+// Helper to extract the field-level rename attribute.
 fn get_proto_rename(field: &Field) -> Option<String> {
     for attr in &field.attrs {
         if attr.path().is_ident("proto") {
