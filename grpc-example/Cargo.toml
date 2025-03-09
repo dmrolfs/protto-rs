@@ -6,10 +6,8 @@ publish.workspace = true
 
 [dependencies]
 proto_convert_derive = { path = "../proto_convert_derive" }
-tokio = { version = "1.44.0", features = ["full"] }
 tonic = "*"
 prost = "0.13"
-prost-types = "0.13"
 
 [build-dependencies]
 tonic-build = "*"

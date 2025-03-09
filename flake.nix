@@ -47,11 +47,10 @@
           inputsFrom = [ workspaceBuild ];
           packages = with pkgs; [
             rustToolchain
-            cargo-tarpaulin
             rustfmt
             clippy
             protobuf
-            llvmPackages.llvm
+            cargo-tarpaulin
           ];
           shellHook = ''
           '';
