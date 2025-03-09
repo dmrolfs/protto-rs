@@ -17,6 +17,25 @@ Automatically derive conversions between Protobuf-compiled prost types and your 
 
 ## Usage
 
+```protobuf
+syntax = "proto3";
+package service;
+
+message Header {
+    string request_id = 1;
+    int64 timestamp = 2;
+}
+
+message Request {
+    Header header = 1;
+    string payload = 2;
+}
+
+message Track {
+    uint64 id = 1;
+}
+```
+
 ```rust
 use proto_convert_derive::ProtoConvert;
 mod proto {
