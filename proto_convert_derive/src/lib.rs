@@ -93,7 +93,7 @@ pub fn proto_convert_derive(input: TokenStream) -> TokenStream {
                             let is_primitive = type_path.path.segments.len() == 1 &&
                                 primitives.iter().any(|&p| type_path.path.segments[0].ident == p);
                             let is_proto_type = type_path.path.segments.first()
-                                .map_or(false, |segment| segment.ident == proto_module.as_str());
+                                .is_some_and(|segment| segment.ident == proto_module.as_str());
                             if is_primitive {
                                 quote! { #field_name: proto_struct.#proto_field_ident }
                             } else if is_proto_type {
@@ -128,10 +128,11 @@ pub fn proto_convert_derive(input: TokenStream) -> TokenStream {
                                 && primitives
                                     .iter()
                                     .any(|&p| type_path.path.segments[0].ident == p);
-                            let is_proto_type =
-                                type_path.path.segments.first().map_or(false, |segment| {
-                                    segment.ident == proto_module.as_str()
-                                });
+                            let is_proto_type = type_path
+                                .path
+                                .segments
+                                .first()
+                                .is_some_and(|segment| segment.ident == proto_module.as_str());
 
                             if is_primitive {
                                 quote! { #proto_field_ident: my_struct.#field_name }

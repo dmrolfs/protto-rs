@@ -9,3 +9,6 @@ resolver = "2"
 publish = false
 version = "0.1.6"
 edition = "2021"
+
+[workspace.metadata.crane]
+name = "proto-convert-workspace"

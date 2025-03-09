@@ -17,6 +17,8 @@ Automatically derive conversions between Protobuf-compiled prost types and your 
 
 ## Usage
 
+Define your protobuf messages.
+
 ```protobuf
 syntax = "proto3";
 package service;
@@ -36,6 +38,11 @@ message Track {
 }
 ```
 
+Now you might have a use case, where you can take some of the prost-generated
+types directly. For others you want to convert the prost types into your own. It
+may be that you need to implement `PartialEq` yourself, or you have a more
+complex type where you only want to take over parts of the prost type over.
+
 ```rust
 use proto_convert_derive::ProtoConvert;
 mod proto {
@@ -44,7 +51,7 @@ mod proto {
 
 #[derive(ProtoConvert)]
 pub struct Request {
-    pub header: proto::Header,
+    pub header: proto::Header, // here we take the prost type directly
     pub payload: String,
 }
 
