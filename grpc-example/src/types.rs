@@ -2,7 +2,8 @@ use crate::proto;
 use proto_convert_derive::ProtoConvert;
 
 // Overwrite the prost Request type.
-#[derive(ProtoConvert)]
+#[derive(ProtoConvert, PartialEq, Debug, Clone)]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct Request {
     // Here we take the prost Header type instaed
     pub header: proto::Header,
@@ -11,128 +12,92 @@ pub struct Request {
 
 #[derive(ProtoConvert, PartialEq, Debug, Clone)]
 #[proto(module = "proto")]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct Track {
     #[proto(transparent, rename = "track_id")]
     id: TrackId,
 }
 
 #[derive(ProtoConvert, PartialEq, Debug, Clone)]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct TrackId(u64);
 
-// Tests
+#[derive(ProtoConvert, PartialEq, Debug, Clone)]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
+pub struct State {
+    pub tracks: Vec<Track>, // we support collections as well!
+}
+
+#[derive(ProtoConvert, PartialEq, Debug, Clone)]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
+pub struct HasOptional {
+    pub track: Option<Track>,
+}
+
 #[cfg(test)]
-mod tests {
+mod proptests {
     use super::*;
+    use proptest::prelude::*;
 
-    #[test]
-    fn test_round_trip() {
-        let original_proto = proto::Track { track_id: 999 };
-        let rust_track: Track = original_proto.clone().into();
-        let back_to_proto: proto::Track = rust_track.into();
-        assert_eq!(original_proto.track_id, back_to_proto.track_id);
-    }
-
-    // Mock Protobuf types for testing
-    mod proto {
-        #[derive(Clone, PartialEq, prost::Message)]
-        pub struct TestMessage {
-            #[prost(string, tag = "1")]
-            pub name: String,
-            #[prost(uint64, tag = "2")]
-            pub id: u64,
-            #[prost(message, tag = "3")]
-            pub nested: Option<Nested>,
+    proptest! {
+        #[test]
+        fn roundtrip_track(proto_track in any::<proto::Track>()) {
+            let rust_track: Track = proto_track.clone().into();
+            let back_to_proto: proto::Track = rust_track.into();
+            assert_eq!(proto_track, back_to_proto);
         }
 
-        #[derive(Clone, PartialEq, prost::Message)]
-        pub struct Nested {
-            #[prost(int32, tag = "1")]
-            pub value: i32,
+        #[test]
+        fn roundtrip_state(proto_state in any::<proto::State>()) {
+            let rust_state: State = proto_state.clone().into();
+            let back_to_proto: proto::State = rust_state.into();
+            assert_eq!(proto_state, back_to_proto);
         }
 
-        #[derive(Clone, PartialEq, prost::Message)]
-        pub struct Track {
-            #[prost(uint64, tag = "1")]
-            pub track_id: u64,
+        #[test]
+          fn roundtrip_request(proto_request in any::<proto::Request>().prop_filter(
+              "Header must not be None",
+              |req| req.header.is_some()
+          )) {
+              let rust_request: Request = proto_request.clone().into();
+              let back_to_proto: proto::Request = rust_request.into();
+              assert_eq!(proto_request, back_to_proto);
+          }
+
+        #[test]
+        fn roundtrip_has_optional(proto_has_optional in any::<proto::HasOptional>()) {
+            let rust_has_optional: HasOptional = proto_has_optional.clone().into();
+            let back_to_proto: proto::HasOptional = rust_has_optional.into();
+            assert_eq!(proto_has_optional, back_to_proto);
+        }
+
+        #[test]
+        fn roundtrip_header(proto_header in any::<proto::Header>()) {
+            let rust_header: proto::Header = proto_header.clone();
+            let back_to_proto: proto::Header = rust_header.clone();
+            assert_eq!(proto_header, back_to_proto);
         }
     }
 
-    // Test struct with primitive and nested proto types
-    #[derive(ProtoConvert, Clone, PartialEq, Debug)]
-    #[proto(module = "proto")]
-    struct TestMessage {
-        name: String,
-        id: u64,
-        nested: proto::Nested,
-    }
-
-    // Test struct with transparent and renamed field
-    #[derive(ProtoConvert, Clone, PartialEq, Debug)]
-    #[proto(module = "proto")]
-    struct Track {
-        #[proto(transparent, rename = "track_id")]
-        id: TrackId,
-    }
-
-    // Test newtype with transparent conversion
-    #[derive(ProtoConvert, Clone, PartialEq, Debug)]
-    struct TrackId(u64);
-
+    // Edge case: Ensure None stays None
     #[test]
-    fn test_from_proto_to_rust() {
-        let proto_msg = proto::TestMessage {
-            name: "test".to_string(),
-            id: 42,
-            nested: Some(proto::Nested { value: 123 }),
-        };
-        let rust_msg = TestMessage::from(proto_msg.clone());
-        assert_eq!(
-            rust_msg,
-            TestMessage {
-                name: "test".to_string(),
-                id: 42,
-                nested: proto::Nested { value: 123 },
-            }
-        );
+    fn test_has_optional_none() {
+        let proto_msg = proto::HasOptional { track: None };
+        let rust_msg: HasOptional = proto_msg.clone().into();
+        assert_eq!(rust_msg.track, None);
+
+        let back_to_proto: proto::HasOptional = rust_msg.into();
+        assert_eq!(back_to_proto.track, None);
     }
 
+    // Edge case: Ensure empty State roundtrips correctly
     #[test]
-    fn test_from_rust_to_proto() {
-        let rust_msg = TestMessage {
-            name: "test".to_string(),
-            id: 42,
-            nested: proto::Nested { value: 123 },
-        };
-        let proto_msg = proto::TestMessage::from(rust_msg.clone());
-        assert_eq!(
-            proto_msg,
-            proto::TestMessage {
-                name: "test".to_string(),
-                id: 42,
-                nested: Some(proto::Nested { value: 123 }),
-            }
-        );
-    }
+    fn test_empty_state() {
+        let proto_state = proto::State { tracks: vec![] };
+        let rust_state: State = proto_state.clone().into();
+        assert_eq!(rust_state.tracks, vec![]);
 
-    #[test]
-    fn test_transparent_and_rename() {
-        let proto_track = proto::Track { track_id: 456 };
-        let rust_track = Track::from(proto_track.clone());
-        assert_eq!(rust_track, Track { id: TrackId(456) });
-
-        let rust_track = Track { id: TrackId(789) };
-        let proto_track = proto::Track::from(rust_track.clone());
-        assert_eq!(proto_track, proto::Track { track_id: 789 });
-    }
-
-    #[test]
-    #[should_panic(expected = "no nested in proto")]
-    fn test_missing_optional_field() {
-        let proto_msg = proto::TestMessage {
-            name: "test".to_string(),
-            id: 42,
-            nested: None,
-        };
-        let _ = TestMessage::from(proto_msg);
+        let back_to_proto: proto::State = rust_state.into();
+        assert_eq!(back_to_proto.tracks, vec![]);
     }
 }

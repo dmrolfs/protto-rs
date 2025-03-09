@@ -14,3 +14,11 @@ message Request {
 message Track {
     uint64 track_id = 1;
 }
+
+message State {
+    repeated Track tracks = 1;
+}
+
+message HasOptional {
+    optional Track track = 1;
+}

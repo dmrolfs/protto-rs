@@ -9,6 +9,7 @@ Automatically derive conversions between Protobuf-compiled prost types and your 
 ### Key Features
 
 - Automatically implements `From<Proto>` for Rust types and vice versa.
+- Supports collections like `Vec<Proto>`
 - Direct mapping for primitive types.
 - Unwraps optional fields with `.expect`.
 - Supports newtype wrappers.
@@ -34,7 +35,15 @@ message Request {
 }
 
 message Track {
-    uint64 id = 1;
+    uint64 track_id = 1;
+}
+
+message State {
+    repeated Track tracks = 1;
+}
+
+message HasOptional {
+    optional Track track = 1;
 }
 ```
 
@@ -50,19 +59,36 @@ mod proto {
     tonic::include_proto!("service");
 }
 
-#[derive(ProtoConvert)]
+// Overwrite the prost Request type.
+#[derive(ProtoConvert, PartialEq, Debug, Clone)]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct Request {
-    pub header: proto::Header, // here we take the prost type directly
+    // Here we take the prost Header type instaed
+    pub header: proto::Header,
     pub payload: String,
 }
 
 #[derive(ProtoConvert, PartialEq, Debug, Clone)]
 #[proto(module = "proto")]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct Track {
-    #[proto(transparent)]
-    id: TrackId, // newtype
+    #[proto(transparent, rename = "track_id")]
+    id: TrackId,
 }
 
 #[derive(ProtoConvert, PartialEq, Debug, Clone)]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct TrackId(u64);
+
+#[derive(ProtoConvert, PartialEq, Debug, Clone)]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
+pub struct State {
+    pub tracks: Vec<Track>, // we support collections as well!
+}
+
+#[derive(ProtoConvert, PartialEq, Debug, Clone)]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
+pub struct HasOptional {
+    pub track: Option<Track>,
+}
 ```

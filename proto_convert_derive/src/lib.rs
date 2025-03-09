@@ -58,9 +58,10 @@
 //! - Only supports structs with named fields.
 //! - Assumes certain patterns for primitive and message type conversion.
 use proc_macro::TokenStream;
+use proc_macro2::Span;
 use quote::quote;
 use syn::parse::Parser;
-use syn::{self, Attribute, DeriveInput, Expr, Field, Lit, Meta};
+use syn::{self, Attribute, DeriveInput, Expr, Field, Lit, Meta, Type};
 use syn::{punctuated::Punctuated, token::Comma};
 
 #[proc_macro_derive(ProtoConvert, attributes(proto))]
@@ -79,17 +80,34 @@ pub fn proto_convert_derive(input: TokenStream) -> TokenStream {
                     let from_proto_fields = fields.iter().map(|field| {
                         let field_name = field.ident.as_ref().unwrap();
                         let proto_field_ident = if let Some(rename) = get_proto_rename(field) {
-                            syn::Ident::new(&rename, proc_macro2::Span::call_site())
+                            syn::Ident::new(&rename, Span::call_site())
                         } else {
                             field_name.clone()
                         };
                         let field_type = &field.ty;
                         let is_transparent = has_transparent_attr(field);
+
                         if is_transparent {
                             quote! {
                                 #field_name: <#field_type>::from(proto_struct.#proto_field_ident)
                             }
-                        } else if let syn::Type::Path(type_path) = field_type {
+                        } else if is_option_type(field_type) {
+                            let inner_type = get_inner_type_from_option(field_type).unwrap();
+                            if is_vec_type(&inner_type) {
+                                quote! {
+                                    #field_name: proto_struct.#proto_field_ident.into_iter().map(Into::into).collect()
+                                }
+                            } else {
+                                quote! {
+                                    #field_name: proto_struct.#proto_field_ident.map(Into::into)
+                                }
+                            }
+                        } else if is_vec_type(field_type) {
+                            quote! {
+                                #field_name: proto_struct.#proto_field_ident.into_iter().map(Into::into).collect()
+                            }
+                        }
+                        else if let syn::Type::Path(type_path) = field_type {
                             let is_primitive = type_path.path.segments.len() == 1 &&
                                 primitives.iter().any(|&p| type_path.path.segments[0].ident == p);
                             let is_proto_type = type_path.path.segments.first()
@@ -113,17 +131,34 @@ pub fn proto_convert_derive(input: TokenStream) -> TokenStream {
                     let from_my_fields = fields.iter().map(|field| {
                         let field_name = field.ident.as_ref().unwrap();
                         let proto_field_ident = if let Some(rename) = get_proto_rename(field) {
-                            syn::Ident::new(&rename, proc_macro2::Span::call_site())
+                            syn::Ident::new(&rename, Span::call_site())
                         } else {
                             field_name.clone()
                         };
                         let field_type = &field.ty;
                         let is_transparent = has_transparent_attr(field);
+
                         if is_transparent {
                             quote! {
                                 #proto_field_ident: my_struct.#field_name.into()
                             }
-                        } else if let syn::Type::Path(type_path) = field_type {
+                        } else if is_option_type(field_type) {
+                            let inner_type = get_inner_type_from_option(field_type).unwrap();
+                             if is_vec_type(&inner_type) {
+                                quote! {
+                                    #proto_field_ident: my_struct.#field_name.into_iter().map(Into::into).collect()
+                                }
+                            } else {
+                                quote! {
+                                    #proto_field_ident: my_struct.#field_name.map(Into::into)
+                                }
+                            }
+                        } else if is_vec_type(field_type) {
+                            quote! {
+                                #proto_field_ident: my_struct.#field_name.into_iter().map(Into::into).collect()
+                            }
+                        }
+                        else if let syn::Type::Path(type_path) = field_type {
                             let is_primitive = type_path.path.segments.len() == 1
                                 && primitives
                                     .iter()
@@ -192,6 +227,42 @@ pub fn proto_convert_derive(input: TokenStream) -> TokenStream {
         }
         _ => panic!("ProtoConvert only supports structs, not enums or unions"),
     }
+}
+
+fn is_option_type(ty: &Type) -> bool {
+    if let Type::Path(type_path) = ty {
+        if type_path.path.segments.len() == 1 && type_path.path.segments[0].ident == "Option" {
+            return true;
+        }
+    }
+    false
+}
+
+fn get_inner_type_from_option(ty: &Type) -> Option<Type> {
+    if let Type::Path(type_path) = ty {
+        if type_path.path.segments.len() == 1 && type_path.path.segments[0].ident == "Option" {
+            if let syn::PathArguments::AngleBracketed(angle_bracketed) =
+                &type_path.path.segments[0].arguments
+            {
+                if let syn::GenericArgument::Type(inner_type) =
+                    angle_bracketed.args.first().unwrap()
+                {
+                    return Some(inner_type.clone());
+                }
+            }
+        }
+    }
+    None
+}
+
+// Enable conversion of `Vec<prost_type>`.
+fn is_vec_type(ty: &Type) -> bool {
+    if let Type::Path(type_path) = ty {
+        if type_path.path.segments.len() == 1 && type_path.path.segments[0].ident == "Vec" {
+            return true;
+        }
+    }
+    false
 }
 
 // The `#[proto(...)]` logic.

@@ -15,6 +15,26 @@ fn main() {
     tonic_build::configure()
         .build_server(true)
         .build_client(true)
+        .type_attribute(
+            "service.Header",
+            "#[cfg_attr(test, derive(proptest_derive::Arbitrary))]",
+        )
+        .type_attribute(
+            "service.Request",
+            "#[cfg_attr(test, derive(proptest_derive::Arbitrary))]",
+        )
+        .type_attribute(
+            "service.Track",
+            "#[cfg_attr(test, derive(proptest_derive::Arbitrary))]",
+        )
+        .type_attribute(
+            "service.State",
+            "#[cfg_attr(test, derive(proptest_derive::Arbitrary))]",
+        )
+        .type_attribute(
+            "service.HasOptional",
+            "#[cfg_attr(test, derive(proptest_derive::Arbitrary))]",
+        )
         .compile_protos(&proto_files, &[proto_dir])
         .unwrap();
 }
