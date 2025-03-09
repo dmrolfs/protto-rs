@@ -707,13 +707,11 @@ dependencies = [
 
 [[package]]
 name = "proto_convert_derive"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
- "glob",
  "proc-macro2",
  "quote",
  "syn",
- "tonic-build",
 ]
 
 [[package]]

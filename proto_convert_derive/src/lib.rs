@@ -23,36 +23,27 @@
 //!
 //! ```ignore
 //! use proto_convert_derive::ProtoConvert;
-//!
-//! // By default we expect you to use mod proto
-//! mod myproto {
-//!     tonic::include_proto!("stae");
+//! mod proto {
+//!     tonic::include_proto!("service");
 //! }
 //!
+//! // Overwrite the prost Request type.
 //! #[derive(ProtoConvert)]
-//! #[proto_module = "myproto"]
-//! struct Key {
-//!    pub id: string,
+//! pub struct Request {
+//!     // Here we take the prost Header type instaed
+//!     pub header: proto::Header,
+//!     pub payload: String,
 //! }
 //!
-//! #[derive(ProtoConvert)]
-//! #[proto_module = "myproto"]
-//! struct State {
-//!     pub key: Key,
+//! #[derive(ProtoConvert, PartialEq, Debug, Clone)]
+//! #[proto_module = "proto"]
+//! pub struct Track {
+//!     #[proto(transparent)]
+//!     id: TrackId,
 //! }
 //!
-//! fn main() {
-//!     let proto_key = myproto::Key {
-//!         id: Some(myproto::Id {
-//!             id: "my id".to_string(),
-//!         }),
-//!     };
-//!     let my_key: Key = proto_key.into();
-//!
-//!     // Conversion from native Rust type to Protobuf:
-//!     let my_state = State { key: my_key };
-//!     let proto_state: myproto::State = my_state.into();
-//! }
+//! #[derive(ProtoConvert, PartialEq, Debug, Clone)]
+//! pub struct TrackId(u64);
 //! ```
 //!
 //! ## Limitations
