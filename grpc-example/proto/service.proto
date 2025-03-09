@@ -11,6 +11,11 @@ message Request {
     string payload = 2;
 }
 
+
+message Track {
+    uint64 id = 1;
+}
+
 message Id {
   string id = 1;
 }

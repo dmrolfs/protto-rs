@@ -72,92 +72,118 @@ pub fn proto_convert_derive(input: TokenStream) -> TokenStream {
     let proto_module = get_proto_module(&ast.attrs).unwrap_or_else(|| "proto".to_string());
     let proto_path = syn::parse_str::<syn::Path>(&format!("{}::{}", proto_module, name)).unwrap();
 
-    if let syn::Data::Struct(data_struct) = &ast.data {
-        if let syn::Fields::Named(fields_named) = &data_struct.fields {
-            let fields = &fields_named.named;
-            let primitives = ["i32", "u32", "i64", "u64", "f32", "f64", "bool", "String"];
+    match &ast.data {
+        syn::Data::Struct(data_struct) => {
+            match &data_struct.fields {
+                // Handle structs with named fields
+                syn::Fields::Named(fields_named) => {
+                    let fields = &fields_named.named;
+                    let primitives = ["i32", "u32", "i64", "u64", "f32", "f64", "bool", "String"];
+                    let from_proto_fields = fields.iter().map(|field| {
+                        let field_name = field.ident.as_ref().unwrap();
+                        let field_type = &field.ty;
+                        let is_transparent = has_transparent_attr(field);
+                        if is_transparent {
+                            quote! {
+                                #field_name: <#field_type>::from(proto_struct.#field_name)
+                            }
+                        } else if let syn::Type::Path(type_path) = field_type {
+                            let is_primitive = type_path.path.segments.len() == 1 &&
+                                primitives.iter().any(|&p| type_path.path.segments[0].ident == p);
+                            let is_proto_type = type_path.path.segments.first()
+                                .map_or(false, |segment| segment.ident == proto_module.as_str());
+                            if is_primitive {
+                                quote! { #field_name: proto_struct.#field_name }
+                            } else if is_proto_type {
+                                quote! {
+                                    #field_name: proto_struct.#field_name.expect(concat!("no ", stringify!(#field_name), " in proto"))
+                                }
+                            } else {
+                                quote! {
+                                    #field_name: proto_struct.#field_name.expect(concat!("no ", stringify!(#field_name), " in proto")).into()
+                                }
+                            }
+                        } else {
+                            panic!("Only path types are supported for field '{}'", field_name);
+                        }
+                    });
 
-            let from_proto_fields = fields.iter().map(|field| {
-                let field_name = field.ident.as_ref().unwrap();
-                let is_transparent = has_transparent_attr(field);
-                if is_transparent {
-                    quote! {
-                        #field_name: {
-                            let inner_value = proto_struct.#field_name;
-                            <_>::from(inner_value)
-                        }
-                    }
-                } else if let syn::Type::Path(type_path) = &field.ty {
-                    let is_primitive = type_path.path.segments.len() == 1 &&
-                        primitives.iter().any(|&p| type_path.path.segments[0].ident == p);
-                    let is_proto_type = type_path.path.segments.first()
-                        .map_or(false, |segment| segment.ident == proto_module.as_str());
+                    let from_my_fields = fields.iter().map(|field| {
+                        let field_name = field.ident.as_ref().unwrap();
+                        let field_type = &field.ty;
+                        let is_transparent = has_transparent_attr(field);
+                        if is_transparent {
+                            quote! {
+                                #field_name: my_struct.#field_name.into()
+                            }
+                        } else if let syn::Type::Path(type_path) = field_type {
+                            let is_primitive = type_path.path.segments.len() == 1
+                                && primitives
+                                    .iter()
+                                    .any(|&p| type_path.path.segments[0].ident == p);
+                            let is_proto_type =
+                                type_path.path.segments.first().map_or(false, |segment| {
+                                    segment.ident == proto_module.as_str()
+                                });
 
-                    if is_primitive {
-                        quote! { #field_name: proto_struct.#field_name }
-                    } else if is_proto_type {
-                        quote! {
-                            #field_name: proto_struct.#field_name.expect(concat!("no ", stringify!(#field_name), " in proto"))
+                            if is_primitive {
+                                quote! { #field_name: my_struct.#field_name }
+                            } else if is_proto_type {
+                                quote! { #field_name: Some(my_struct.#field_name) }
+                            } else {
+                                quote! { #field_name: Some(my_struct.#field_name.into()) }
+                            }
+                        } else {
+                            panic!("Only path types are supported for field '{}'", field_name);
                         }
-                    } else {
-                        quote! {
-                            #field_name: proto_struct.#field_name.expect(concat!("no ", stringify!(#field_name), " in proto")).into()
+                    });
+
+                    let gen = quote! {
+                        impl From<#proto_path> for #name {
+                            fn from(proto_struct: #proto_path) -> Self {
+                                Self {
+                                    #(#from_proto_fields),*
+                                }
+                            }
                         }
-                    }
-                } else {
-                    panic!("Only path types are supported");
+
+                        impl From<#name> for #proto_path {
+                            fn from(my_struct: #name) -> Self {
+                                Self {
+                                    #(#from_my_fields),*
+                                }
+                            }
+                        }
+                    };
+                    gen.into()
                 }
-            });
-
-            let from_my_fields = fields.iter().map(|field| {
-                let field_name = field.ident.as_ref().unwrap();
-                let is_transparent = has_transparent_attr(field);
-                if is_transparent {
-                    quote! { #field_name: my_struct.#field_name.into() }
-                } else if let syn::Type::Path(type_path) = &field.ty {
-                    let is_primitive = type_path.path.segments.len() == 1
-                        && primitives
-                            .iter()
-                            .any(|&p| type_path.path.segments[0].ident == p);
-                    let is_proto_type = type_path
-                        .path
-                        .segments
-                        .first()
-                        .map_or(false, |segment| segment.ident == proto_module.as_str());
-
-                    if is_primitive {
-                        quote! { #field_name: my_struct.#field_name }
-                    } else if is_proto_type {
-                        quote! { #field_name: Some(my_struct.#field_name) }
-                    } else {
-                        quote! { #field_name: Some(my_struct.#field_name.into()) }
+                syn::Fields::Unnamed(fields_unnamed) => {
+                    if fields_unnamed.unnamed.len() != 1 {
+                        panic!("ProtoConvert only supports tuple structs with exactly one field, found {}", fields_unnamed.unnamed.len());
                     }
-                } else {
-                    panic!("Only path types are supported");
-                }
-            });
-
-            let gen = quote! {
-                impl From<#proto_path> for #name {
-                    fn from(proto_struct: #proto_path) -> Self {
-                        Self {
-                            #(#from_proto_fields),*
+                    let inner_type = &fields_unnamed.unnamed[0].ty;
+                    let gen = quote! {
+                        impl From<#inner_type> for #name {
+                            fn from(value: #inner_type) -> Self {
+                                #name(value)
+                            }
                         }
-                    }
-                }
 
-                impl From<#name> for #proto_path {
-                    fn from(my_struct: #name) -> Self {
-                        Self {
-                            #(#from_my_fields),*
+                        impl From<#name> for #inner_type {
+                            fn from(my: #name) -> Self {
+                                my.0
+                            }
                         }
-                    }
+                    };
+                    gen.into()
                 }
-            };
-            return gen.into();
+                syn::Fields::Unit => {
+                    panic!("ProtoConvert does not support unit structs");
+                }
+            }
         }
+        _ => panic!("ProtoConvert only supports structs, not enums or unions"),
     }
-    panic!("ProtoConvert only supports structs with named fields");
 }
 
 fn get_proto_module(attrs: &[Attribute]) -> Option<String> {
@@ -181,7 +207,6 @@ fn get_proto_module(attrs: &[Attribute]) -> Option<String> {
     None
 }
 
-// Check if a field has the #[proto(transparent)] attribute
 fn has_transparent_attr(field: &Field) -> bool {
     for attr in &field.attrs {
         if attr.path().is_ident("proto") {
