@@ -1,7 +1,6 @@
-use std::{collections::HashMap, sync::atomic::AtomicU64};
-
 use crate::proto;
 use proto_convert_derive::ProtoConvert;
+use std::{collections::HashMap, sync::atomic::AtomicU64};
 
 // Overwrite the prost Request type.
 #[derive(ProtoConvert, PartialEq, Debug, Clone)]
@@ -79,6 +78,31 @@ pub struct ComplexState {
     pub counter: AtomicU64,
 }
 
+#[derive(ProtoConvert, PartialEq, Debug, Clone)]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
+pub enum Status {
+    Ok,
+    MovedPermanently,
+    Found,
+    NotFound,
+}
+
+#[derive(ProtoConvert, PartialEq, Debug, Clone)]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
+pub enum AnotherStatus {
+    Ok,
+    MovedPermanently,
+    Found,
+    NotFound,
+}
+
+#[derive(ProtoConvert, PartialEq, Debug, Clone)]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
+pub struct StatusResponse {
+    pub status: Status,
+    pub message: String,
+}
+
 #[cfg(test)]
 mod proptests {
     use super::*;
@@ -153,6 +177,20 @@ mod proptests {
             let rust_header: proto::Header = proto_header.clone();
             let back_to_proto: proto::Header = rust_header.clone();
             assert_eq!(proto_header, back_to_proto);
+        }
+
+        #[test]
+        fn roundtrip_status(status in any::<Status>()) {
+            let proto_status: proto::Status = status.clone().into();
+            let back_to_rust: Status = proto_status.into();
+            assert_eq!(status, back_to_rust);
+        }
+
+        #[test]
+        fn roundtrip_status_response(status in any::<StatusResponse>()) {
+            let proto_status: proto::StatusResponse = status.clone().into();
+            let back_to_rust: StatusResponse = proto_status.into();
+            assert_eq!(status, back_to_rust);
         }
     }
 

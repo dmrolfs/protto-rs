@@ -189,7 +189,7 @@ pub fn proto_convert_derive(input: TokenStream) -> TokenStream {
                                     }
                                 } else {
                                     quote! {
-                                        #field_name: proto_struct.#proto_field_ident.expect(concat!("no ", stringify!(#proto_field_ident), " in proto")).into()
+                                        #field_name: #field_type::from(proto_struct.#proto_field_ident)
                                     }
                                 }
                             } else {
@@ -255,7 +255,7 @@ pub fn proto_convert_derive(input: TokenStream) -> TokenStream {
                             } else if is_proto_type {
                                 quote! { #proto_field_ident: Some(my_struct.#field_name) }
                             } else {
-                                quote! { #proto_field_ident: Some(my_struct.#field_name.into()) }
+                                quote! { #proto_field_ident: my_struct.#field_name.into() }
                             }
                         } else {
                             panic!("Only path types are supported for field '{}'", field_name);
@@ -306,7 +306,61 @@ pub fn proto_convert_derive(input: TokenStream) -> TokenStream {
                 }
             }
         }
-        _ => panic!("ProtoConvert only supports structs, not enums or unions"),
+        syn::Data::Enum(data_enum) => {
+            let variants = &data_enum.variants;
+            let from_i32_arms = variants.iter().enumerate().map(|(i, variant)| {
+                let variant_ident = &variant.ident;
+                let i_lit = syn::LitInt::new(&format!("{}i32", i), Span::call_site());
+                quote! {
+                    #i_lit => #name::#variant_ident,
+                }
+            });
+            let into_i32_arms = variants.iter().enumerate().map(|(i, variant)| {
+                let variant_ident = &variant.ident;
+                let i_lit = syn::LitInt::new(&format!("{}i32", i), Span::call_site());
+                quote! {
+                    #name::#variant_ident => #i_lit,
+                }
+            });
+
+            let proto_enum_path: syn::Path = syn::parse_str(&format!("{}::{}", proto_module, name))
+                .expect("Failed to parse proto enum path");
+
+            let gen = quote! {
+                impl From<i32> for #name {
+                    fn from(value: i32) -> Self {
+                        match value {
+                            #(#from_i32_arms)*
+                            _ => panic!("Unknown enum value: {}", value),
+                        }
+                    }
+                }
+
+                impl From<#name> for i32 {
+                    fn from(enum_val: #name) -> Self {
+                        match enum_val {
+                            #(#into_i32_arms)*
+                        }
+                    }
+                }
+
+                impl From<#name> for #proto_enum_path {
+                    fn from(status: #name) -> Self {
+                        let i32_val: i32 = status.into();
+                        #proto_enum_path::try_from(i32_val).expect("Invalid status value")
+                    }
+                }
+
+                impl From<#proto_enum_path> for #name {
+                    fn from(proto_status: #proto_enum_path) -> Self {
+                        let i32_val: i32 = proto_status.into();
+                        #name::from(i32_val)
+                    }
+                }
+            };
+            gen.into()
+        }
+        _ => panic!("ProtoConvert only supports structs and enums, not unions"),
     }
 }
 
@@ -507,7 +561,6 @@ fn get_proto_derive_into_with(field: &Field) -> Option<String> {
     None
 }
 
-// Checks for `#[proto(igonore)]` fields.
 fn has_proto_ignore(field: &Field) -> bool {
     for attr in &field.attrs {
         if attr.path().is_ident("proto") {

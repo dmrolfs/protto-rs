@@ -22,3 +22,22 @@ message State {
 message HasOptional {
     optional Track track = 1;
 }
+
+enum Status {
+    STATUS_OK = 0;
+    STATUS_MOVED_PERMANENTLY = 1;
+    STATUS_FOUND = 2;
+    STATUS_NOT_FOUND = 3;
+}
+
+message StatusResponse {
+    Status status = 1;
+    string message = 2;
+}
+
+enum AnotherStatus {
+    OK = 0;
+    MOVED_PERMANENTLY = 1;
+    FOUND = 2;
+    NOT_FOUND = 3;
+}
