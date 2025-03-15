@@ -97,9 +97,56 @@
 //! }
 //! ```
 //!
+//! ### Handle enums
+//!
+//! ```protobuf
+//! enum Status {
+//!     STATUS_OK = 0;
+//!     STATUS_MOVED_PERMANENTLY = 1;
+//!     STATUS_FOUND = 2;
+//!     STATUS_NOT_FOUND = 3;
+//! }
+//!
+//! message StatusResponse {
+//!     Status status = 1;
+//!     string message = 2;
+//! }
+//!
+//! enum AnotherStatus {
+//!     OK = 0;
+//!     MOVED_PERMANENTLY = 1;
+//!     FOUND = 2;
+//!     NOT_FOUND = 3;
+//! }
+//! ```
+//!
+//! ```rust,ignore
+//! // We do not require to use the STATUS prefix!
+//! #[derive(ProtoConvert)]
+//! pub enum Status {
+//!     Ok,
+//!     MovedPermanently,
+//!     Found,
+//!     NotFound,
+//! }
+//!
+//! #[derive(ProtoConvert)]
+//! pub enum AnotherStatus {
+//!     Ok,
+//!     MovedPermanently,
+//!     Found,
+//!     NotFound,
+//! }
+//!
+//! #[derive(ProtoConvert)]
+//! pub struct StatusResponse {
+//!     pub status: Status,
+//!     pub message: String,
+//! }
+//! ```
+//!
 //! ## Limitations
 //!
-//! - Does not support enums or unions yet.
 //! - Assumes Protobuf-generated types live in a single module.
 //! - Optional Protobuf message fields (`optional`) use `.expect` and panic if missing; handle accordingly.
 use proc_macro::TokenStream;
