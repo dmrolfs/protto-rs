@@ -81,8 +81,8 @@ pub struct ComplexState {
 #[derive(ProtoConvert, PartialEq, Debug, Clone)]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub enum Status {
-    Ok,
     MovedPermanently,
+    Ok,
     Found,
     NotFound,
 }
@@ -191,6 +191,28 @@ mod proptests {
             let proto_status: proto::StatusResponse = status.clone().into();
             let back_to_rust: StatusResponse = proto_status.into();
             assert_eq!(status, back_to_rust);
+        }
+    }
+
+    #[test]
+    fn test_status() {
+        let mappings = vec![
+            (proto::Status::Ok, Status::Ok),
+            (proto::Status::MovedPermanently, Status::MovedPermanently),
+            (proto::Status::Found, Status::Found),
+            (proto::Status::NotFound, Status::NotFound),
+        ];
+
+        // Proto -> rust.
+        for (proto_status, rust_status) in &mappings {
+            let converted: Status = (*proto_status).into();
+            assert_eq!(converted, *rust_status);
+        }
+
+        // Rust -> proto.
+        for (proto_status, rust_status) in &mappings {
+            let converted: proto::Status = (*rust_status).clone().into();
+            assert_eq!(converted, *proto_status);
         }
     }
 

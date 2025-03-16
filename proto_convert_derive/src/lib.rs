@@ -353,54 +353,70 @@ pub fn proto_convert_derive(input: TokenStream) -> TokenStream {
                 }
             }
         }
+
         syn::Data::Enum(data_enum) => {
             let variants = &data_enum.variants;
-            let from_i32_arms = variants.iter().enumerate().map(|(i, variant)| {
+            let enum_name_str = name.to_string();
+            let enum_prefix = enum_name_str.to_uppercase();
+            let proto_enum_path: syn::Path = syn::parse_str(&format!("{}::{}", proto_module, name))
+                .expect("Failed to parse proto enum path");
+
+            let from_i32_arms = variants.iter().map(|variant| {
                 let variant_ident = &variant.ident;
-                let i_lit = syn::LitInt::new(&format!("{}i32", i), Span::call_site());
+                let variant_str = variant_ident.to_string();
+                let direct_candidate = variant_str.clone();
+                let screaming_variant = to_screaming_snake_case(&variant_str);
+                let prefixed_candidate = format!("{}_{}", enum_prefix, screaming_variant);
+                let direct_candidate_lit = syn::LitStr::new(&direct_candidate, Span::call_site());
+                let prefixed_candidate_lit = syn::LitStr::new(&prefixed_candidate, Span::call_site());
                 quote! {
-                    #i_lit => #name::#variant_ident,
-                }
-            });
-            let into_i32_arms = variants.iter().enumerate().map(|(i, variant)| {
-                let variant_ident = &variant.ident;
-                let i_lit = syn::LitInt::new(&format!("{}i32", i), Span::call_site());
-                quote! {
-                    #name::#variant_ident => #i_lit,
+                    candidate if candidate == #direct_candidate_lit || candidate == #prefixed_candidate_lit => #name::#variant_ident,
                 }
             });
 
-            let proto_enum_path: syn::Path = syn::parse_str(&format!("{}::{}", proto_module, name))
-                .expect("Failed to parse proto enum path");
+            let from_proto_arms = variants.iter().map(|variant| {
+                let variant_ident = &variant.ident;
+                let variant_str = variant_ident.to_string();
+                let screaming_variant = to_screaming_snake_case(&variant_str);
+                let prefixed_candidate = format!("{}_{}", enum_prefix, screaming_variant);
+                let prefixed_candidate_lit = syn::LitStr::new(&prefixed_candidate, Span::call_site());
+                quote! {
+                    #name::#variant_ident => <#proto_enum_path>::from_str_name(#prefixed_candidate_lit)
+                        .unwrap_or_else(|| panic!("No matching proto variant for {:?}", rust_enum)),
+                }
+            });
 
             let gen = quote! {
                 impl From<i32> for #name {
                     fn from(value: i32) -> Self {
-                        match value {
+                        let proto_val = <#proto_enum_path>::from_i32(value)
+                            .unwrap_or_else(|| panic!("Unknown enum value: {}", value));
+                        let proto_str = proto_val.as_str_name();
+                        match proto_str {
                             #(#from_i32_arms)*
-                            _ => panic!("Unknown enum value: {}", value),
+                            _ => panic!("No matching Rust variant for proto enum string: {}", proto_str),
                         }
                     }
                 }
 
                 impl From<#name> for i32 {
-                    fn from(enum_val: #name) -> Self {
-                        match enum_val {
-                            #(#into_i32_arms)*
-                        }
+                    fn from(rust_enum: #name) -> Self {
+                        let proto: #proto_enum_path = rust_enum.into();
+                        proto as i32
                     }
                 }
 
                 impl From<#name> for #proto_enum_path {
-                    fn from(status: #name) -> Self {
-                        let i32_val: i32 = status.into();
-                        #proto_enum_path::try_from(i32_val).expect("Invalid status value")
+                    fn from(rust_enum: #name) -> Self {
+                        match rust_enum {
+                            #(#from_proto_arms)*
+                        }
                     }
                 }
 
                 impl From<#proto_enum_path> for #name {
-                    fn from(proto_status: #proto_enum_path) -> Self {
-                        let i32_val: i32 = proto_status.into();
+                    fn from(proto_enum: #proto_enum_path) -> Self {
+                        let i32_val: i32 = proto_enum.into();
                         #name::from(i32_val)
                     }
                 }
@@ -409,6 +425,17 @@ pub fn proto_convert_derive(input: TokenStream) -> TokenStream {
         }
         _ => panic!("ProtoConvert only supports structs and enums, not unions"),
     }
+}
+
+fn to_screaming_snake_case(s: &str) -> String {
+    let mut result = String::new();
+    for (i, c) in s.chars().enumerate() {
+        if c.is_uppercase() && i != 0 {
+            result.push('_');
+        }
+        result.push(c.to_ascii_uppercase());
+    }
+    result
 }
 
 fn is_option_type(ty: &Type) -> bool {
