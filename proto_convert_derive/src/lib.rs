@@ -4,140 +4,869 @@ use quote::quote;
 use syn::parse::Parser;
 use syn::{self, Attribute, DeriveInput, Expr, Field, Lit, Meta, Type};
 use syn::{punctuated::Punctuated, token::Comma};
+use crate::constants::DEFAULT_CONVERSION_ERROR_SUFFIX;
 
-fn output_debug(name: &syn::Ident, field_name: &syn::Ident) -> bool {
-    false
-    // || name.to_string() == "ComprehensiveEnumStruct"
-    // || name.to_string() == "Status"
-    // || name.to_string() == "MultipleErrorTypesStruct"
-    // || name.to_string() == "ExpectCustomErrorStruct" // Enable debug for this struct
-    // || name.to_string() == "MixedBehaviorTrack"
-    // || name.to_string() == "HasOptionalWithCustomError"
-    // || name.to_string() == "CombinationStruct"
-    // || name.to_string() == "ComplexExpectStruct"
-    // || name.to_string().contains("TrackWith")
+mod constants {
+    pub const PRIMITIVE_TYPES: &[&str] = &["i32", "u32", "i64", "u64", "f32", "f64", "bool", "String"];
+    pub const DEFAULT_PROTO_MODULE: &str = "proto";
+    pub const DEFAULT_CONVERSION_ERROR_SUFFIX: &str = "ConversionError";
 }
 
-fn debug_generated_code(name: &syn::Ident, field_name: &syn::Ident, code: &proc_macro2::TokenStream, context: &str) {
-    if output_debug(name, field_name) {
-        eprintln!("=== GENERATED CODE DEBUG: {} for {} ===", context, field_name);
-        eprintln!("  {}", code);
-        eprintln!("=== END GENERATED CODE ===");
+mod debug {
+    use proc_macro2::{Ident, TokenStream};
+
+    pub fn should_output_debug(name: &Ident, field_name: &Ident) -> bool {
+        false
+        // || name.to_string() == "ComprehensiveEnumStruct"
+        // || name.to_string() == "Status"
+        // || name.to_string() == "MultipleErrorTypesStruct"
+        // || name.to_string() == "ExpectCustomErrorStruct" // Enable debug for this struct
+        // || name.to_string() == "MixedBehaviorTrack"
+        // || name.to_string() == "HasOptionalWithCustomError"
+        // || name.to_string() == "CombinationStruct"
+        // || name.to_string() == "ComplexExpectStruct"
+        // || name.to_string().contains("TrackWith")
+    }
+
+    pub fn debug_generated_code(name: &Ident, field_name: &Ident, code: &TokenStream, context: &str) {
+        if should_output_debug(name, field_name) {
+            eprintln!("=== GENERATED CODE DEBUG: {} for {} ===", context, field_name);
+            eprintln!("  {}", code);
+            eprintln!("=== END GENERATED CODE ===");
+        }
+    }
+
+    pub fn debug_field_analysis(
+        name: &Ident,
+        field_name: &Ident,
+        context: &str,
+        details: &[(&str, String)]
+    ) {
+        if should_output_debug(name, field_name) {
+            eprintln!("=== {context} for {name}.{field_name}");
+            for (key, value) in details {
+                eprintln!("  {key}: {value}");
+            }
+            eprintln!("=== END {context} ===");
+        }
     }
 }
 
-// #[derive(Debug, FromField, Default)]
-// #[darling(attributes(proto), default)]
-#[derive(Debug, Default)]
-struct ProtoFieldMeta {
-    // #[darling(rename = "expect")]
-    expect: bool,
+mod attribute_parser {
+    use super::*;
 
-    // #[darling(skip)] // handled explicitly
-    // expect_panic: Option<String>, // Will be "panic" if set
+    #[derive(Debug, Default, Clone)]
+    pub struct ProtoFieldMeta {
+        pub expect: bool,
+        pub error_fn: Option<String>,
+        pub error_type: Option<String>,
+        pub default_fn: Option<String>,
+        pub optional: Option<bool>,
+    }
 
-    // error: Option<String>,
-    error_fn: Option<String>,
-    error_type: Option<String>,
+    impl ProtoFieldMeta {
+        pub fn from_field(field: &syn::Field) -> Result<Self, String> {
+            let mut meta = ProtoFieldMeta::default();
 
-    // #[darling(default)]
-    default_fn: Option<String>, // for #[proto(default = "function_name")]
+            for attr in &field.attrs {
+                if attr.path().is_ident("proto") {
+                    if let Meta::List(meta_list) = &attr.meta {
+                        let nested_metas: Result<Punctuated<Meta, Comma>, _> = Punctuated::parse_terminated
+                            .parse2(meta_list.tokens.clone());
 
-    optional: Option<bool>,
-}
-
-impl ProtoFieldMeta {
-    fn from_field(field: &syn::Field) -> Result<Self, String> {
-        let mut meta = ProtoFieldMeta::default();
-
-        for attr in &field.attrs {
-            if attr.path().is_ident("proto") {
-                if let Meta::List(meta_list) = &attr.meta {
-                    let nested_metas: Result<Punctuated<Meta, Comma>, _> = Punctuated::parse_terminated
-                        .parse2(meta_list.tokens.clone());
-
-                    match nested_metas {
-                        Ok(metas) => {
-                            for nested_meta in metas {
-                                match nested_meta {
-                                    Meta::Path(path) if path.is_ident("expect") => {
-                                        meta.expect = true;
-                                    },
-                                    Meta::List(list) if list.path.is_ident("expect") => {
-                                        // handle `expect(panic)` syntax
-                                        meta.expect = true;
-                                    },
-                                    Meta::NameValue(nv) if nv.path.is_ident("optional") => {
-                                        if let Expr::Lit(expr_lit) = &nv.value {
-                                            if let Lit::Bool(lit_bool) = &expr_lit.lit {
-                                                meta.optional = Some(lit_bool.value);
-                                            }
-                                        }
-                                    },
-                                    Meta::NameValue(nv) if nv.path.is_ident("error_type") => {
-                                        if let Expr::Path(expr_path) = &nv.value {
-                                            meta.error_type = Some(quote!(#expr_path).to_string());
-                                        }
-                                    },
-                                    Meta::NameValue(nv) if nv.path.is_ident("error_fn") => {
-                                        if let Expr::Lit(expr_lit) = &nv.value {
-                                            if let Lit::Str(lit_str) = &expr_lit.lit {
-                                                meta.error_fn = Some(lit_str.value());
-                                            }
-                                        }
-                                    },
-                                    Meta::NameValue(nv) if nv.path.is_ident("default_fn") || nv.path.is_ident("default") => {
-                                        match &nv.value {
-                                            Expr::Lit(expr_lit) => {
-                                                if let Lit::Str(lit_str) = &expr_lit.lit {
-                                                    meta.default_fn = Some(lit_str.value());
+                        match nested_metas {
+                            Ok(metas) => {
+                                for nested_meta in metas {
+                                    match nested_meta {
+                                        Meta::Path(path) if path.is_ident("expect") => {
+                                            meta.expect = true;
+                                        },
+                                        Meta::List(list) if list.path.is_ident("expect") => {
+                                            // handle `expect(panic)` syntax
+                                            meta.expect = true;
+                                        },
+                                        Meta::NameValue(nv) if nv.path.is_ident("optional") => {
+                                            if let Expr::Lit(expr_lit) = &nv.value {
+                                                if let Lit::Bool(lit_bool) = &expr_lit.lit {
+                                                    meta.optional = Some(lit_bool.value);
                                                 }
-                                            },
-                                            Expr::Path(expr_path) => {
-                                                meta.default_fn = Some(quote!(#expr_path).to_string());
-                                            },
-                                            _ => {
-                                                panic!("default_fn value must be a string literal or path; e.g., default_fn = \"function_path\" or default_fn = function_path");
-                                            },
+                                            }
+                                        },
+                                        Meta::NameValue(nv) if nv.path.is_ident("error_type") => {
+                                            if let Expr::Path(expr_path) = &nv.value {
+                                                meta.error_type = Some(quote!(#expr_path).to_string());
+                                            }
+                                        },
+                                        Meta::NameValue(nv) if nv.path.is_ident("error_fn") => {
+                                            if let Expr::Lit(expr_lit) = &nv.value {
+                                                if let Lit::Str(lit_str) = &expr_lit.lit {
+                                                    meta.error_fn = Some(lit_str.value());
+                                                }
+                                            }
+                                        },
+                                        Meta::NameValue(nv) if nv.path.is_ident("default_fn") || nv.path.is_ident("default") => {
+                                            match &nv.value {
+                                                Expr::Lit(expr_lit) => {
+                                                    if let Lit::Str(lit_str) = &expr_lit.lit {
+                                                        meta.default_fn = Some(lit_str.value());
+                                                    }
+                                                },
+                                                Expr::Path(expr_path) => {
+                                                    meta.default_fn = Some(quote!(#expr_path).to_string());
+                                                },
+                                                _ => {
+                                                    panic!("default_fn value must be a string literal or path; e.g., default_fn = \"function_path\" or default_fn = function_path");
+                                                },
+                                            }
+                                        },
+                                        Meta::Path(path) if path.is_ident("default_fn") || path.is_ident("default") => {
+                                            meta.default_fn = Some("Default::default".to_string());
+                                        },
+                                        _ => {
+                                            // ignore other attributes for now
                                         }
-                                    },
-                                    Meta::Path(path) if path.is_ident("default_fn") || path.is_ident("default") => {
-                                        meta.default_fn = Some("Default::default".to_string());
-                                    },
-                                    _ => {
-                                        // ignore other attributes for now
                                     }
                                 }
-                            }
-                        },
-                        Err(e) => {
-                            return Err(format!("Failed to parse proto attribute: {e}"));
-                        },
+                            },
+                            Err(e) => {
+                                return Err(format!("Failed to parse proto attribute: {e}"));
+                            },
+                        }
+                    }
+                }
+            }
+
+            Ok(meta)
+        }
+
+        fn parse_nested_meta(meta: &mut ProtoFieldMeta, nested_meta: Meta) -> Result<(), String> {
+            match nested_meta {
+                Meta::Path(path) if path.is_ident("expect") => {
+                    meta.expect = true;
+                },
+                Meta::List(list) if list.path.is_ident("expect") => {
+                    meta.expect = true;
+                },
+                Meta::NameValue(nv) if nv.path.is_ident("optional") => {
+                    Self::parse_optional_value(meta, &nv.value)?;
+                },
+                Meta::NameValue(nv) if nv.path.is_ident("error_type") => {
+                    Self::parse_error_type_value(meta, &nv.value)?;
+                },
+                Meta::NameValue(nv) if nv.path.is_ident("error_fn") => {
+                    Self::parse_error_fn_value(meta, &nv.value)?;
+                },
+                Meta::NameValue(nv) if nv.path.is_ident("default_fn") || nv.path.is_ident("default") => {
+                    Self::parse_default_fn_value(meta, &nv.value)?;
+                },
+                Meta::Path(path) if path.is_ident("default_fn") || path.is_ident("default") => {
+                    meta.default_fn = Some("Default::default".to_string());
+                },
+                _ => {
+                    // ignore other attributes for now
+                }
+            }
+            Ok(())
+        }
+
+        fn parse_optional_value(meta: &mut ProtoFieldMeta, value: &Expr) -> Result<(), String> {
+            if let Expr::Lit(expr_lit) = value {
+                if let Lit::Bool(lit_bool) = &expr_lit.lit {
+                    meta.optional = Some(lit_bool.value);
+                }
+            }
+            Ok(())
+        }
+
+        fn parse_error_type_value(meta: &mut ProtoFieldMeta, value: &Expr) -> Result<(), String> {
+            if let Expr::Path(expr_path) = value {
+                meta.error_type = Some(quote!(#expr_path).to_string());
+            }
+            Ok(())
+        }
+
+        fn parse_error_fn_value(meta: &mut ProtoFieldMeta, value: &Expr) -> Result<(), String> {
+            if let Expr::Lit(expr_lit) = value {
+                if let Lit::Str(lit_str) = &expr_lit.lit {
+                    meta.error_fn = Some(lit_str.value());
+                }
+            }
+            Ok(())
+        }
+
+        fn parse_default_fn_value(meta: &mut ProtoFieldMeta, value: &Expr) -> Result<(), String> {
+            match value {
+                Expr::Lit(expr_lit) => {
+                    if let Lit::Str(lit_str) = &expr_lit.lit {
+                        meta.default_fn = Some(lit_str.value());
+                    }
+                },
+                Expr::Path(expr_path) => {
+                    meta.default_fn = Some(quote!(#expr_path).to_string());
+                },
+                _ => {
+                    panic!("default_fn value must be a string literal or path; e.g., default_fn = \"function_path\" or default_fn = function_path");
+                },
+            }
+            Ok(())
+        }
+    }
+}
+
+mod type_analysis {
+    use super::*;
+    use constants::PRIMITIVE_TYPES;
+
+    pub fn is_option_type(ty: &Type) -> bool {
+        matches!(ty, Type::Path(type_path) if type_path.path.segments.first().map(|s| s.ident == "Option").unwrap_or(false))
+    }
+
+    pub fn get_inner_type_from_option(ty: &Type) -> Option<Type> {
+        if let Type::Path(type_path) = ty {
+            if type_path.path.segments.len() == 1 && type_path.path.segments[0].ident == "Option" {
+                if let syn::PathArguments::AngleBracketed(angle_bracketed) =
+                    &type_path.path.segments[0].arguments
+                {
+                    if let Some(syn::GenericArgument::Type(inner_type)) = angle_bracketed.args.first() {
+                        return Some(inner_type.clone());
                     }
                 }
             }
         }
+        None
+    }
 
-        Ok(meta)
+    pub fn is_vec_type(ty: &Type) -> bool {
+        if let Type::Path(type_path) = ty {
+            if type_path.path.segments.len() == 1 && type_path.path.segments[0].ident == "Vec" {
+                return true;
+            }
+        }
+        false
+    }
+
+    pub fn get_inner_type_from_vec(ty: &Type) -> Option<Type> {
+        if let Type::Path(type_path) = ty {
+            if type_path.path.segments.len() == 1 && type_path.path.segments[0].ident == "Vec" {
+                if let syn::PathArguments::AngleBracketed(angle_bracketed) =
+                    &type_path.path.segments[0].arguments
+                {
+                    if let Some(syn::GenericArgument::Type(inner_type)) = angle_bracketed.args.first() {
+                        return Some(inner_type.clone());
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    pub fn is_primitive_type(ty: &Type) -> bool {
+        if let Type::Path(type_path) = ty {
+            type_path.path.segments.len() == 1 &&
+                PRIMITIVE_TYPES.iter().any(|&p| type_path.path.segments[0].ident == p)
+        } else {
+            false
+        }
+    }
+
+    pub fn is_proto_type_with_module(ty: &Type, proto_module: &str) -> bool {
+        if let Type::Path(type_path) = ty {
+            if let Some(segment) = type_path.path.segments.first() {
+                return segment.ident == proto_module;
+            }
+        }
+        false
+    }
+
+    pub fn is_enum_type(ty: &Type) -> bool {
+        if let Type::Path(type_path) = ty {
+            // Skip primitive types, collections, and proto types
+            if is_primitive_type(ty) || is_vec_type(ty) || is_option_type(ty) {
+                return false;
+            }
+
+            let is_proto_type = type_path.path.segments.first()
+                .map(|segment| segment.ident == "proto")
+                .unwrap_or(false);
+
+            if is_proto_type {
+                return false;
+            }
+
+            // Single-segment non-primitive types are likely enums or simple structs
+            type_path.path.segments.len() == 1
+        } else {
+            false
+        }
+    }
+
+    pub fn is_enum_type_with_explicit_attr(ty: &Type, field: &Field) -> bool {
+        has_proto_enum_attr(field) || is_enum_type(ty)
     }
 }
 
-fn parse_expect_panic(field: &Field) -> bool {
-    for attr in &field.attrs {
-        if attr.path().is_ident("proto") {
-            if let Meta::List(meta_list) = &attr.meta {
-                let tokens_str = meta_list.tokens.to_string();
-                if tokens_str.contains("expect(panic)") || tokens_str.contains("expect ( panic )") {
-                    return true;
+mod field_context {
+    use super::*;
+
+    #[derive(Clone)]
+    pub struct FieldProcessingContext<'a> {
+        pub struct_name: &'a syn::Ident,
+        pub field_name: &'a syn::Ident,
+        pub field_type: &'a syn::Type,
+        pub proto_field_ident: syn::Ident,
+        pub proto_meta: attribute_parser::ProtoFieldMeta,
+        pub expect_mode: ExpectMode,
+        pub has_default: bool,
+        pub default_fn: Option<String>,
+        pub error_name: &'a syn::Ident,
+        pub struct_level_error_type: &'a Option<syn::Type>,
+        pub struct_level_error_fn: &'a Option<String>,
+        pub proto_module: &'a str,
+        pub proto_name: &'a str,
+    }
+
+    impl<'a> std::fmt::Debug for FieldProcessingContext<'a> {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.debug_struct("FieldProcessingContext")
+            .field("struct_name", &self.struct_name)
+            .field("field_name", &self.field_name)
+            .field("proto_field_ident", &self.proto_field_ident)
+            .field("proto_meta", &self.proto_meta)
+            .field("expect_mode", &self.expect_mode)
+            .field("has_default", &self.has_default)
+            .field("default_fn", &self.default_fn)
+            .field("error_name", &self.error_name)
+            .field("struct_level_error_fn", &self.struct_level_error_fn)
+            .field("proto_module", &self.proto_module)
+            .field("proto_name", &self.proto_name)
+            .finish()
+        }
+    }
+
+    impl<'a> FieldProcessingContext<'a> {
+        pub fn new(
+            struct_name: &'a syn::Ident,
+            field: &'a syn::Field,
+            error_name: &'a syn::Ident,
+            struct_level_error_type: &'a Option<syn::Type>,
+            struct_level_error_fn: &'a Option<String>,
+            proto_module: &'a str,
+            proto_name: &'a str,
+        ) -> Self {
+            let field_name = field.ident.as_ref().unwrap();
+            let field_type = &field.ty;
+            let proto_meta = attribute_parser::ProtoFieldMeta::from_field(field).unwrap_or_default();
+            let expect_mode = determine_expect_mode(field, &proto_meta);
+            let has_default = has_proto_default(field);
+            let default_fn = get_proto_default_fn(field);
+
+            let proto_field_ident = if let Some(rename) = get_proto_rename(field) {
+                syn::Ident::new(&rename, proc_macro2::Span::call_site())
+            } else {
+                field_name.clone()
+            };
+
+            Self {
+                struct_name,
+                field_name,
+                field_type,
+                proto_field_ident,
+                proto_meta,
+                expect_mode,
+                has_default,
+                default_fn,
+                error_name,
+                struct_level_error_type,
+                struct_level_error_fn,
+                proto_module,
+                proto_name,
+            }
+        }
+    }
+}
+
+mod field_processor {
+    use super::*;
+    use field_context::FieldProcessingContext;
+
+    pub fn generate_from_proto_field(field: &syn::Field, ctx: &FieldProcessingContext) -> proc_macro2::TokenStream {
+        if has_proto_ignore(field) {
+            return generate_ignored_field(ctx);
+        }
+
+        let derive_from_with = get_proto_derive_from_with(field);
+        if let Some(from_with_path) = derive_from_with {
+            return generate_derive_from_with_field(ctx, &from_with_path)
+        }
+
+        if has_transparent_attr(field) {
+            return generate_transparent_field(ctx);
+        }
+
+        if type_analysis::is_option_type(ctx.field_type) {
+            return generate_option_field(ctx);
+        }
+
+        if type_analysis::is_vec_type(ctx.field_type) {
+            return generate_vec_field(ctx);
+        }
+
+        if let syn::Type::Path(_) = ctx.field_type {
+            return generate_path_type_field(ctx, field);
+        }
+
+        panic!("Only path types are supported for field '{}'", ctx.field_name);
+    }
+
+    fn generate_ignored_field(ctx: &FieldProcessingContext) -> proc_macro2::TokenStream {
+        let field_name = ctx.field_name;
+        if let Some(default_fn_name) = &ctx.default_fn {
+            let default_fn_path: syn::Path = syn::parse_str(&default_fn_name)
+                .expect("Failed to parse default_fn function path");
+            quote! { #field_name: #default_fn_path() }
+        } else {
+            quote! { #field_name: Default::default() }
+        }
+    }
+
+    fn generate_derive_from_with_field(ctx: &FieldProcessingContext, from_with_path: &str) -> proc_macro2::TokenStream {
+        let field_name = ctx.field_name;
+        let proto_field_ident = &ctx.proto_field_ident;
+        let from_with_path: syn::Path = syn::parse_str(&from_with_path).expect("Failed to parse derive_from_with path");
+        quote! {
+            #field_name: #from_with_path(proto_struct.#proto_field_ident)
+        }
+    }
+
+    fn generate_transparent_field(ctx: &FieldProcessingContext) -> proc_macro2::TokenStream {
+        let field_name = ctx.field_name;
+        let proto_field_ident = &ctx.proto_field_ident;
+        let field_type = ctx.field_type;
+
+        match ctx.expect_mode {
+            ExpectMode::Panic => {
+                quote! {
+                    #field_name: <#field_type>::from(
+                        proto_struct.#proto_field_ident
+                            .expect(&format!("Field {} is required", stringify!(#proto_field_ident)))
+                    )
+                }
+            },
+            ExpectMode::Error => {
+                generate_error_handling(
+                    field_name,
+                    &proto_field_ident,
+                    field_type,
+                    &ctx.proto_meta,
+                    ctx.error_name,
+                    ctx.struct_level_error_type,
+                    ctx.struct_level_error_fn,
+                )
+            },
+            ExpectMode::None => {
+                if ctx.has_default {
+                    let default_expr = generate_default_value(field_type, ctx.default_fn.as_deref());
+                    quote! {
+                        #field_name: <#field_type>::from(
+                            proto_struct.#proto_field_ident
+                                .unwrap_or_else(|| #default_expr)
+                        )
+                    }
+                } else {
+                    quote! {
+                        #field_name: <#field_type>::from(proto_struct.#proto_field_ident)
+                    }
+                }
+            },
+        }
+    }
+
+    fn generate_option_field(ctx: &FieldProcessingContext) -> proc_macro2::TokenStream {
+        let field_name = ctx.field_name;
+        let proto_field_ident = &ctx.proto_field_ident;
+        let field_type = ctx.field_type;
+        let inner_type = type_analysis::get_inner_type_from_option(field_type).unwrap();
+
+        match ctx.expect_mode {
+            ExpectMode::Panic => {
+                quote! {
+                    #field_name: Some(proto_struct.#proto_field_ident
+                        .expect(&format!("Field {} is required", stringify!(#proto_field_ident)))
+                        .into())
+                }
+            },
+            ExpectMode::Error => {
+                generate_error_handling(
+                    field_name,
+                    &proto_field_ident,
+                    field_type,
+                    &ctx.proto_meta,
+                    ctx.error_name,
+                    ctx.struct_level_error_type,
+                    ctx.struct_level_error_fn,
+                )
+            },
+            ExpectMode::None => {
+                if ctx.has_default {
+                    let default_expr = generate_default_value(field_type, ctx.default_fn.as_deref());
+                    quote! {
+                        #field_name: proto_struct.#proto_field_ident
+                            .map(#inner_type::from)
+                            .map(Some)
+                            .unwrap_or_else(|| #default_expr)
+                    }
+                } else if type_analysis::is_vec_type(&inner_type) {
+                    quote! {
+                        #field_name: proto_struct.#proto_field_ident.into_iter().map(Into::into).collect()
+                    }
+                } else {
+                    quote! {
+                        #field_name: proto_struct.#proto_field_ident.map(Into::into)
+                    }
+                }
+            },
+        }
+    }
+
+    fn generate_vec_field(ctx: &FieldProcessingContext) -> proc_macro2::TokenStream {
+        let field_name = ctx.field_name;
+        let proto_field_ident = &ctx.proto_field_ident;
+        let field_type = ctx.field_type;
+
+        if ctx.has_default {
+            let default_expr = generate_default_value(field_type, ctx.default_fn.as_deref());
+            match ctx.expect_mode {
+                ExpectMode::Panic => {
+                    quote! {
+                        #field_name: if proto_struct.#proto_field_ident.is_empty() {
+                            #default_expr
+                        } else {
+                            proto_struct.#proto_field_ident.into_iter().map(Into::into).collect()
+                        }
+                    }
+                },
+                ExpectMode::Error => {
+                    generate_error_handling(
+                        field_name,
+                        &proto_field_ident,
+                        field_type,
+                        &ctx.proto_meta,
+                        ctx.error_name,
+                        ctx.struct_level_error_type,
+                        ctx.struct_level_error_fn,
+                    )
+                },
+                ExpectMode::None => {
+                    quote! {
+                        #field_name: if proto_struct.#proto_field_ident.is_empty() {
+                            #default_expr
+                        } else {
+                            proto_struct.#proto_field_ident.into_iter().map(Into::into).collect()
+                        }
+                    }
+                },
+            }
+        } else {
+            if let Some(inner_type) = type_analysis::get_inner_type_from_vec(field_type) {
+                if type_analysis::is_proto_type_with_module(&inner_type, ctx.proto_module) {
+                    quote! {
+                        #field_name: proto_struct.#proto_field_ident
+                    }
+                } else {
+                    quote! {
+                        #field_name: proto_struct.#proto_field_ident.into_iter().map(Into::into).collect()
+                    }
+                }
+            } else {
+                quote! {
+                    #field_name: proto_struct.#proto_field_ident.into_iter().map(Into::into).collect()
                 }
             }
         }
     }
-    false
+
+    fn generate_path_type_field(ctx: &FieldProcessingContext, field: &syn::Field) -> proc_macro2::TokenStream {
+        let field_name = ctx.field_name;
+        let field_type = ctx.field_type;
+
+        if let syn::Type::Path(type_path) = field_type {
+            let is_primitive = type_analysis::is_primitive_type(field_type);
+            let is_proto_type = type_path.path.segments.first()
+                .is_some_and(|segment| segment.ident == ctx.proto_module);
+
+            if type_analysis::is_enum_type_with_explicit_attr(field_type, field) {
+                return generate_enum_field(ctx, field);
+            } else if is_primitive {
+                return generate_primitive_field(ctx, field);
+            } else if is_proto_type {
+                return generate_proto_type_field(ctx, field);
+            } else {
+                return generate_custom_type_field(ctx, field);
+            }
+        }
+
+        panic!("Only path types are supported for field '{}'", field_name);
+    }
+
+    fn generate_enum_field(ctx: &FieldProcessingContext, field: &syn::Field) -> proc_macro2::TokenStream {
+        let field_name = ctx.field_name;
+        let proto_field_ident = &ctx.proto_field_ident;
+        let field_type = ctx.field_type;
+        let proto_is_optional = is_optional_proto_field_for_ctx(ctx, field);
+
+        if proto_is_optional {
+            match ctx.expect_mode {
+                ExpectMode::Panic => {
+                    quote! {
+                        #field_name: proto_struct.#proto_field_ident
+                            .map(|v| v.into())
+                            .unwrap_or_else(|| panic!("Field {} is required", stringify!(#proto_field_ident)))
+                    }
+                },
+                ExpectMode::Error => {
+                    generate_error_handling(
+                        field_name,
+                        &proto_field_ident,
+                        field_type,
+                        &ctx.proto_meta,
+                        ctx.error_name,
+                        ctx.struct_level_error_type,
+                        ctx.struct_level_error_fn,
+                    )
+                },
+                ExpectMode::None => {
+                    if ctx.has_default {
+                        let default_expr = generate_default_value(field_type, ctx.default_fn.as_deref());
+                        quote! {
+                            #field_name: proto_struct.#proto_field_ident
+                                .map(#field_type::from)
+                                .unwrap_or_else(|| #default_expr)
+                        }
+                    } else {
+                        quote! {
+                            #field_name: #field_type::from(
+                                proto_struct.#proto_field_ident
+                                    .expect(&format!("Field {} is required", stringify!(#proto_field_ident)))
+                            )
+                        }
+                    }
+                },
+            }
+        } else {
+            // direct conversion for non-optional enum fields
+            quote! {
+                #field_name: proto_struct.#proto_field_ident.into()
+            }
+        }
+    }
+
+    fn generate_primitive_field(ctx: &FieldProcessingContext, field: &syn::Field) -> proc_macro2::TokenStream {
+        let field_name = ctx.field_name;
+        let proto_field_ident = &ctx.proto_field_ident;
+        let field_type = ctx.field_type;
+        let proto_is_optional = is_optional_proto_field_for_ctx(ctx, field);
+        let rust_is_option = type_analysis::is_option_type(field_type);
+
+        if debug::should_output_debug(ctx.struct_name, field_name) {
+            debug::debug_field_analysis(ctx.struct_name, field_name, "PRIMITIVE FIELD DEBUG", &[
+                ("proto_is_optional (calculated)", proto_is_optional.to_string()),
+                ("rust_is_option", rust_is_option.to_string()),
+                ("has_default", ctx.has_default.to_string()),
+                ("expect_mode", format!("{:?}", ctx.expect_mode)),
+                ("proto_field_ident", proto_field_ident.to_string()),
+                ("default_fn", format!("{:?}", ctx.default_fn)),
+                ("Expected generated code", format!("{}:proto_struct.{}.unwrap_or(...)", field_name, proto_field_ident)),
+            ]);
+        }
+
+        let generated_code = match ctx.expect_mode {
+            ExpectMode::Panic => {
+                if rust_is_option {
+                    quote! {
+                        #field_name: proto_struct.#proto_field_ident
+                            .map(|v| Some(v))
+                            .unwrap_or_else(|| panic!("Field {} is required", stringify!(#proto_field_ident)))
+                    }
+                } else {
+                    quote! {
+                        #field_name: proto_struct.#proto_field_ident
+                            .unwrap_or_else(|| panic!("Field {} is required", stringify!(#proto_field_ident)))
+                    }
+                }
+            },
+            ExpectMode::Error => {
+                generate_error_handling(
+                    field_name,
+                    &proto_field_ident,
+                    field_type,
+                    &ctx.proto_meta,
+                    ctx.error_name,
+                    ctx.struct_level_error_type,
+                    ctx.struct_level_error_fn,
+                )
+            },
+            ExpectMode::None => {
+                if ctx.has_default {
+                    let default_expr = generate_default_value(field_type, ctx.default_fn.as_deref());
+                    if rust_is_option {
+                        quote! {
+                            #field_name: if proto_struct.#proto_field_ident == Default::default() {
+                                Some(#default_expr)
+                            } else {
+                                Some(proto_struct.#proto_field_ident)
+                            }
+                        }
+                    } else {
+                        if proto_is_optional {
+                            quote! {
+                                #field_name: proto_struct.#proto_field_ident
+                                    .unwrap_or_else(|| #default_expr)
+                            }
+                        } else {
+                            quote! {
+                                //DMR: determine which better: pros/cons
+                                #field_name: proto_struct.#proto_field_ident.into()
+                                // #field_name: if proto_struct.#proto_field_ident.is_empty() {
+                                //     #default_expr
+                                // } else {
+                                //     proto_struct.#proto_field_ident.into()
+                                // }
+                            }
+                        }
+                    }
+                } else {
+                    // No default handling
+                    if rust_is_option {
+                        quote! {
+                            #field_name: Some(proto_struct.#proto_field_ident)
+                        }
+                    } else {
+                        if proto_is_optional {
+                            quote! {
+                                #field_name: proto_struct.#proto_field_ident
+                                    .unwrap_or_default()
+                            }
+                        } else {
+                            quote! {
+                                #field_name: proto_struct.#proto_field_ident
+                            }
+                        }
+                    }
+                }
+            },
+        };
+
+        debug::debug_generated_code(ctx.struct_name, field_name, &generated_code, "primitive field from_proto");
+        generated_code
+    }
+
+    fn generate_proto_type_field(ctx: &FieldProcessingContext, field: &syn::Field) -> proc_macro2::TokenStream {
+        let field_name = ctx.field_name;
+        let proto_field_ident = &ctx.proto_field_ident;
+
+        match ctx.expect_mode {
+            ExpectMode::Panic => {
+                let proto_is_optional = is_optional_proto_field_for_ctx(ctx, field);
+                if proto_is_optional {
+                    quote! {
+                        #field_name: proto_struct.#proto_field_ident
+                            .expect(&format!("Field {} is required", stringify!(#proto_field_ident)))
+                            .into()
+                    }
+                } else {
+                    quote! {
+                        #field_name: proto_struct.#proto_field_ident.into()
+                    }
+                }
+            },
+            ExpectMode::Error => {
+                generate_error_handling(
+                    field_name,
+                    &proto_field_ident,
+                    ctx.field_type,
+                    &ctx.proto_meta,
+                    ctx.error_name,
+                    ctx.struct_level_error_type,
+                    ctx.struct_level_error_fn,
+                )
+            },
+            ExpectMode::None => {
+                if ctx.has_default {
+                    let default_expr = generate_default_value(ctx.field_type, ctx.default_fn.as_deref());
+                    quote! {
+                        #field_name: proto_struct.#proto_field_ident
+                            .unwrap_or_else(|| #default_expr)
+                    }
+                } else {
+                    quote! {
+                        #field_name: proto_struct.#proto_field_ident
+                            .expect(&format!("Field {} is required", stringify!(#proto_field_ident)))
+                    }
+                }
+            },
+        }
+    }
+
+    fn generate_custom_type_field(ctx: &FieldProcessingContext, field: &syn::Field) -> proc_macro2::TokenStream {
+        let field_name = ctx.field_name;
+        let proto_field_ident = &ctx.proto_field_ident;
+        let field_type = ctx.field_type;
+        let proto_is_optional = is_optional_proto_field_for_ctx(ctx, field);
+
+        // custom types - check if proto field is optional
+        if proto_is_optional {
+            // proto field is optional (Option<T>), Rust field is T
+            match ctx.expect_mode {
+                ExpectMode::Panic => {
+                    quote! {
+                        #field_name: proto_struct.#proto_field_ident
+                            .expect(&format!("Field {} is required", stringify!(#proto_field_ident)))
+                            .into()
+                    }
+                },
+                ExpectMode::Error => {
+                    generate_error_handling(
+                        field_name,
+                        &proto_field_ident,
+                        field_type,
+                        &ctx.proto_meta,
+                        ctx.error_name,
+                        ctx.struct_level_error_type,
+                        ctx.struct_level_error_fn,
+                    )
+                },
+                ExpectMode::None => {
+                    if ctx.has_default {
+                        let default_expr = generate_default_value(field_type, ctx.default_fn.as_deref());
+                        quote! {
+                            #field_name: proto_struct.#proto_field_ident
+                                .map(#field_type::from)
+                                .unwrap_or_else(|| #default_expr)
+                        }
+                    } else {
+                        quote! {
+                            #field_name: proto_struct.#proto_field_ident
+                                .map(Into::into)
+                                .expect(&format!("Field {} is required", stringify!(#proto_field_ident)))
+                        }
+                    }
+                },
+            }
+        } else {
+            // non-optional proto field - direct conversion
+            quote! {
+                #field_name: proto_struct.#proto_field_ident.into()
+            }
+        }
+    }
+
+    fn is_optional_proto_field_for_ctx(ctx: &FieldProcessingContext, field: &syn::Field) -> bool {
+        is_optional_proto_field(ctx.struct_name, field, ctx.proto_name)
+    }
 }
 
 fn has_proto_default(field: &Field) -> bool {
-    if let Ok(proto_meta) = ProtoFieldMeta::from_field(field) {
+    if let Ok(proto_meta) = attribute_parser::ProtoFieldMeta::from_field(field) {
         return proto_meta.default_fn.is_some();
     }
 
@@ -161,7 +890,7 @@ fn has_proto_default(field: &Field) -> bool {
 }
 
 fn get_proto_default_fn(field: &Field) -> Option<String> {
-    if let Ok(proto_meta) = ProtoFieldMeta::from_field(field) {
+    if let Ok(proto_meta) = attribute_parser::ProtoFieldMeta::from_field(field) {
         if let Some(default_val) = &proto_meta.default_fn {
             if !default_val.is_empty() {
                 return Some(default_val.clone())
@@ -198,6 +927,20 @@ fn get_proto_default_fn(field: &Field) -> Option<String> {
     None
 }
 
+fn parse_expect_panic(field: &Field) -> bool {
+    for attr in &field.attrs {
+        if attr.path().is_ident("proto") {
+            if let Meta::List(meta_list) = &attr.meta {
+                let tokens_str = meta_list.tokens.to_string();
+                if tokens_str.contains("expect(panic)") || tokens_str.contains("expect ( panic )") {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
 #[derive(Debug, Clone)]
 enum ExpectMode {
     None,
@@ -225,13 +968,12 @@ pub fn proto_convert_derive(input: TokenStream) -> TokenStream {
             match &data_struct.fields {
                 syn::Fields::Named(fields_named) => {
                     let fields = &fields_named.named;
-                    let primitives = ["i32", "u32", "i64", "u64", "f32", "f64", "bool", "String"];
 
                     let needs_try_from = fields.iter().any(|field| {
                         if has_proto_ignore(field) {
                             false
                         } else {
-                            let proto_meta = ProtoFieldMeta::from_field(field).unwrap_or_default();
+                            let proto_meta = attribute_parser::ProtoFieldMeta::from_field(field).unwrap_or_default();
                             let expect_mode = determine_expect_mode(field, &proto_meta);
                             matches!(expect_mode, ExpectMode::Error)
                         }
@@ -239,7 +981,7 @@ pub fn proto_convert_derive(input: TokenStream) -> TokenStream {
 
                     let needs_default_error = fields.iter().any(|field| {
                         if has_proto_ignore(field) { return false; }
-                        let proto_meta = ProtoFieldMeta::from_field(field).unwrap_or_default();
+                        let proto_meta = attribute_parser::ProtoFieldMeta::from_field(field).unwrap_or_default();
                         if matches!(determine_expect_mode(field, &proto_meta), ExpectMode::Error) {
                             let effective_error_type = get_effective_error_type(&proto_meta, &struct_level_error_type);
                             effective_error_type.is_none()
@@ -309,7 +1051,7 @@ pub fn proto_convert_derive(input: TokenStream) -> TokenStream {
                                 quote! { #field_name: Default::default() }
                             }
                         } else {
-                            let proto_meta = ProtoFieldMeta::from_field(field).unwrap_or_default();
+                            let proto_meta = attribute_parser::ProtoFieldMeta::from_field(field).unwrap_or_default();
                             let expect_mode = determine_expect_mode(field, &proto_meta);
 
                             let has_default = has_proto_default(field);
@@ -326,28 +1068,25 @@ pub fn proto_convert_derive(input: TokenStream) -> TokenStream {
                             let is_transparent = has_transparent_attr(field);
                             let derive_from_with = get_proto_derive_from_with(field);
 
-                            if output_debug(name, field_name) {
+                            if debug::should_output_debug(name, field_name) {
                                 eprintln!("=== Processing {}.{} field ===", name, field_name);
                                 eprintln!("  field_type: {}", quote!(#field_type));
-                                eprintln!("  is_option_type: {}", is_option_type(field_type));
+                                eprintln!("  is_option_type: {}", type_analysis::is_option_type(field_type));
                                 eprintln!("  is_transparent: {}", is_transparent);
 
                                 if let syn::Type::Path(type_path) = field_type {
-                                    eprintln!("  is_enum_type_with_explicit_attr: {}", is_enum_type_with_explicit_attr(field_type, field));
-                                    let primitives = ["i32", "u32", "i64", "u64", "f32", "f64", "bool", "String"];
-                                    let is_primitive = type_path.path.segments.len() == 1 &&
-                                        primitives.iter().any(|&p| type_path.path.segments[0].ident == p);
-                                    eprintln!("  is_primitive: {}", is_primitive);
-
+                                    let is_enum = type_analysis::is_enum_type_with_explicit_attr(field_type, field);
+                                    let is_primitive = type_analysis::is_primitive_type(field_type);
                                     let is_proto_type = type_path.path.segments.first()
                                         .is_some_and(|segment| segment.ident == proto_module.as_str());
-                                    eprintln!("  is_proto_type: {}", is_proto_type);
-                                    eprintln!("  proto_module: {}", proto_module);
-                                }
 
-                                let expect_mode = determine_expect_mode(field, &proto_meta);
-                                eprintln!("  expect_mode: {:?}", expect_mode);
-                                eprintln!("  proto_is_optional: {}", is_optional_proto_field(name, field, &proto_name));
+                                    debug::debug_field_analysis(name, field_name, "Type analysis", &[
+                                        ("is_enum_type_with_explicit_attr", is_enum.to_string()),
+                                        ("is_primitive", is_primitive.to_string()),
+                                        ("is_proto_type", is_proto_type.to_string()),
+                                        ("proto_module", proto_module.clone()),
+                                    ]);
+                                }
                             }
 
                             if let Some(from_with_path) = derive_from_with {
@@ -392,8 +1131,8 @@ pub fn proto_convert_derive(input: TokenStream) -> TokenStream {
                                         }
                                     },
                                 }
-                            } else if is_option_type(field_type) {
-                                let inner_type = get_inner_type_from_option(field_type).unwrap();
+                            } else if type_analysis::is_option_type(field_type) {
+                                let inner_type = type_analysis::get_inner_type_from_option(field_type).unwrap();
                                 let has_default = has_proto_default(field);
                                 let default_fn = get_proto_default_fn(field);
 
@@ -425,7 +1164,7 @@ pub fn proto_convert_derive(input: TokenStream) -> TokenStream {
                                                     .map(Some)
                                                     .unwrap_or_else(|| #default_expr)
                                             }
-                                        } else if is_vec_type(&inner_type) {
+                                        } else if type_analysis::is_vec_type(&inner_type) {
                                             quote! {
                                                 #field_name: proto_struct.#proto_field_ident.into_iter().map(Into::into).collect()
                                             }
@@ -436,7 +1175,7 @@ pub fn proto_convert_derive(input: TokenStream) -> TokenStream {
                                         }
                                     },
                                 }
-                            } else if is_vec_type(field_type) {
+                            } else if type_analysis::is_vec_type(field_type) {
                                 if has_default {
                                     let default_expr = generate_default_value(field_type, default_fn.as_deref());
                                     match expect_mode {
@@ -471,8 +1210,8 @@ pub fn proto_convert_derive(input: TokenStream) -> TokenStream {
                                         },
                                     }
                                 } else {
-                                    if let Some(inner_type) = get_inner_type_from_vec(field_type) {
-                                        if is_proto_type_with_module(&inner_type, &proto_module) {
+                                    if let Some(inner_type) = type_analysis::get_inner_type_from_vec(field_type) {
+                                        if type_analysis::is_proto_type_with_module(&inner_type, &proto_module) {
                                             quote! {
                                                 #field_name: proto_struct.#proto_field_ident
                                             }
@@ -488,14 +1227,13 @@ pub fn proto_convert_derive(input: TokenStream) -> TokenStream {
                                     }
                                 }
                             } else if let syn::Type::Path(type_path) = field_type {
-                                let is_primitive = type_path.path.segments.len() == 1 &&
-                                    primitives.iter().any(|&p| type_path.path.segments[0].ident == p);
+                                let is_primitive = type_analysis::is_primitive_type(field_type);
                                 let is_proto_type = type_path.path.segments.first()
                                     .is_some_and(|segment| segment.ident == proto_module.as_str());
                                 let has_default = has_proto_default(field);
                                 let default_fn = get_proto_default_fn(field);
 
-                                if is_enum_type_with_explicit_attr(field_type, field) {
+                                if type_analysis::is_enum_type_with_explicit_attr(field_type, field) {
                                     let proto_is_optional = is_optional_proto_field(name, field, &proto_name);
                                     if proto_is_optional {
                                         match expect_mode {
@@ -504,9 +1242,6 @@ pub fn proto_convert_derive(input: TokenStream) -> TokenStream {
                                                     #field_name: proto_struct.#proto_field_ident
                                                         .map(|v| v.into())
                                                         .unwrap_or_else(|| panic!("Field {} is required", stringify!(#proto_field_ident)))
-                                                    // #field_name: proto_struct.#proto_field_ident
-                                                    //     .expect(&format!("Field {} is required", stringify!(#proto_field_ident)))
-                                                    //     .into()
                                                 }
                                             },
                                             ExpectMode::Error => {
@@ -546,18 +1281,18 @@ pub fn proto_convert_derive(input: TokenStream) -> TokenStream {
                                     }
                                 } else if is_primitive {
                                     let proto_is_optional = is_optional_proto_field(name, field, &proto_name);
-                                    let rust_is_option = is_option_type(field_type);
+                                    let rust_is_option = type_analysis::is_option_type(field_type);
 
-                                    if output_debug(name, field_name) {
-                                        eprintln!("=== PRIMITIVE FIELD DEBUG ===");
-                                        eprintln!("  field_name: {}.{}", name, field_name);
-                                        eprintln!("  proto_is_optional (calculated): {}", proto_is_optional);
-                                        eprintln!("  rust_is_option: {}", rust_is_option);
-                                        eprintln!("  has_default: {}", has_default);
-                                        eprintln!("  expect_mode: {:?}", expect_mode);
-                                        eprintln!("  proto_field_ident: {}", proto_field_ident);
-                                        eprintln!("  default_fn: {:?}", default_fn);
-                                        eprintln!("  Expected generated code: {}:proto_struct.{}.unwrap_or(...)", field_name, proto_field_ident);
+                                    if debug::should_output_debug(name, field_name) {
+                                        debug::debug_field_analysis(name, field_name, "PRIMITIVE FIELD DEBUG", &[
+                                            ("proto_is_optional (calculated)", proto_is_optional.to_string()),
+                                            ("rust_is_option", rust_is_option.to_string()),
+                                            ("has_default", has_default.to_string()),
+                                            ("expect_mode", format!("{:?}", expect_mode)),
+                                            ("proto_field_ident", proto_field_ident.to_string()),
+                                            ("default_fn", format!("{:?}", default_fn)),
+                                            ("Expected generated code", format!("{}:proto_struct.{}.unwrap_or(...)", field_name, proto_field_ident)),
+                                        ]);
                                     }
 
                                     let generated_code = match expect_mode {
@@ -626,7 +1361,6 @@ pub fn proto_convert_derive(input: TokenStream) -> TokenStream {
                                                         quote! {
                                                             #field_name: proto_struct.#proto_field_ident
                                                                 .unwrap_or_default()
-                                                                // .expect(&format!("Field {} is required", stringify!(#proto_field_ident)))
                                                         }
                                                     } else {
                                                         quote! {
@@ -638,7 +1372,7 @@ pub fn proto_convert_derive(input: TokenStream) -> TokenStream {
                                         },
                                     };
 
-                                    debug_generated_code(name, field_name, &generated_code, "primitive field from_proto");
+                                    debug::debug_generated_code(name, field_name, &generated_code, "primitive field from_proto");
                                     generated_code
                                 } else if is_proto_type {
                                     // for proto types, always expect and unwrap since they're typically required
@@ -766,9 +1500,9 @@ pub fn proto_convert_derive(input: TokenStream) -> TokenStream {
                                     #proto_field_ident: my_struct.#field_name.into()
                                 }
                             }
-                        } else if is_option_type(field_type) {
-                            let inner_type = get_inner_type_from_option(field_type).unwrap();
-                            if is_vec_type(&inner_type) {
+                        } else if type_analysis::is_option_type(field_type) {
+                            let inner_type = type_analysis::get_inner_type_from_option(field_type).unwrap();
+                            if type_analysis::is_vec_type(&inner_type) {
                                 quote! {
                                     #proto_field_ident: my_struct.#field_name
                                         .map(|vec| vec.into_iter().map(Into::into).collect())
@@ -778,9 +1512,9 @@ pub fn proto_convert_derive(input: TokenStream) -> TokenStream {
                                     #proto_field_ident: my_struct.#field_name.map(Into::into)
                                 }
                             }
-                        } else if is_vec_type(field_type) {
-                            if let Some(inner_type) = get_inner_type_from_vec(field_type) {
-                                if is_proto_type_with_module(&inner_type, &proto_module) {
+                        } else if type_analysis::is_vec_type(field_type) {
+                            if let Some(inner_type) = type_analysis::get_inner_type_from_vec(field_type) {
+                                if type_analysis::is_proto_type_with_module(&inner_type, &proto_module) {
                                     quote! {
                                         #proto_field_ident: my_struct.#field_name
                                     }
@@ -796,11 +1530,11 @@ pub fn proto_convert_derive(input: TokenStream) -> TokenStream {
                             }
                         } else if let syn::Type::Path(type_path) = field_type {
                             let is_primitive = type_path.path.segments.len() == 1
-                                && primitives.iter().any(|&p| type_path.path.segments[0].ident == p);
+                                && constants::PRIMITIVE_TYPES.iter().any(|&p| type_path.path.segments[0].ident == p);
                             let is_proto_type = type_path.path.segments.first()
                                 .is_some_and(|segment| segment.ident == proto_module.as_str());
 
-                            if is_enum_type_with_explicit_attr(field_type, field) {
+                            if type_analysis::is_enum_type_with_explicit_attr(field_type, field) {
                                 let proto_is_optional = is_optional_proto_field(name, field, &proto_name);
                                 if proto_is_optional {
                                     quote! { #proto_field_ident: Some(my_struct.#field_name.into()) }
@@ -808,9 +1542,9 @@ pub fn proto_convert_derive(input: TokenStream) -> TokenStream {
                                     quote! { #proto_field_ident: my_struct.#field_name.into() }
                                 }
                             } else if is_primitive {
-                                let rust_is_option = is_option_type(field_type);
+                                let rust_is_option = type_analysis::is_option_type(field_type);
                                 let proto_is_optional = is_optional_proto_field(name, field, &proto_name);
-                                if output_debug(name, field_name) {
+                                if debug::should_output_debug(name, field_name) {
                                     eprintln!("=== FROM_MY_FIELDS PRIMITIVE ===");
                                     eprintln!("  proto_is_optional: {}", proto_is_optional);
                                 }
@@ -1023,7 +1757,7 @@ pub fn proto_convert_derive(input: TokenStream) -> TokenStream {
 }
 
 fn default_error_name(struct_name: &syn::Ident) -> Ident {
-    syn::Ident::new(&format!("{struct_name}ConversionError"), struct_name.span())
+    syn::Ident::new(&format!("{struct_name}{DEFAULT_CONVERSION_ERROR_SUFFIX}"), struct_name.span())
 }
 
 // add *ConversionError type definition for when TryFrom is needed
@@ -1064,12 +1798,12 @@ fn generate_error_handling(
     field_name: &syn::Ident,
     proto_field_ident: &syn::Ident,
     field_type: &syn::Type,
-    proto_meta: &ProtoFieldMeta,
+    proto_meta: &attribute_parser::ProtoFieldMeta,
     error_name: &Ident,
     _struct_level_error_type: &Option<syn::Type>,
     struct_level_error_fn: &Option<String>,
 ) -> proc_macro2::TokenStream {
-    let is_rust_optional = is_option_type(field_type);
+    let is_rust_optional = type_analysis::is_option_type(field_type);
 
     let error_fn_to_use = proto_meta.error_fn.as_ref().or(struct_level_error_fn.as_ref());
 
@@ -1148,7 +1882,7 @@ fn generate_default_value(field_type: &syn::Type, default_fn: Option<&str>) -> p
 
 fn get_proto_struct_error_type(attrs: &[Attribute]) -> Option<syn::Type> {
     for attr in attrs {
-        if attr.path().is_ident("proto") {
+        if attr.path().is_ident(constants::DEFAULT_PROTO_MODULE) {
             if let Meta::List(meta_list) = &attr.meta {
                 let nested_metas: Punctuated<Meta, Comma> = Punctuated::parse_terminated
                     .parse2(meta_list.tokens.clone())
@@ -1172,7 +1906,7 @@ fn get_proto_struct_error_type(attrs: &[Attribute]) -> Option<syn::Type> {
     None
 }
 
-fn get_effective_error_type(proto_meta: &ProtoFieldMeta, struct_level_error_type: &Option<syn::Type>) -> Option<syn::Type> {
+fn get_effective_error_type(proto_meta: &attribute_parser::ProtoFieldMeta, struct_level_error_type: &Option<syn::Type>) -> Option<syn::Type> {
     if let Some(field_error_type) = &proto_meta.error_type {
         return Some(syn::parse_str(field_error_type)
             .expect("Failed to parse field-level error_type"));
@@ -1183,7 +1917,7 @@ fn get_effective_error_type(proto_meta: &ProtoFieldMeta, struct_level_error_type
 
 fn get_struct_level_error_fn(attrs: &[Attribute]) -> Option<String> {
     for attr in attrs {
-        if attr.path().is_ident("proto") {
+        if attr.path().is_ident(constants::DEFAULT_PROTO_MODULE) {
             if let Meta::List(meta_list) = &attr.meta {
                 let nested_metas: Punctuated<Meta, Comma> = Punctuated::parse_terminated
                     .parse2(meta_list.tokens.clone())
@@ -1208,7 +1942,7 @@ fn get_struct_level_error_fn(attrs: &[Attribute]) -> Option<String> {
 
 fn is_optional_proto_field(name: &syn::Ident, field: &syn::Field, proto_name: &str) -> bool {
     let field_name = field.ident.as_ref().unwrap();
-    if output_debug(name, &field_name) {
+    if debug::should_output_debug(name, &field_name) {
         eprintln!("=== DEBUG is_optional_proto_field for {} ===", field_name);
         eprintln!("  has_proto_default: {}", has_proto_default(field));
         eprintln!("  proto field type from proto definition should be: Option<T>");
@@ -1219,9 +1953,9 @@ fn is_optional_proto_field(name: &syn::Ident, field: &syn::Field, proto_name: &s
         }
     }
 
-    let proto_meta_result = ProtoFieldMeta::from_field(field);
+    let proto_meta_result = attribute_parser::ProtoFieldMeta::from_field(field);
     if let Ok(proto_meta) = &proto_meta_result {
-        if output_debug(name, &field_name) {
+        if debug::should_output_debug(name, &field_name) {
             eprintln!("=== PROTO META DEBUG for {} ===", field_name);
             eprintln!("  proto_meta.optional: {:?}", proto_meta.optional);
             eprintln!("  proto_meta.default_fn: {:?}", proto_meta.default_fn);
@@ -1229,22 +1963,22 @@ fn is_optional_proto_field(name: &syn::Ident, field: &syn::Field, proto_name: &s
         }
 
         if let Some(optional) = proto_meta.optional {
-            if output_debug(name, &field_name) {
+            if debug::should_output_debug(name, &field_name) {
                 eprintln!("  RETURNING explicit optional = {optional}");
             }
             return optional;
         }
-    } else if output_debug(name, &field_name) {
+    } else if debug::should_output_debug(name, &field_name) {
         eprintln!("  FAILED to parse ProtoFieldMeta from field!");
     }
 
     let field_type = &field.ty;
 
-    if is_option_type(field_type) {
+    if type_analysis::is_option_type(field_type) {
         return true;
     }
 
-    if is_vec_type(field_type) {
+    if type_analysis::is_vec_type(field_type) {
         return false;
     }
 
@@ -1267,7 +2001,7 @@ fn is_optional_proto_field(name: &syn::Ident, field: &syn::Field, proto_name: &s
     let has_expect = parse_expect_panic(field) ||
         proto_meta_result.as_ref().map(|m| m.expect).unwrap_or(false);
 
-    if output_debug(name, &field_name) {
+    if debug::should_output_debug(name, &field_name) {
         eprintln!("  has_expect: {has_expect}, returning: {has_expect}");
     }
 
@@ -1281,46 +2015,9 @@ fn is_optional_proto_field(name: &syn::Ident, field: &syn::Field, proto_name: &s
 //     None
 // }
 
-// helper function to detect enum types
-fn is_enum_type(ty: &Type) -> bool {
-    if let Type::Path(type_path) = ty {
-        let primitives = ["i32", "u32", "i64", "u64", "f32", "f64", "bool", "String"];
-        let is_primitive = type_path.path.segments.len() == 1 &&
-            primitives.iter().any(|&p| type_path.path.segments[0].ident == p);
-
-        if is_primitive || is_vec_type(ty) || is_option_type(ty) {
-            return false;
-        }
-
-        let is_proto_type = type_path.path.segments.first()
-            .map(|segment| segment.ident == "proto")
-            .unwrap_or(false);
-
-        if is_proto_type {
-            return false;
-        }
-
-        if type_path.path.segments.len() == 1 {
-            // We could check if the type has certain derive attributes
-            // but that requires more context. For now, assume single-segment,
-            // non-primitive, non-proto types are likely enums or simple structs.
-            // This is imperfect but better than hardcoding specific names.
-            true
-        } else {
-            false
-        }
-    } else {
-        false
-    }
-}
-
-fn is_enum_type_with_explicit_attr(ty: &Type, field: &Field) -> bool {
-    has_proto_enum_attr(field) || is_enum_type(ty)
-}
-
 fn has_proto_enum_attr(field: &syn::Field) -> bool {
     for attr in &field.attrs {
-        if attr.path().is_ident("proto") {
+        if attr.path().is_ident(constants::DEFAULT_PROTO_MODULE) {
             if let Meta::List(meta_list) = &attr.meta {
                 let nested_metas: Punctuated<Meta, Comma> = Punctuated::parse_terminated
                     .parse2(meta_list.tokens.clone())
@@ -1369,12 +2066,12 @@ fn has_proto_enum_attr(field: &syn::Field) -> bool {
 //     None
 // }
 
-fn determine_expect_mode(field: &Field, proto_meta: &ProtoFieldMeta) -> ExpectMode {
+fn determine_expect_mode(field: &Field, proto_meta: &attribute_parser::ProtoFieldMeta) -> ExpectMode {
     let field_name = field.ident.as_ref().unwrap();
     let expect_panic = parse_expect_panic(field);
 
     let struct_name = syn::Ident::new("DEBUG", proc_macro2::Span::call_site());
-    if output_debug(&struct_name, field_name) {
+    if debug::should_output_debug(&struct_name, field_name) {
         eprintln!("=== determine_expect_mode for {field_name} ===");
         eprintln!("  parse_expect_panic: {expect_panic}");
         eprintln!("  proto_meta.expect: {}", proto_meta.expect);
@@ -1426,67 +2123,9 @@ fn to_screaming_snake_case(s: &str) -> String {
     result
 }
 
-fn is_option_type(ty: &Type) -> bool {
-    matches!(ty, Type::Path(type_path) if type_path.path.segments.first().map(|s| s.ident == "Option").unwrap_or(false))
-    // if let Type::Path(type_path) = ty {
-    //     if type_path.path.segments.len() == 1 && type_path.path.segments[0].ident == "Option" {
-    //         return true;
-    //     }
-    // }
-    // false
-}
-
-fn get_inner_type_from_option(ty: &Type) -> Option<Type> {
-    if let Type::Path(type_path) = ty {
-        if type_path.path.segments.len() == 1 && type_path.path.segments[0].ident == "Option" {
-            if let syn::PathArguments::AngleBracketed(angle_bracketed) =
-                &type_path.path.segments[0].arguments
-            {
-                if let Some(syn::GenericArgument::Type(inner_type)) = angle_bracketed.args.first() {
-                    return Some(inner_type.clone());
-                }
-            }
-        }
-    }
-    None
-}
-
-fn is_vec_type(ty: &Type) -> bool {
-    if let Type::Path(type_path) = ty {
-        if type_path.path.segments.len() == 1 && type_path.path.segments[0].ident == "Vec" {
-            return true;
-        }
-    }
-    false
-}
-
-fn get_inner_type_from_vec(ty: &Type) -> Option<Type> {
-    if let Type::Path(type_path) = ty {
-        if type_path.path.segments.len() == 1 && type_path.path.segments[0].ident == "Vec" {
-            if let syn::PathArguments::AngleBracketed(angle_bracketed) =
-                &type_path.path.segments[0].arguments
-            {
-                if let Some(syn::GenericArgument::Type(inner_type)) = angle_bracketed.args.first() {
-                    return Some(inner_type.clone());
-                }
-            }
-        }
-    }
-    None
-}
-
-fn is_proto_type_with_module(ty: &Type, proto_module: &str) -> bool {
-    if let Type::Path(type_path) = ty {
-        if let Some(segment) = type_path.path.segments.first() {
-            return segment.ident == proto_module;
-        }
-    }
-    false
-}
-
 fn get_proto_module(attrs: &[Attribute]) -> Option<String> {
     for attr in attrs {
-        if attr.path().is_ident("proto") {
+        if attr.path().is_ident(constants::DEFAULT_PROTO_MODULE) {
             if let Meta::List(meta_list) = &attr.meta {
                 let nested_metas: Punctuated<Meta, Comma> = Punctuated::parse_terminated
                     .parse2(meta_list.tokens.clone())
@@ -1511,7 +2150,7 @@ fn get_proto_module(attrs: &[Attribute]) -> Option<String> {
 
 fn get_proto_struct_rename(attrs: &[Attribute]) -> Option<String> {
     for attr in attrs {
-        if attr.path().is_ident("proto") {
+        if attr.path().is_ident(constants::DEFAULT_PROTO_MODULE) {
             if let Meta::List(meta_list) = &attr.meta {
                 let nested_metas: Punctuated<Meta, Comma> = Punctuated::parse_terminated
                     .parse2(meta_list.tokens.clone())
@@ -1536,7 +2175,7 @@ fn get_proto_struct_rename(attrs: &[Attribute]) -> Option<String> {
 
 fn has_transparent_attr(field: &Field) -> bool {
     for attr in &field.attrs {
-        if attr.path().is_ident("proto") {
+        if attr.path().is_ident(constants::DEFAULT_PROTO_MODULE) {
             if let Meta::List(meta_list) = &attr.meta {
                 let tokens = &meta_list.tokens;
                 let token_str = quote!(#tokens).to_string();
@@ -1551,7 +2190,7 @@ fn has_transparent_attr(field: &Field) -> bool {
 
 fn get_proto_rename(field: &Field) -> Option<String> {
     for attr in &field.attrs {
-        if attr.path().is_ident("proto") {
+        if attr.path().is_ident(constants::DEFAULT_PROTO_MODULE) {
             if let Meta::List(meta_list) = &attr.meta {
                 let nested_metas: Punctuated<Meta, Comma> = Punctuated::parse_terminated
                     .parse2(meta_list.tokens.clone())
@@ -1576,7 +2215,7 @@ fn get_proto_rename(field: &Field) -> Option<String> {
 
 fn get_proto_derive_from_with(field: &Field) -> Option<String> {
     for attr in &field.attrs {
-        if attr.path().is_ident("proto") {
+        if attr.path().is_ident(constants::DEFAULT_PROTO_MODULE) {
             if let Meta::List(meta_list) = &attr.meta {
                 let nested_metas: Punctuated<Meta, Comma> = Punctuated::parse_terminated
                     .parse2(meta_list.tokens.clone())
@@ -1601,7 +2240,7 @@ fn get_proto_derive_from_with(field: &Field) -> Option<String> {
 
 fn get_proto_derive_into_with(field: &Field) -> Option<String> {
     for attr in &field.attrs {
-        if attr.path().is_ident("proto") {
+        if attr.path().is_ident(constants::DEFAULT_PROTO_MODULE) {
             if let Meta::List(meta_list) = &attr.meta {
                 let nested_metas: Punctuated<Meta, Comma> = Punctuated::parse_terminated
                     .parse2(meta_list.tokens.clone())
@@ -1626,7 +2265,7 @@ fn get_proto_derive_into_with(field: &Field) -> Option<String> {
 
 fn has_proto_ignore(field: &Field) -> bool {
     for attr in &field.attrs {
-        if attr.path().is_ident("proto") {
+        if attr.path().is_ident(constants::DEFAULT_PROTO_MODULE) {
             if let Meta::List(meta_list) = &attr.meta {
                 let nested_metas: Punctuated<Meta, Comma> = Punctuated::parse_terminated
                     .parse2(meta_list.tokens.clone())
