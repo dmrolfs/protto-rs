@@ -8,11 +8,10 @@ publish.workspace = true
 proto_convert_derive = { path = "../proto_convert_derive" }
 tonic = "*"
 prost = "0.13"
+proptest = "1"
+proptest-derive = "0.5.1"
 
 [build-dependencies]
 tonic-build = "*"
 glob = "0.3.2"
 
-[dev-dependencies]
-proptest = "1"
-proptest-derive = "0.5.1"

@@ -35,6 +35,18 @@ fn main() {
             "service.HasOptional",
             "#[cfg_attr(test, derive(proptest_derive::Arbitrary))]",
         )
+        .type_attribute(
+            "service.TrackWithOptionals",
+            "#[cfg_attr(test, derive(proptest_derive::Arbitrary))]",
+        )
+        .type_attribute(
+            "service.MixedBehaviorTrack",
+            "#[cfg_attr(test, derive(proptest_derive::Arbitrary))]",
+        )
+        .type_attribute(
+            "service.HasStraight",
+            "#[cfg_attr(test, derive(proptest_derive::Arbitrary))]",
+        )
         .compile_protos(&proto_files, &[proto_dir])
         .unwrap();
 }

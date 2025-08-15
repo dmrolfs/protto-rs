@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 441151085ba0cd8ef6c0ae8bc104f7c043c0ac1bd4449027dce85a62d85d1e3d # shrinks to proto_has_straight = HasStraight { track: None }

@@ -11,12 +11,28 @@ message Request {
     string payload = 2;
 }
 
+message State {
+    repeated Track tracks = 1;
+}
+
 message Track {
     uint64 track_id = 1;
 }
 
-message State {
-    repeated Track tracks = 1;
+message TrackWithOptionals {
+    uint64 track_id = 1;
+    optional string name = 2;
+    optional uint32 duration = 3;
+}
+
+message MixedBehaviorTrack {
+    uint64 track_id = 1;
+    string required_field = 2;
+    string optional_with_default = 3;
+}
+
+message HasStraight {
+    Track track = 1;
 }
 
 message HasOptional {
@@ -40,4 +56,49 @@ enum AnotherStatus {
     MOVED_PERMANENTLY = 1;
     FOUND = 2;
     NOT_FOUND = 3;
+}
+
+message SimpleMessage {
+    optional string required_field = 1;
+    optional uint64 required_number = 2;
+    optional string optional_field = 3;
+}
+
+message OptionalMessage {
+    uint64 id = 1;
+    optional string name = 2;
+    optional uint32 count = 3;
+    optional uint32 priority = 4;
+    repeated string tags = 5;
+}
+
+message EnumMessage {
+    optional Status status_panic = 1;
+    optional Status status_error = 2;
+    optional Status status_default = 3;
+    optional Status status_optional = 4;
+}
+
+message ComplexExpectMessage {
+    optional string field_with_panic = 1;
+    optional string field_with_error = 2;
+    optional string field_with_custom_error = 3;
+    optional uint64 number_with_default = 4;
+    optional Status enum_with_panic = 5;
+    optional Status enum_with_error = 6;
+    repeated Track tracks_with_expect = 7;
+}
+
+message EdgeCaseMessage {
+    optional string empty_vs_none = 1;
+    repeated string empty_vs_missing_vec = 2;
+    optional uint64 zero_vs_none = 3;
+    optional bool false_vs_none = 4;
+}
+
+message CombinationMessage {
+    optional string rename_with_default = 1;
+    optional string transparent_with_expect = 2;
+    optional Status enum_with_default_and_optional = 3;
+    repeated Track collection_with_expect = 4;
 }
