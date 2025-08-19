@@ -411,7 +411,7 @@ mod field_processor {
                 }
             },
             ExpectMode::Error => {
-                generate_error_handling(
+                error_handler::generate_error_handling(
                     field_name,
                     &proto_field_ident,
                     field_type,
@@ -454,7 +454,7 @@ mod field_processor {
                 }
             },
             ExpectMode::Error => {
-                generate_error_handling(
+                error_handler::generate_error_handling(
                     field_name,
                     &proto_field_ident,
                     field_type,
@@ -504,7 +504,7 @@ mod field_processor {
                     }
                 },
                 ExpectMode::Error => {
-                    generate_error_handling(
+                    error_handler::generate_error_handling(
                         field_name,
                         &proto_field_ident,
                         field_type,
@@ -582,7 +582,7 @@ mod field_processor {
                     }
                 },
                 ExpectMode::Error => {
-                    generate_error_handling(
+                    error_handler::generate_error_handling(
                         field_name,
                         &proto_field_ident,
                         field_type,
@@ -653,7 +653,7 @@ mod field_processor {
                 }
             },
             ExpectMode::Error => {
-                generate_error_handling(
+                error_handler::generate_error_handling(
                     field_name,
                     &proto_field_ident,
                     field_type,
@@ -738,7 +738,7 @@ mod field_processor {
                 }
             },
             ExpectMode::Error => {
-                generate_error_handling(
+                error_handler::generate_error_handling(
                     field_name,
                     &proto_field_ident,
                     ctx.field_type,
@@ -783,7 +783,7 @@ mod field_processor {
                     }
                 },
                 ExpectMode::Error => {
-                    generate_error_handling(
+                    error_handler::generate_error_handling(
                         field_name,
                         &proto_field_ident,
                         field_type,
@@ -1074,6 +1074,162 @@ mod enum_processor {
     }
 }
 
+mod error_handler {
+    use super::*;
+
+    pub fn generate_error_definitions_if_needed(
+        name: &syn::Ident,
+        fields: &syn::punctuated::Punctuated<syn::Field, syn::token::Comma>,
+        struct_level_error_type: &Option<syn::Type>,
+    ) -> (proc_macro2::TokenStream, proc_macro2::TokenStream, bool) {
+        let error_name = default_error_name(name);
+
+        let needs_try_from = fields.iter().any(|field| {
+            if has_proto_ignore(field) {
+                false
+            } else {
+                let proto_meta = attribute_parser::ProtoFieldMeta::from_field(field).unwrap_or_default();
+                let expect_mode = determine_expect_mode(field, &proto_meta);
+                matches!(expect_mode, ExpectMode::Error)
+            }
+        });
+
+        let needs_default_error = fields.iter().any(|field| {
+            if has_proto_ignore(field) { return false; }
+            let proto_meta = attribute_parser::ProtoFieldMeta::from_field(field).unwrap_or_default();
+            if matches!(determine_expect_mode(field, &proto_meta), ExpectMode::Error) {
+                let effective_error_type = get_effective_error_type(&proto_meta, struct_level_error_type);
+                effective_error_type.is_none()
+            } else {
+                false
+            }
+        });
+
+        let conversion_error_def = if needs_try_from &&
+            needs_default_error &&
+            struct_level_error_type.is_none() {
+            generate_conversion_error(name)
+        } else {
+            quote! {}
+        };
+
+        let error_conversions = if needs_try_from &&
+            needs_default_error &&
+            struct_level_error_type.is_none() {
+            quote! {
+                impl From<String> for #error_name {
+                    fn from(err: String) -> Self {
+                        Self::MissingField(err)
+                    }
+                }
+            }
+        } else {
+            quote! {}
+        };
+
+        (conversion_error_def, error_conversions, needs_try_from)
+    }
+
+    pub fn get_actual_error_type(
+        needs_try_from: bool,
+        struct_level_error_type: &Option<syn::Type>,
+        error_name: &syn::Ident,
+    ) -> syn::Type {
+        if needs_try_from {
+            struct_level_error_type.clone().unwrap_or_else(|| {
+                syn::Type::Path(syn::TypePath {
+                    qself: None,
+                    path: syn::Path::from(error_name.clone()),
+                })
+            })
+        } else {
+            syn::parse_str("String").unwrap()
+        }
+    }
+
+    pub fn generate_error_handling(
+        field_name: &syn::Ident,
+        proto_field_ident: &syn::Ident,
+        field_type: &syn::Type,
+        proto_meta: &attribute_parser::ProtoFieldMeta,
+        error_name: &syn::Ident,
+        _struct_level_error_type: &Option<syn::Type>,
+        struct_level_error_fn: &Option<String>,
+    ) -> proc_macro2::TokenStream {
+        let is_rust_optional = type_analysis::is_option_type(field_type);
+        let error_fn_to_use = proto_meta.error_fn.as_ref().or(struct_level_error_fn.as_ref());
+
+        if let Some(error_fn) = error_fn_to_use {
+            let error_fn_path: syn::Path = syn::parse_str(error_fn)
+                .expect("Failed to parse error function path");
+
+            if is_rust_optional {
+                quote! {
+                    #field_name: Some(proto_struct.#proto_field_ident
+                        .ok_or_else(|| #error_fn_path(stringify!(#proto_field_ident)))?
+                        .into())
+                }
+            } else {
+                quote! {
+                    #field_name: proto_struct.#proto_field_ident
+                        .ok_or_else(|| #error_fn_path(stringify!(#proto_field_ident)))?
+                        .into()
+                }
+            }
+        } else {
+            let error_expr = quote! { #error_name::MissingField(stringify!(#proto_field_ident).to_string()) };
+
+            if is_rust_optional {
+                quote! {
+                    #field_name: Some(proto_struct.#proto_field_ident
+                        .ok_or_else(|| #error_expr)?
+                        .into())
+                }
+            } else {
+                quote! {
+                    #field_name: proto_struct.#proto_field_ident
+                        .ok_or_else(|| #error_expr)?
+                        .into()
+                }
+            }
+        }
+    }
+
+    fn generate_conversion_error(struct_name: &syn::Ident) -> proc_macro2::TokenStream {
+        let error_name = default_error_name(struct_name);
+
+        quote! {
+            #[derive(Debug, Clone, PartialEq)]
+            pub enum #error_name {
+                MissingField(String),
+            }
+
+            impl std::fmt::Display for #error_name {
+                fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                    match self {
+                        Self::MissingField(field) => write!(f, "Missing required field: {field}"),
+                    }
+                }
+            }
+
+            impl std::error::Error for #error_name {}
+        }
+    }
+
+    pub fn default_error_name(struct_name: &syn::Ident) -> syn::Ident {
+        syn::Ident::new(&format!("{struct_name}{DEFAULT_CONVERSION_ERROR_SUFFIX}"), struct_name.span())
+    }
+
+    pub fn get_effective_error_type(proto_meta: &attribute_parser::ProtoFieldMeta, struct_level_error_type: &Option<syn::Type>) -> Option<syn::Type> {
+        if let Some(field_error_type) = &proto_meta.error_type {
+            return Some(syn::parse_str(field_error_type)
+                .expect("Failed to parse field-level error_type"));
+        }
+
+        struct_level_error_type.clone()
+    }
+}
+
 
 #[derive(Debug, Clone)]
 enum ExpectMode {
@@ -1086,13 +1242,11 @@ enum ExpectMode {
 pub fn proto_convert_derive(input: TokenStream) -> TokenStream {
     let ast: DeriveInput = syn::parse(input).unwrap();
     let name = &ast.ident;
-    let error_name = default_error_name(name);
     let proto_module = get_proto_module(&ast.attrs).unwrap_or_else(|| "proto".to_string());
     let proto_name = get_proto_struct_rename(&ast.attrs).unwrap_or_else(|| name.to_string());
 
     let struct_level_error_type = get_proto_struct_error_type(&ast.attrs);
     let struct_level_error_fn = get_struct_level_error_fn(&ast.attrs);
-    let default_error_type = struct_level_error_type.clone().unwrap_or_else(|| syn::parse_str("String").unwrap());
 
     let proto_path =
         syn::parse_str::<syn::Path>(&format!("{}::{}", proto_module, proto_name)).unwrap();
@@ -1103,74 +1257,14 @@ pub fn proto_convert_derive(input: TokenStream) -> TokenStream {
                 syn::Fields::Named(fields_named) => {
                     let fields = &fields_named.named;
 
-                    let needs_try_from = fields.iter().any(|field| {
-                        if has_proto_ignore(field) {
-                            false
-                        } else {
-                            let proto_meta = attribute_parser::ProtoFieldMeta::from_field(field).unwrap_or_default();
-                            let expect_mode = determine_expect_mode(field, &proto_meta);
-                            matches!(expect_mode, ExpectMode::Error)
-                        }
-                    });
-
-                    let needs_default_error = fields.iter().any(|field| {
-                        if has_proto_ignore(field) { return false; }
-                        let proto_meta = attribute_parser::ProtoFieldMeta::from_field(field).unwrap_or_default();
-                        if matches!(determine_expect_mode(field, &proto_meta), ExpectMode::Error) {
-                            let effective_error_type = get_effective_error_type(&proto_meta, &struct_level_error_type);
-                            effective_error_type.is_none()
-                        } else {
-                            false
-                        }
-                    });
-
-                    // generate *ConversionError if needed
-                    let conversion_error_def = if needs_try_from &&
-                        needs_default_error &&
-                        struct_level_error_type.is_none() {
-                        generate_conversion_error(&name)
-                    } else {
-                        quote! {}
-                    };
-
-                    // let custom_errors: std::collections::HashSet<_> = fields.iter()
-                    //     .filter_map(|field| {
-                    //         if has_proto_ignore(field) { return None; }
-                    //         let proto_meta = ProtoFieldMeta::from_field(field).unwrap_or_default();
-                    //         if matches!(determine_expect_mode(field, &proto_meta), ExpectMode::Error) {
-                    //             let effective_error_type = get_effective_error_type(&proto_meta, &struct_level_error_type);
-                    //             if let Some(error_type) = effective_error_type {
-                    //                 let struct_has_error_fn = struct_level_error_fn.is_some();
-                    //                 if proto_meta.error_fn.is_none() && !struct_has_error_fn {
-                    //                     let field_name = field.ident.as_ref().unwrap();
-                    //                     panic!("Field '{}': When using a custom error_type, you must also specify either struct-level or field-level error_fn", field_name);
-                    //                 }
-                    //                 Some(quote!(#error_type).to_string())
-                    //             } else if let Some(_error_fn) = &proto_meta.error_fn {
-                    //                 panic!("Field-level error_fn requires struct-level error_type; e.g., #[proto(error_type = MyError)] on the struct");
-                    //             } else {
-                    //                 None
-                    //             }
-                    //         } else {
-                    //             None
-                    //         }
-                    //     })
-                    //     .collect();
-
-                    let error_conversions = if needs_try_from &&
-                        needs_default_error &&
-                        struct_level_error_type.is_none() {
-
-                        quote! {
-                            impl From<String> for #error_name {
-                                fn from(err: String) -> Self {
-                                    Self::MissingField(err)
-                                }
-                            }
-                        }
-                    } else {
-                        quote ! {}
-                    };
+                    let error_name = error_handler::default_error_name(name);
+                    let (conversion_error_def, error_conversions, needs_try_from) =
+                        error_handler::generate_error_definitions_if_needed(name, fields, &struct_level_error_type);
+                    let actual_error_type = error_handler::get_actual_error_type(
+                        needs_try_from,
+                        &struct_level_error_type,
+                        &error_name,
+                    );
 
                     let from_proto_fields = fields.iter().map(|field| {
                         let ctx = field_context::FieldProcessingContext::new(
@@ -1199,17 +1293,6 @@ pub fn proto_convert_derive(input: TokenStream) -> TokenStream {
 
                         field_processor::generate_from_my_field(field, &ctx)
                     });
-
-                    let actual_error_type = if needs_try_from {
-                        struct_level_error_type.clone().unwrap_or_else(|| {
-                            syn::Type::Path(syn::TypePath {
-                                qself: None,
-                                path: syn::Path::from(error_name.clone()),
-                            })
-                        })
-                    } else {
-                        default_error_type.clone()
-                    };
 
                     let gen = if needs_try_from {
                         quote! {
@@ -1291,102 +1374,6 @@ pub fn proto_convert_derive(input: TokenStream) -> TokenStream {
     }
 }
 
-fn default_error_name(struct_name: &syn::Ident) -> Ident {
-    syn::Ident::new(&format!("{struct_name}{DEFAULT_CONVERSION_ERROR_SUFFIX}"), struct_name.span())
-}
-
-// add *ConversionError type definition for when TryFrom is needed
-fn generate_conversion_error(struct_name: &syn::Ident) -> proc_macro2::TokenStream {
-    let error_name = default_error_name(struct_name);
-
-    quote! {
-        #[derive(Debug, Clone, PartialEq)]
-        pub enum #error_name {
-            MissingField(String),
-        }
-
-        impl std::fmt::Display for #error_name {
-            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-                match self {
-                    Self::MissingField(field) => write!(f, "Missing required field: {field}"),
-                }
-            }
-        }
-
-        impl std::error::Error for #error_name {}
-    }
-}
-
-// fn generate_error_conversion(error_name: &Ident, custom_error: &str) -> proc_macro2::TokenStream {
-//     let custom_err_path: syn::Path = syn::parse_str(custom_error).expect("Failed to parse custom error path");
-//
-//     quote! {
-//         impl From<#custom_err_path> for #error_name {
-//             fn from(err: #custom_err_path) -> Self {
-//                 Self::MissingField(err.to_string())
-//             }
-//         }
-//     }
-// }
-
-fn generate_error_handling(
-    field_name: &syn::Ident,
-    proto_field_ident: &syn::Ident,
-    field_type: &syn::Type,
-    proto_meta: &attribute_parser::ProtoFieldMeta,
-    error_name: &Ident,
-    _struct_level_error_type: &Option<syn::Type>,
-    struct_level_error_fn: &Option<String>,
-) -> proc_macro2::TokenStream {
-    let is_rust_optional = type_analysis::is_option_type(field_type);
-
-    let error_fn_to_use = proto_meta.error_fn.as_ref().or(struct_level_error_fn.as_ref());
-
-    if let Some(error_fn) = error_fn_to_use {
-        let error_fn_path: syn::Path = syn::parse_str(error_fn)
-            .expect("Failed to parse error function path");
-
-        if is_rust_optional {
-            quote! {
-                #field_name: Some(proto_struct.#proto_field_ident
-                    .ok_or_else(|| #error_fn_path(stringify!(#proto_field_ident)))?
-                    .into())
-            }
-        } else {
-            quote! {
-                #field_name: proto_struct.#proto_field_ident
-                    .ok_or_else(|| #error_fn_path(stringify!(#proto_field_ident)))?
-                    .into()
-            }
-        }
-    } else {
-        let error_expr = quote! { #error_name::MissingField(stringify!(#proto_field_ident).to_string()) };
-
-        if is_rust_optional {
-            quote! {
-                #field_name: Some(proto_struct.#proto_field_ident
-                    .ok_or_else(|| #error_expr)?
-                    .into())
-            }
-        } else {
-            quote! {
-                #field_name: proto_struct.#proto_field_ident
-                    .ok_or_else(|| #error_expr)?
-                    .into()
-            }
-        }
-    }
-}
-
-// fn is_string_error_type(error_type: &syn::Type) -> bool {
-//     if let syn::Type::Path(type_path) = error_type {
-//         if type_path.path.segments.len() == 1 {
-//             return type_path.path.segments[0].ident == "String";
-//         }
-//     }
-//     false
-// }
-
 fn generate_default_value(field_type: &syn::Type, default_fn: Option<&str>) -> proc_macro2::TokenStream {
     if let Some(default_fn_name) = default_fn {
         let default_fn_path: syn::Path = syn::parse_str(&default_fn_name)
@@ -1439,15 +1426,6 @@ fn get_proto_struct_error_type(attrs: &[Attribute]) -> Option<syn::Type> {
         }
     }
     None
-}
-
-fn get_effective_error_type(proto_meta: &attribute_parser::ProtoFieldMeta, struct_level_error_type: &Option<syn::Type>) -> Option<syn::Type> {
-    if let Some(field_error_type) = &proto_meta.error_type {
-        return Some(syn::parse_str(field_error_type)
-            .expect("Failed to parse field-level error_type"));
-    }
-
-    struct_level_error_type.clone()
 }
 
 fn get_struct_level_error_fn(attrs: &[Attribute]) -> Option<String> {
