@@ -1569,18 +1569,15 @@ mod enum_processor {
     }
 }
 
-mod error_handler {
-    use crate::expect_analysis::ExpectMode;
+mod error_analysis {
     use super::*;
+    use crate::expect_analysis::ExpectMode;
 
-    pub fn generate_error_definitions_if_needed(
-        name: &syn::Ident,
+    /// Analyzes fields to determine if TryFrom trait is needed
+    pub fn requires_try_from(
         fields: &syn::punctuated::Punctuated<syn::Field, syn::token::Comma>,
-        struct_level_error_type: &Option<syn::Type>,
-    ) -> (proc_macro2::TokenStream, proc_macro2::TokenStream, bool) {
-        let error_name = default_error_name(name);
-
-        let needs_try_from = fields.iter().any(|field| {
+    ) -> bool {
+        fields.iter().any(|field| {
             if attribute_parser::has_proto_ignore(field) {
                 false
             } else {
@@ -1588,44 +1585,76 @@ mod error_handler {
                 let expect_mode = ExpectMode::from_field_meta(field, &proto_meta);
                 matches!(expect_mode, ExpectMode::Error)
             }
-        });
+        })
+    }
 
-        let needs_default_error = fields.iter().any(|field| {
-            if attribute_parser::has_proto_ignore(field) { return false; }
+    /// Analyzes fields to determine if default error type generation is needed
+    pub fn requires_default_error_type(
+        fields: &syn::punctuated::Punctuated<syn::Field, syn::token::Comma>,
+        struct_level_error_type: &Option<syn::Type>,
+    ) -> bool {
+        fields.iter().any(|field| {
+            if attribute_parser::has_proto_ignore(field) {
+                return false;
+            }
             let proto_meta = attribute_parser::ProtoFieldMeta::from_field(field).unwrap_or_default();
             if matches!(ExpectMode::from_field_meta(field, &proto_meta), ExpectMode::Error) {
-                let effective_error_type = get_effective_error_type(&proto_meta, struct_level_error_type);
+                let effective_error_type = error_types::get_effective_error_type(&proto_meta, struct_level_error_type);
                 effective_error_type.is_none()
             } else {
                 false
             }
-        });
-
-        let conversion_error_def = if needs_try_from &&
-            needs_default_error &&
-            struct_level_error_type.is_none() {
-            generate_conversion_error(name)
-        } else {
-            quote! {}
-        };
-
-        let error_conversions = if needs_try_from &&
-            needs_default_error &&
-            struct_level_error_type.is_none() {
-            quote! {
-                impl From<String> for #error_name {
-                    fn from(err: String) -> Self {
-                        Self::MissingField(err)
-                    }
-                }
-            }
-        } else {
-            quote! {}
-        };
-
-        (conversion_error_def, error_conversions, needs_try_from)
+        })
     }
 
+    /// Comprehensive analysis of error requirements for a struct
+    pub struct ErrorRequirements {
+        pub needs_try_from: bool,
+        pub needs_default_error: bool,
+        pub needs_error_conversions: bool,
+    }
+
+    pub fn analyze_error_requirements(
+        fields: &syn::punctuated::Punctuated<syn::Field, syn::token::Comma>,
+        struct_level_error_type: &Option<syn::Type>,
+    ) -> ErrorRequirements {
+        let needs_try_from = requires_try_from(fields);
+        let needs_default_error = requires_default_error_type(fields, struct_level_error_type);
+        let needs_error_conversions = needs_try_from && needs_default_error && struct_level_error_type.is_none();
+
+        ErrorRequirements {
+            needs_try_from,
+            needs_default_error,
+            needs_error_conversions,
+        }
+    }
+}
+
+mod error_types {
+    use super::*;
+
+    /// Generates the default error name for a struct
+    pub fn default_error_name(struct_name: &syn::Ident) -> syn::Ident {
+        syn::Ident::new(
+            &format!("{struct_name}{}", crate::constants::DEFAULT_CONVERSION_ERROR_SUFFIX),
+            struct_name.span()
+        )
+    }
+
+    /// Determines the effective error type for a field
+    pub fn get_effective_error_type(
+        proto_meta: &attribute_parser::ProtoFieldMeta,
+        struct_level_error_type: &Option<syn::Type>
+    ) -> Option<syn::Type> {
+        if let Some(field_error_type) = &proto_meta.error_type {
+            return Some(syn::parse_str(field_error_type)
+                .expect("Failed to parse field-level error_type"));
+        }
+
+        struct_level_error_type.clone()
+    }
+
+    /// Determines the actual error type to use in trait implementations
     pub fn get_actual_error_type(
         needs_try_from: bool,
         struct_level_error_type: &Option<syn::Type>,
@@ -1643,55 +1672,8 @@ mod error_handler {
         }
     }
 
-    pub fn generate_error_handling(
-        field_name: &syn::Ident,
-        proto_field_ident: &syn::Ident,
-        field_type: &syn::Type,
-        proto_meta: &attribute_parser::ProtoFieldMeta,
-        error_name: &syn::Ident,
-        _struct_level_error_type: &Option<syn::Type>,
-        struct_level_error_fn: &Option<String>,
-    ) -> proc_macro2::TokenStream {
-        let is_rust_optional = type_analysis::is_option_type(field_type);
-        let error_fn_to_use = proto_meta.error_fn.as_ref().or(struct_level_error_fn.as_ref());
-
-        if let Some(error_fn) = error_fn_to_use {
-            let error_fn_path: syn::Path = syn::parse_str(error_fn)
-                .expect("Failed to parse error function path");
-
-            if is_rust_optional {
-                quote! {
-                    #field_name: Some(proto_struct.#proto_field_ident
-                        .ok_or_else(|| #error_fn_path(stringify!(#proto_field_ident)))?
-                        .into())
-                }
-            } else {
-                quote! {
-                    #field_name: proto_struct.#proto_field_ident
-                        .ok_or_else(|| #error_fn_path(stringify!(#proto_field_ident)))?
-                        .into()
-                }
-            }
-        } else {
-            let error_expr = quote! { #error_name::MissingField(stringify!(#proto_field_ident).to_string()) };
-
-            if is_rust_optional {
-                quote! {
-                    #field_name: Some(proto_struct.#proto_field_ident
-                        .ok_or_else(|| #error_expr)?
-                        .into())
-                }
-            } else {
-                quote! {
-                    #field_name: proto_struct.#proto_field_ident
-                        .ok_or_else(|| #error_expr)?
-                        .into()
-                }
-            }
-        }
-    }
-
-    fn generate_conversion_error(struct_name: &syn::Ident) -> proc_macro2::TokenStream {
+    /// Generates the conversion error enum definition
+    pub fn generate_conversion_error_enum(struct_name: &syn::Ident) -> proc_macro2::TokenStream {
         let error_name = default_error_name(struct_name);
 
         quote! {
@@ -1712,17 +1694,143 @@ mod error_handler {
         }
     }
 
-    pub fn default_error_name(struct_name: &syn::Ident) -> syn::Ident {
-        syn::Ident::new(&format!("{struct_name}{DEFAULT_CONVERSION_ERROR_SUFFIX}"), struct_name.span())
+    /// Generates error conversion implementations
+    pub fn generate_error_conversions(error_name: &syn::Ident) -> proc_macro2::TokenStream {
+        quote! {
+            impl From<String> for #error_name {
+                fn from(err: String) -> Self {
+                    Self::MissingField(err)
+                }
+            }
+        }
+    }
+}
+
+mod error_codegen {
+    use super::*;
+
+    /// Generates error handling code for a specific field
+    pub fn generate_error_handling(
+        field_name: &syn::Ident,
+        proto_field_ident: &syn::Ident,
+        field_type: &syn::Type,
+        proto_meta: &attribute_parser::ProtoFieldMeta,
+        error_name: &syn::Ident,
+        _struct_level_error_type: &Option<syn::Type>,
+        struct_level_error_fn: &Option<String>,
+    ) -> proc_macro2::TokenStream {
+        let is_rust_optional = type_analysis::is_option_type(field_type);
+        let error_fn_to_use = proto_meta.error_fn.as_ref().or(struct_level_error_fn.as_ref());
+
+        if let Some(error_fn) = error_fn_to_use {
+            generate_custom_error_handling(field_name, proto_field_ident, is_rust_optional, error_fn)
+        } else {
+            generate_default_error_handling(field_name, proto_field_ident, is_rust_optional, error_name)
+        }
     }
 
-    pub fn get_effective_error_type(proto_meta: &attribute_parser::ProtoFieldMeta, struct_level_error_type: &Option<syn::Type>) -> Option<syn::Type> {
-        if let Some(field_error_type) = &proto_meta.error_type {
-            return Some(syn::parse_str(field_error_type)
-                .expect("Failed to parse field-level error_type"));
-        }
+    /// Generates error handling using a custom error function
+    fn generate_custom_error_handling(
+        field_name: &syn::Ident,
+        proto_field_ident: &syn::Ident,
+        is_rust_optional: bool,
+        error_fn: &str,
+    ) -> proc_macro2::TokenStream {
+        let error_fn_path: syn::Path = syn::parse_str(error_fn)
+            .expect("Failed to parse error function path");
 
-        struct_level_error_type.clone()
+        if is_rust_optional {
+            quote! {
+                #field_name: Some(proto_struct.#proto_field_ident
+                    .ok_or_else(|| #error_fn_path(stringify!(#proto_field_ident)))?
+                    .into())
+            }
+        } else {
+            quote! {
+                #field_name: proto_struct.#proto_field_ident
+                    .ok_or_else(|| #error_fn_path(stringify!(#proto_field_ident)))?
+                    .into()
+            }
+        }
+    }
+
+    /// Generates error handling using the default error type
+    fn generate_default_error_handling(
+        field_name: &syn::Ident,
+        proto_field_ident: &syn::Ident,
+        is_rust_optional: bool,
+        error_name: &syn::Ident,
+    ) -> proc_macro2::TokenStream {
+        let error_expr = quote! {
+            #error_name::MissingField(stringify!(#proto_field_ident).to_string())
+        };
+
+        if is_rust_optional {
+            quote! {
+                #field_name: Some(proto_struct.#proto_field_ident
+                    .ok_or_else(|| #error_expr)?
+                    .into())
+            }
+        } else {
+            quote! {
+                #field_name: proto_struct.#proto_field_ident
+                    .ok_or_else(|| #error_expr)?
+                    .into()
+            }
+        }
+    }
+}
+
+mod error_handler {
+    use super::*;
+
+    pub use error_types::{default_error_name, get_actual_error_type};
+
+    /// Main orchestration function for generating all error-related definitions
+    pub fn generate_error_definitions_if_needed(
+        name: &syn::Ident,
+        fields: &syn::punctuated::Punctuated<syn::Field, syn::token::Comma>,
+        struct_level_error_type: &Option<syn::Type>,
+    ) -> (proc_macro2::TokenStream, proc_macro2::TokenStream, bool) {
+        let requirements = error_analysis::analyze_error_requirements(fields, struct_level_error_type);
+
+        let conversion_error_def = if requirements.needs_try_from &&
+            requirements.needs_default_error &&
+            struct_level_error_type.is_none() {
+            error_types::generate_conversion_error_enum(name)
+        } else {
+            quote! {}
+        };
+
+        let error_conversions = if requirements.needs_error_conversions {
+            let error_name = error_types::default_error_name(name);
+            error_types::generate_error_conversions(&error_name)
+        } else {
+            quote! {}
+        };
+
+        (conversion_error_def, error_conversions, requirements.needs_try_from)
+    }
+
+    /// Generates error handling code for a specific field
+    pub fn generate_error_handling(
+        field_name: &syn::Ident,
+        proto_field_ident: &syn::Ident,
+        field_type: &syn::Type,
+        proto_meta: &attribute_parser::ProtoFieldMeta,
+        error_name: &syn::Ident,
+        struct_level_error_type: &Option<syn::Type>,
+        struct_level_error_fn: &Option<String>,
+    ) -> proc_macro2::TokenStream {
+        error_codegen::generate_error_handling(
+            field_name,
+            proto_field_ident,
+            field_type,
+            proto_meta,
+            error_name,
+            struct_level_error_type,
+            struct_level_error_fn,
+        )
     }
 }
 
