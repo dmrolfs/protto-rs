@@ -52,6 +52,197 @@ mod debug {
     }
 }
 
+mod macro_input {
+    use crate::constants::DEFAULT_PROTO_MODULE;
+    use super::*;
+
+    pub struct ParsedInput {
+        pub name: syn::Ident,
+        pub proto_module: String,
+        pub proto_name: String,
+        pub struct_level_error_type: Option<syn::Type>,
+        pub struct_level_error_fn: Option<String>,
+        pub proto_path: syn::Path,
+    }
+
+    pub fn parse_derive_input(ast: syn::DeriveInput) -> ParsedInput {
+        let name = ast.ident;
+        let proto_module = attribute_parser::get_proto_module(&ast.attrs)
+            .unwrap_or_else(|| DEFAULT_PROTO_MODULE.to_string());
+        let proto_name = attribute_parser::get_proto_struct_rename(&ast.attrs)
+            .unwrap_or_else(|| name.to_string());
+        let struct_level_error_type = attribute_parser::get_proto_struct_error_type(&ast.attrs);
+        let struct_level_error_fn = attribute_parser::get_struct_level_error_fn(&ast.attrs);
+        let proto_path = syn::parse_str::<syn::Path>(&format!("{}::{}", proto_module, proto_name))
+            .expect("Failed to create proto path");
+
+        ParsedInput {
+            name,
+            proto_module,
+            proto_name,
+            struct_level_error_type,
+            struct_level_error_fn,
+            proto_path,
+        }
+    }
+}
+
+mod struct_impl_generator {
+    use super::*;
+    use field_analysis::FieldProcessingContext;
+
+    pub struct StructImplConfig<'a> {
+        pub name: &'a syn::Ident,
+        pub fields: &'a syn::punctuated::Punctuated<syn::Field, syn::token::Comma>,
+        pub proto_module: &'a str,
+        pub proto_name: &'a str,
+        pub proto_path: &'a syn::Path,
+        pub struct_level_error_type: &'a Option<syn::Type>,
+        pub struct_level_error_fn: &'a Option<String>,
+    }
+
+    pub fn generate_struct_implementations(config: StructImplConfig) -> proc_macro2::TokenStream {
+        let error_name = error_handler::default_error_name(config.name);
+
+        let (conversion_error_def, error_conversions, needs_try_from) =
+            error_handler::generate_error_definitions_if_needed(
+                config.name,
+                config.fields,
+                config.struct_level_error_type
+            );
+
+        let actual_error_type = error_handler::get_actual_error_type(
+            needs_try_from,
+            config.struct_level_error_type,
+            &error_name,
+        );
+
+        let from_proto_fields = generate_from_proto_fields(config.fields, &config, &error_name);
+        let from_my_fields = generate_from_my_fields(config.fields, &config, &error_name);
+
+        let name = config.name;
+        let proto_path = config.proto_path;
+
+        if needs_try_from {
+            quote! {
+                #conversion_error_def
+                #error_conversions
+
+                impl TryFrom<#proto_path> for #name {
+                    type Error = #actual_error_type;
+
+                    fn try_from(proto_struct: #proto_path) -> Result<Self, Self::Error> {
+                        Ok(Self {
+                            #(#from_proto_fields),*
+                        })
+                    }
+                }
+
+                impl From<#name> for #proto_path {
+                    fn from(my_struct: #name) -> Self {
+                        Self {
+                            #(#from_my_fields),*
+                        }
+                    }
+                }
+            }
+        } else {
+            quote! {
+                impl From<#proto_path> for #name {
+                    fn from(proto_struct: #proto_path) -> Self {
+                        Self {
+                            #(#from_proto_fields),*
+                        }
+                    }
+                }
+
+                impl From<#name> for #proto_path {
+                    fn from(my_struct: #name) -> Self {
+                        Self {
+                            #(#from_my_fields),*
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn generate_from_proto_fields<'a>(
+        fields: &'a syn::punctuated::Punctuated<syn::Field, syn::token::Comma>,
+        config: &'a StructImplConfig<'a>,
+        error_name: &'a syn::Ident,
+    ) -> impl Iterator<Item = proc_macro2::TokenStream> + 'a {
+        fields.iter().map(move |field| {
+            let ctx = FieldProcessingContext::new(
+                config.name,
+                field,
+                error_name,
+                config.struct_level_error_type,
+                config.struct_level_error_fn,
+                config.proto_module,
+                config.proto_name,
+            );
+
+            field_processor::generate_from_proto_field(field, &ctx)
+        })
+    }
+
+    fn generate_from_my_fields<'a>(
+        fields: &'a syn::punctuated::Punctuated<syn::Field, syn::token::Comma>,
+        config: &'a StructImplConfig<'a>,
+        error_name: &'a syn::Ident,
+    ) -> impl Iterator<Item = proc_macro2::TokenStream> + 'a {
+        fields
+            .iter()
+            .filter(|field| !attribute_parser::has_proto_ignore(field))
+            .map(move |field| {
+                let ctx = FieldProcessingContext::new(
+                    config.name,
+                    field,
+                    error_name,
+                    config.struct_level_error_type,
+                    config.struct_level_error_fn,
+                    config.proto_module,
+                    config.proto_name,
+                );
+
+                field_processor::generate_from_my_field(field, &ctx)
+            })
+    }
+}
+
+mod tuple_impl_generator {
+    use super::*;
+
+    pub fn generate_tuple_implementations(
+        name: &syn::Ident,
+        fields_unnamed: &syn::FieldsUnnamed,
+    ) -> proc_macro2::TokenStream {
+        if fields_unnamed.unnamed.len() != 1 {
+            panic!(
+                "ProtoConvert only supports tuple structs with exactly one field, found {}",
+                fields_unnamed.unnamed.len()
+            );
+        }
+
+        let inner_type = &fields_unnamed.unnamed[0].ty;
+
+        quote! {
+            impl From<#inner_type> for #name {
+                fn from(value: #inner_type) -> Self {
+                    #name(value)
+                }
+            }
+
+            impl From<#name> for #inner_type {
+                fn from(my: #name) -> Self {
+                    my.0
+                }
+            }
+        }
+    }
+}
+
 mod attribute_parser {
     use super::*;
 
@@ -1600,227 +1791,39 @@ mod utils {
 
 }
 
-
 #[proc_macro_derive(ProtoConvert, attributes(proto))]
 pub fn proto_convert_derive(input: TokenStream) -> TokenStream {
     let ast: DeriveInput = syn::parse(input).unwrap();
-    let name = &ast.ident;
-    let proto_module = attribute_parser::get_proto_module(&ast.attrs).unwrap_or_else(|| "proto".to_string());
-    let proto_name = attribute_parser::get_proto_struct_rename(&ast.attrs).unwrap_or_else(|| name.to_string());
-
-    let struct_level_error_type = attribute_parser::get_proto_struct_error_type(&ast.attrs);
-    let struct_level_error_fn = attribute_parser::get_struct_level_error_fn(&ast.attrs);
-
-    let proto_path =
-        syn::parse_str::<syn::Path>(&format!("{}::{}", proto_module, proto_name)).unwrap();
+    let parsed_input = macro_input::parse_derive_input(ast.clone());
 
     match &ast.data {
         syn::Data::Struct(data_struct) => {
             match &data_struct.fields {
                 syn::Fields::Named(fields_named) => {
-                    let fields = &fields_named.named;
-
-                    let error_name = error_handler::default_error_name(name);
-                    let (conversion_error_def, error_conversions, needs_try_from) =
-                        error_handler::generate_error_definitions_if_needed(name, fields, &struct_level_error_type);
-                    let actual_error_type = error_handler::get_actual_error_type(
-                        needs_try_from,
-                        &struct_level_error_type,
-                        &error_name,
-                    );
-
-                    let from_proto_fields = fields.iter().map(|field| {
-                        let ctx = field_analysis::FieldProcessingContext::new(
-                            name,
-                            field,
-                            &error_name,
-                            &struct_level_error_type,
-                            &struct_level_error_fn,
-                            &proto_module,
-                            &proto_name,
-                        );
-
-                        field_processor::generate_from_proto_field(field, &ctx)
-                    });
-
-                    let from_my_fields = fields
-                        .iter()
-                        .filter(|field| !attribute_parser::has_proto_ignore(field))
-                        .map(|field| {
-                            let ctx = field_analysis::FieldProcessingContext::new(
-                                name,
-                                field,
-                                &error_name,
-                                &struct_level_error_type,
-                                &struct_level_error_fn,
-                                &proto_module,
-                                &proto_name,
-                            );
-
-                            field_processor::generate_from_my_field(field, &ctx)
-                        });
-
-                    let gen = if needs_try_from {
-                        quote! {
-                            #conversion_error_def
-                            #error_conversions
-
-                            impl TryFrom<#proto_path> for #name {
-                                type Error = #actual_error_type;
-
-                                fn try_from(proto_struct: #proto_path) -> Result<Self, Self::Error> {
-                                    Ok(Self {
-                                        #(#from_proto_fields),*
-                                    })
-                                }
-                            }
-
-                            impl From<#name> for #proto_path {
-                                fn from(my_struct: #name) -> Self {
-                                    Self {
-                                        #(#from_my_fields),*
-                                    }
-                                }
-                            }
-                        }
-                    } else {
-                        quote! {
-                            impl From<#proto_path> for #name {
-                                fn from(proto_struct: #proto_path) -> Self {
-                                    Self {
-                                        #(#from_proto_fields),*
-                                    }
-                                }
-                            }
-
-                            impl From<#name> for #proto_path {
-                                fn from(my_struct: #name) -> Self {
-                                    Self {
-                                        #(#from_my_fields),*
-                                    }
-                                }
-                            }
-                        }
+                    let config = struct_impl_generator::StructImplConfig {
+                        name: &parsed_input.name,
+                        fields: &fields_named.named,
+                        proto_module: &parsed_input.proto_module,
+                        proto_name: &parsed_input.proto_name,
+                        proto_path: &parsed_input.proto_path,
+                        struct_level_error_type: &parsed_input.struct_level_error_type,
+                        struct_level_error_fn: &parsed_input.struct_level_error_fn,
                     };
-                    gen.into()
+
+                    struct_impl_generator::generate_struct_implementations(config).into()
                 }
                 syn::Fields::Unnamed(fields_unnamed) => {
-                    if fields_unnamed.unnamed.len() != 1 {
-                        panic!("ProtoConvert only supports tuple structs with exactly one field, found {}", fields_unnamed.unnamed.len());
-                    }
-                    let inner_type = &fields_unnamed.unnamed[0].ty;
-                    let gen = quote! {
-                        impl From<#inner_type> for #name {
-                            fn from(value: #inner_type) -> Self {
-                                #name(value)
-                            }
-                        }
-
-                        impl From<#name> for #inner_type {
-                            fn from(my: #name) -> Self {
-                                my.0
-                            }
-                        }
-                    };
-                    gen.into()
+                    tuple_impl_generator::generate_tuple_implementations(&parsed_input.name, fields_unnamed).into()
                 }
                 syn::Fields::Unit => {
                     panic!("ProtoConvert does not support unit structs");
                 }
             }
         },
-
         syn::Data::Enum(data_enum) => {
             let variants = &data_enum.variants;
-            let gen = enum_processor::generate_enum_conversions(name, variants, &proto_module);
-            gen.into()
+            enum_processor::generate_enum_conversions(&parsed_input.name, variants, &parsed_input.proto_module).into()
         },
-
         _ => panic!("ProtoConvert only supports structs and enums, not unions"),
     }
 }
-
-// fn is_defaultable_type(ty: &Type) -> bool {
-//     if let Type::Path(type_path) = ty {
-//         if type_path.path.segments.len() == 1 {
-//             let type_name = type_path.path.segments[0].ident.to_string();
-//             matches!(type_name.as_str(),
-//                 "i8" | "i16" | "i32" | "i64" | "i128" | "isize" |
-//                 "u8" | "u16" | "u32" | "u64" | "u128" | "usize" |
-//                 "f32" | "f64" | "bool" | "String" |
-//                 "Vec" | "HashMap" | "BTreeMap" | "HashSet" | "BTreeSet"
-//             )
-//         } else {
-//             false
-//         }
-//     } else {
-//         false
-//     }
-// }
-
-
-
-// Helper to get proto module from current context (struct-level attributes)
-// fn get_proto_module_from_context() -> Option<String> {
-//     // This would need to be passed down from the main macro context
-//     // For now, return None and fall back to default
-//     None
-// }
-
-
-
-// // helper function to get the proto module for a specific field
-// // this checks field-level module override first, then falls back to struct-level
-// fn get_proto_module_for_field(field: &syn::Field) -> Option<String> {
-//     // first check if the field has its own module specification
-//     for attr in &field.attrs {
-//         if attr.path().is_ident("proto") {
-//             if let Meta::List(meta_list) = &attr.meta {
-//                 let nested_metas: Punctuated<Meta, Comma> = Punctuated::parse_terminated
-//                     .parse2(meta_list.tokens.clone())
-//                     .unwrap_or_else(|e| panic!("Failed to parse proto attribute: {e}"));
-//
-//                 for meta in nested_metas {
-//                     if let Meta::NameValue(meta_nv) = meta {
-//                         if meta_nv.path.is_ident("module") {
-//                             if let Expr::Lit(expr_lit) = &meta_nv.value {
-//                                 if let Lit::Str(lit_str) = &expr_lit.lit {
-//                                     return Some(lit_str.value());
-//                                 }
-//                             }
-//                         }
-//                     }
-//                 }
-//             }
-//         }
-//     }
-//
-//     None
-// }
-
-// fn get_proto_error_type(attrs: &[Attribute]) -> Option<syn::Type> {
-//     for attr in attrs {
-//         if attr.path().is_ident("proto") {
-//             if let Meta::List(meta_list) = &attr.meta {
-//                 let nested_metas: Punctuated<Meta, Comma> = Punctuated::parse_terminated
-//                     .parse2(meta_list.tokens.clone())
-//                     .unwrap_or_else(|e| panic!("Failed to parse proto attribute: {}", e));
-//                 for meta in nested_metas {
-//                     if let Meta::NameValue(meta_nv) = meta {
-//                         if meta_nv.path.is_ident("error_type") {
-//                             if let Expr::Path(expr_path) = &meta_nv.value {
-//                                 return Some(syn::Type::Path(syn::TypePath {
-//                                     qself: None,
-//                                     path: expr_path.path.clone(),
-//                                 }));
-//                             }
-//                             panic!("error_type value must be a type path, e.g., #[proto(error_type = MyError)]");
-//                         }
-//                     }
-//                 }
-//             }
-//         }
-//     }
-//     None
-// }
-
