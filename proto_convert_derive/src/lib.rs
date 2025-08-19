@@ -466,8 +466,8 @@ mod type_analysis {
     }
 }
 
-mod field_context {
-    use crate::utils::ExpectMode;
+mod field_analysis {
+    use crate::expect_analysis::ExpectMode;
     use super::*;
 
     #[derive(Clone)]
@@ -518,7 +518,7 @@ mod field_context {
             let field_name = field.ident.as_ref().unwrap();
             let field_type = &field.ty;
             let proto_meta = attribute_parser::ProtoFieldMeta::from_field(field).unwrap_or_default();
-            let expect_mode = utils::determine_expect_mode(field, &proto_meta);
+            let expect_mode = ExpectMode::from_field_meta(field, &proto_meta);
             let has_default = proto_meta.default_fn.is_some();
             let default_fn = proto_meta.default_fn.clone();
 
@@ -545,12 +545,75 @@ mod field_context {
             }
         }
     }
+
+
+    pub fn is_optional_proto_field_for_ctx(ctx: &FieldProcessingContext, field: &syn::Field) -> bool {
+        is_optional_proto_field(ctx.struct_name, field, ctx.proto_name)
+    }
+
+    pub fn is_optional_proto_field(name: &syn::Ident, field: &syn::Field, proto_name: &str) -> bool {
+        let field_name = field.ident.as_ref().unwrap();
+
+        let proto_meta_result = attribute_parser::ProtoFieldMeta::from_field(field);
+        if let Ok(proto_meta) = &proto_meta_result {
+            if debug::should_output_debug(name, &field_name) {
+                eprintln!("=== PROTO META DEBUG for {}.{} ===", proto_name, field_name);
+                eprintln!("  proto_meta.optional: {:?}", proto_meta.optional);
+                eprintln!("  proto_meta.default_fn: {:?}", proto_meta.default_fn);
+                eprintln!("  proto_meta.expect: {:?}", proto_meta.expect);
+            }
+
+            if let Some(optional) = proto_meta.optional {
+                if debug::should_output_debug(name, &field_name) {
+                    eprintln!("  RETURNING explicit optional = {optional}");
+                }
+                return optional;
+            }
+        } else if debug::should_output_debug(name, &field_name) {
+            eprintln!("  FAILED to parse ProtoFieldMeta from field!");
+        }
+
+        let field_type = &field.ty;
+
+        if type_analysis::is_option_type(field_type) {
+            return true;
+        }
+
+        if type_analysis::is_vec_type(field_type) {
+            return false;
+        }
+
+        if proto_meta_result.as_ref().map(|m| m.default_fn.is_some()).unwrap_or(false) {
+            if let Ok(proto_meta) = &proto_meta_result {
+                let expect_mode = ExpectMode::from_field_meta(field, &proto_meta);
+                if !matches!(expect_mode, ExpectMode::None) {
+                    return false;
+                }
+
+                // if it has a default (either bare "default_fn" or "default_fn = <function>"),
+                // assume the proto field is optional since that's the typical use case
+                return true;
+            }
+
+            // fallback: if has_proto_default but can't parse meta, assume optional
+            return true;
+        }
+
+        let has_expect = expect_analysis::has_expect_panic_syntax(field) ||
+            proto_meta_result.as_ref().map(|m| m.expect).unwrap_or(false);
+
+        if debug::should_output_debug(name, &field_name) {
+            eprintln!("  has_expect: {has_expect}, returning: {has_expect}");
+        }
+
+        has_expect
+    }
 }
 
 mod field_processor {
     use super::*;
-    use field_context::FieldProcessingContext;
-    use crate::utils::ExpectMode;
+    use field_analysis::FieldProcessingContext;
+    use crate::expect_analysis::ExpectMode;
 
     pub fn generate_from_proto_field(field: &syn::Field, ctx: &FieldProcessingContext) -> proc_macro2::TokenStream {
         if attribute_parser::has_proto_ignore(field) {
@@ -658,7 +721,7 @@ mod field_processor {
             },
             ExpectMode::None => {
                 if ctx.has_default {
-                    let default_expr = utils::generate_default_value(field_type, ctx.default_fn.as_deref());
+                    let default_expr = generate_default_value(field_type, ctx.default_fn.as_deref());
                     quote! {
                         #field_name: <#field_type>::from(
                             proto_struct.#proto_field_ident
@@ -701,7 +764,7 @@ mod field_processor {
             },
             ExpectMode::None => {
                 if ctx.has_default {
-                    let default_expr = utils::generate_default_value(field_type, ctx.default_fn.as_deref());
+                    let default_expr = generate_default_value(field_type, ctx.default_fn.as_deref());
                     quote! {
                         #field_name: proto_struct.#proto_field_ident
                             .map(#inner_type::from)
@@ -727,7 +790,7 @@ mod field_processor {
         let field_type = ctx.field_type;
 
         if ctx.has_default {
-            let default_expr = utils::generate_default_value(field_type, ctx.default_fn.as_deref());
+            let default_expr = generate_default_value(field_type, ctx.default_fn.as_deref());
             match ctx.expect_mode {
                 ExpectMode::Panic => {
                     quote! {
@@ -805,7 +868,7 @@ mod field_processor {
         let field_name = ctx.field_name;
         let proto_field_ident = &ctx.proto_field_ident;
         let field_type = ctx.field_type;
-        let proto_is_optional = is_optional_proto_field_for_ctx(ctx, field);
+        let proto_is_optional = field_analysis::is_optional_proto_field_for_ctx(ctx, field);
 
         if proto_is_optional {
             match ctx.expect_mode {
@@ -829,7 +892,7 @@ mod field_processor {
                 },
                 ExpectMode::None => {
                     if ctx.has_default {
-                        let default_expr = utils::generate_default_value(field_type, ctx.default_fn.as_deref());
+                        let default_expr = generate_default_value(field_type, ctx.default_fn.as_deref());
                         quote! {
                             #field_name: proto_struct.#proto_field_ident
                                 .map(#field_type::from)
@@ -857,7 +920,7 @@ mod field_processor {
         let field_name = ctx.field_name;
         let proto_field_ident = &ctx.proto_field_ident;
         let field_type = ctx.field_type;
-        let proto_is_optional = is_optional_proto_field_for_ctx(ctx, field);
+        let proto_is_optional = field_analysis::is_optional_proto_field_for_ctx(ctx, field);
         let rust_is_option = type_analysis::is_option_type(field_type);
 
         if debug::should_output_debug(ctx.struct_name, field_name) {
@@ -900,7 +963,7 @@ mod field_processor {
             },
             ExpectMode::None => {
                 if ctx.has_default {
-                    let default_expr = utils::generate_default_value(field_type, ctx.default_fn.as_deref());
+                    let default_expr = generate_default_value(field_type, ctx.default_fn.as_deref());
                     if rust_is_option {
                         quote! {
                             #field_name: if proto_struct.#proto_field_ident == Default::default() {
@@ -959,7 +1022,7 @@ mod field_processor {
 
         match ctx.expect_mode {
             ExpectMode::Panic => {
-                let proto_is_optional = is_optional_proto_field_for_ctx(ctx, field);
+                let proto_is_optional = field_analysis::is_optional_proto_field_for_ctx(ctx, field);
                 if proto_is_optional {
                     quote! {
                         #field_name: proto_struct.#proto_field_ident
@@ -985,7 +1048,7 @@ mod field_processor {
             },
             ExpectMode::None => {
                 if ctx.has_default {
-                    let default_expr = utils::generate_default_value(ctx.field_type, ctx.default_fn.as_deref());
+                    let default_expr = generate_default_value(ctx.field_type, ctx.default_fn.as_deref());
                     quote! {
                         #field_name: proto_struct.#proto_field_ident
                             .unwrap_or_else(|| #default_expr)
@@ -1004,7 +1067,7 @@ mod field_processor {
         let field_name = ctx.field_name;
         let proto_field_ident = &ctx.proto_field_ident;
         let field_type = ctx.field_type;
-        let proto_is_optional = is_optional_proto_field_for_ctx(ctx, field);
+        let proto_is_optional = field_analysis::is_optional_proto_field_for_ctx(ctx, field);
 
         // custom types - check if proto field is optional
         if proto_is_optional {
@@ -1030,7 +1093,7 @@ mod field_processor {
                 },
                 ExpectMode::None => {
                     if ctx.has_default {
-                        let default_expr = utils::generate_default_value(field_type, ctx.default_fn.as_deref());
+                        let default_expr = generate_default_value(field_type, ctx.default_fn.as_deref());
                         quote! {
                             #field_name: proto_struct.#proto_field_ident
                                 .map(#field_type::from)
@@ -1053,6 +1116,16 @@ mod field_processor {
         }
     }
 
+    fn generate_default_value(field_type: &syn::Type, default_fn: Option<&str>) -> proc_macro2::TokenStream {
+        if let Some(default_fn_name) = default_fn {
+            let default_fn_path: syn::Path = syn::parse_str(&default_fn_name)
+                .expect("Failed to parse default_fn path");
+            quote! { #default_fn_path() }
+        } else {
+            quote! { <#field_type as Default>::default() }
+        }
+    }
+
     fn generate_derive_into_with_field(ctx: &FieldProcessingContext, into_with_path: &str) -> proc_macro2::TokenStream {
         let field_name = ctx.field_name;
         let proto_field_ident = &ctx.proto_field_ident;
@@ -1067,7 +1140,7 @@ mod field_processor {
     fn generate_transparent_from_my_field(ctx: &FieldProcessingContext, field: &syn::Field) -> proc_macro2::TokenStream {
         let field_name = ctx.field_name;
         let proto_field_ident = &ctx.proto_field_ident;
-        let proto_is_optional = is_optional_proto_field_for_ctx(ctx, field);
+        let proto_is_optional = field_analysis::is_optional_proto_field_for_ctx(ctx, field);
 
         if proto_is_optional {
             quote! {
@@ -1143,7 +1216,7 @@ mod field_processor {
     fn generate_enum_from_my_field(ctx: &FieldProcessingContext, field: &syn::Field) -> proc_macro2::TokenStream {
         let field_name = ctx.field_name;
         let proto_field_ident = &ctx.proto_field_ident;
-        let proto_is_optional = is_optional_proto_field_for_ctx(ctx, field);
+        let proto_is_optional = field_analysis::is_optional_proto_field_for_ctx(ctx, field);
 
         if proto_is_optional {
             quote! {
@@ -1160,7 +1233,7 @@ mod field_processor {
         let field_name = ctx.field_name;
         let proto_field_ident = &ctx.proto_field_ident;
         let rust_is_option = type_analysis::is_option_type(ctx.field_type);
-        let proto_is_optional = is_optional_proto_field_for_ctx(ctx, field);
+        let proto_is_optional = field_analysis::is_optional_proto_field_for_ctx(ctx, field);
 
         if debug::should_output_debug(ctx.struct_name, field_name) {
             eprintln!("=== FROM_MY_FIELDS PRIMITIVE ===");
@@ -1195,7 +1268,7 @@ mod field_processor {
     fn generate_custom_type_from_my_field(ctx: &FieldProcessingContext, field: &syn::Field) -> proc_macro2::TokenStream {
         let field_name = ctx.field_name;
         let proto_field_ident = &ctx.proto_field_ident;
-        let proto_is_optional = is_optional_proto_field_for_ctx(ctx, field);
+        let proto_is_optional = field_analysis::is_optional_proto_field_for_ctx(ctx, field);
 
         // Check if proto field is optional before wrapping in Some()
         if proto_is_optional {
@@ -1207,10 +1280,6 @@ mod field_processor {
                 #proto_field_ident: my_struct.#field_name.into()
             }
         }
-    }
-
-    fn is_optional_proto_field_for_ctx(ctx: &FieldProcessingContext, field: &syn::Field) -> bool {
-        utils::is_optional_proto_field(ctx.struct_name, field, ctx.proto_name)
     }
 }
 
@@ -1310,7 +1379,7 @@ mod enum_processor {
 }
 
 mod error_handler {
-    use crate::utils::ExpectMode;
+    use crate::expect_analysis::ExpectMode;
     use super::*;
 
     pub fn generate_error_definitions_if_needed(
@@ -1325,7 +1394,7 @@ mod error_handler {
                 false
             } else {
                 let proto_meta = attribute_parser::ProtoFieldMeta::from_field(field).unwrap_or_default();
-                let expect_mode = utils::determine_expect_mode(field, &proto_meta);
+                let expect_mode = ExpectMode::from_field_meta(field, &proto_meta);
                 matches!(expect_mode, ExpectMode::Error)
             }
         });
@@ -1333,7 +1402,7 @@ mod error_handler {
         let needs_default_error = fields.iter().any(|field| {
             if attribute_parser::has_proto_ignore(field) { return false; }
             let proto_meta = attribute_parser::ProtoFieldMeta::from_field(field).unwrap_or_default();
-            if matches!(utils::determine_expect_mode(field, &proto_meta), ExpectMode::Error) {
+            if matches!(ExpectMode::from_field_meta(field, &proto_meta), ExpectMode::Error) {
                 let effective_error_type = get_effective_error_type(&proto_meta, struct_level_error_type);
                 effective_error_type.is_none()
             } else {
@@ -1466,27 +1535,35 @@ mod error_handler {
     }
 }
 
-mod utils {
+mod expect_analysis {
     use super::*;
 
-    pub fn to_screaming_snake_case(s: &str) -> String {
-        let mut result = String::new();
-        for (i, c) in s.chars().enumerate() {
-            if c.is_uppercase() && i != 0 {
-                result.push('_');
-            }
-            result.push(c.to_ascii_uppercase());
-        }
-        result
+    #[derive(Debug, Clone)]
+    pub enum ExpectMode {
+        None,
+        Error,
+        Panic,
     }
 
-    pub fn generate_default_value(field_type: &syn::Type, default_fn: Option<&str>) -> proc_macro2::TokenStream {
-        if let Some(default_fn_name) = default_fn {
-            let default_fn_path: syn::Path = syn::parse_str(&default_fn_name)
-                .expect("Failed to parse default_fn path");
-            quote! { #default_fn_path() }
-        } else {
-            quote! { <#field_type as Default>::default() }
+    impl ExpectMode {
+        pub fn from_field_meta(field: &Field, proto_meta: &attribute_parser::ProtoFieldMeta) -> ExpectMode {
+            let field_name = field.ident.as_ref().unwrap();
+            let expect_panic = has_expect_panic_syntax(field);
+
+            let struct_name = syn::Ident::new("DEBUG", proc_macro2::Span::call_site());
+            if debug::should_output_debug(&struct_name, field_name) {
+                eprintln!("=== determine_expect_mode for {field_name} ===");
+                eprintln!("  parse_expect_panic: {expect_panic}");
+                eprintln!("  proto_meta.expect: {}", proto_meta.expect);
+            }
+
+            if expect_panic {
+                ExpectMode::Panic
+            } else if proto_meta.expect {
+                ExpectMode::Error
+            } else {
+                ExpectMode::None
+            }
         }
     }
 
@@ -1504,89 +1581,21 @@ mod utils {
         false
     }
 
-    #[derive(Debug, Clone)]
-    pub enum ExpectMode {
-        None,
-        Error,
-        Panic,
-    }
+}
 
-    pub fn determine_expect_mode(field: &Field, proto_meta: &attribute_parser::ProtoFieldMeta) -> ExpectMode {
-        let field_name = field.ident.as_ref().unwrap();
-        let expect_panic = has_expect_panic_syntax(field);
+mod utils {
+    use crate::expect_analysis::ExpectMode;
+    use super::*;
 
-        let struct_name = syn::Ident::new("DEBUG", proc_macro2::Span::call_site());
-        if debug::should_output_debug(&struct_name, field_name) {
-            eprintln!("=== determine_expect_mode for {field_name} ===");
-            eprintln!("  parse_expect_panic: {expect_panic}");
-            eprintln!("  proto_meta.expect: {}", proto_meta.expect);
-        }
-
-        if expect_panic {
-            ExpectMode::Panic
-        } else if proto_meta.expect {
-            ExpectMode::Error
-        } else {
-            ExpectMode::None
-        }
-    }
-
-    pub fn is_optional_proto_field(name: &syn::Ident, field: &syn::Field, proto_name: &str) -> bool {
-        let field_name = field.ident.as_ref().unwrap();
-
-        let proto_meta_result = attribute_parser::ProtoFieldMeta::from_field(field);
-        if let Ok(proto_meta) = &proto_meta_result {
-            if debug::should_output_debug(name, &field_name) {
-                eprintln!("=== PROTO META DEBUG for {}.{} ===", proto_name, field_name);
-                eprintln!("  proto_meta.optional: {:?}", proto_meta.optional);
-                eprintln!("  proto_meta.default_fn: {:?}", proto_meta.default_fn);
-                eprintln!("  proto_meta.expect: {:?}", proto_meta.expect);
+    pub fn to_screaming_snake_case(s: &str) -> String {
+        let mut result = String::new();
+        for (i, c) in s.chars().enumerate() {
+            if c.is_uppercase() && i != 0 {
+                result.push('_');
             }
-
-            if let Some(optional) = proto_meta.optional {
-                if debug::should_output_debug(name, &field_name) {
-                    eprintln!("  RETURNING explicit optional = {optional}");
-                }
-                return optional;
-            }
-        } else if debug::should_output_debug(name, &field_name) {
-            eprintln!("  FAILED to parse ProtoFieldMeta from field!");
+            result.push(c.to_ascii_uppercase());
         }
-
-        let field_type = &field.ty;
-
-        if type_analysis::is_option_type(field_type) {
-            return true;
-        }
-
-        if type_analysis::is_vec_type(field_type) {
-            return false;
-        }
-
-        if proto_meta_result.as_ref().map(|m| m.default_fn.is_some()).unwrap_or(false) {
-            if let Ok(proto_meta) = &proto_meta_result {
-                let expect_mode = determine_expect_mode(field, &proto_meta);
-                if !matches!(expect_mode, ExpectMode::None) {
-                    return false;
-                }
-
-                // if it has a default (either bare "default_fn" or "default_fn = <function>"),
-                // assume the proto field is optional since that's the typical use case
-                return true;
-            }
-
-            // fallback: if has_proto_default but can't parse meta, assume optional
-            return true;
-        }
-
-        let has_expect = has_expect_panic_syntax(field) ||
-            proto_meta_result.as_ref().map(|m| m.expect).unwrap_or(false);
-
-        if debug::should_output_debug(name, &field_name) {
-            eprintln!("  has_expect: {has_expect}, returning: {has_expect}");
-        }
-
-        has_expect
+        result
     }
 
 }
@@ -1621,7 +1630,7 @@ pub fn proto_convert_derive(input: TokenStream) -> TokenStream {
                     );
 
                     let from_proto_fields = fields.iter().map(|field| {
-                        let ctx = field_context::FieldProcessingContext::new(
+                        let ctx = field_analysis::FieldProcessingContext::new(
                             name,
                             field,
                             &error_name,
@@ -1638,7 +1647,7 @@ pub fn proto_convert_derive(input: TokenStream) -> TokenStream {
                         .iter()
                         .filter(|field| !attribute_parser::has_proto_ignore(field))
                         .map(|field| {
-                            let ctx = field_context::FieldProcessingContext::new(
+                            let ctx = field_analysis::FieldProcessingContext::new(
                                 name,
                                 field,
                                 &error_name,
