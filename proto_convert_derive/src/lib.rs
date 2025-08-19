@@ -418,6 +418,36 @@ mod field_processor {
         panic!("Only path types are supported for field '{}'", ctx.field_name);
     }
 
+    pub fn generate_from_my_field(field: &syn::Field, ctx: &FieldProcessingContext) -> proc_macro2::TokenStream {
+        if has_proto_ignore(field) {
+            // Ignored fields are not included in proto struct
+            return quote!{};
+        }
+
+        let derive_into_with = get_proto_derive_into_with(field);
+        if let Some(into_with_path) = derive_into_with {
+            return generate_derive_into_with_field(ctx, &into_with_path);
+        }
+
+        if has_transparent_attr(field) {
+            return generate_transparent_from_my_field(ctx, field);
+        }
+
+        if type_analysis::is_option_type(ctx.field_type) {
+            return generate_option_from_my_field(ctx);
+        }
+
+        if type_analysis::is_vec_type(ctx.field_type) {
+            return generate_vec_from_my_field(ctx);
+        }
+
+        if let syn::Type::Path(_) = ctx.field_type {
+            return generate_path_type_from_my_field(ctx, field);
+        }
+
+        panic!("Only path types are supported for field '{}'", ctx.field_name);
+    }
+
     fn generate_ignored_field(ctx: &FieldProcessingContext) -> proc_macro2::TokenStream {
         let field_name = ctx.field_name;
         if let Some(default_fn_name) = &ctx.default_fn {
@@ -860,10 +890,167 @@ mod field_processor {
         }
     }
 
+    fn generate_derive_into_with_field(ctx: &FieldProcessingContext, into_with_path: &str) -> proc_macro2::TokenStream {
+        let field_name = ctx.field_name;
+        let proto_field_ident = &ctx.proto_field_ident;
+        let into_with_path: syn::Path = syn::parse_str(&into_with_path)
+            .expect("Failed to parse derive_into_with path");
+
+        quote! {
+            #proto_field_ident: #into_with_path(my_struct.#field_name)
+        }
+    }
+
+    fn generate_transparent_from_my_field(ctx: &FieldProcessingContext, field: &syn::Field) -> proc_macro2::TokenStream {
+        let field_name = ctx.field_name;
+        let proto_field_ident = &ctx.proto_field_ident;
+        let proto_is_optional = is_optional_proto_field_for_ctx(ctx, field);
+
+        if proto_is_optional {
+            quote! {
+                #proto_field_ident: Some(my_struct.#field_name.into())
+            }
+        } else {
+            quote! {
+                #proto_field_ident: my_struct.#field_name.into()
+            }
+        }
+    }
+
+    fn generate_option_from_my_field(ctx: &FieldProcessingContext) -> proc_macro2::TokenStream {
+        let field_name = ctx.field_name;
+        let proto_field_ident = &ctx.proto_field_ident;
+        let inner_type = type_analysis::get_inner_type_from_option(ctx.field_type).unwrap();
+
+        if type_analysis::is_vec_type(&inner_type) {
+            quote! {
+                #proto_field_ident: my_struct.#field_name
+                    .map(|vec| vec.into_iter().map(Into::into).collect())
+            }
+        } else {
+            quote! {
+                #proto_field_ident: my_struct.#field_name.map(Into::into)
+            }
+        }
+    }
+
+    fn generate_vec_from_my_field(ctx: &FieldProcessingContext) -> proc_macro2::TokenStream {
+        let field_name = ctx.field_name;
+        let proto_field_ident = &ctx.proto_field_ident;
+
+        if let Some(inner_type) = type_analysis::get_inner_type_from_vec(ctx.field_type) {
+            if type_analysis::is_proto_type_with_module(&inner_type, ctx.proto_module) {
+                quote! {
+                    #proto_field_ident: my_struct.#field_name
+                }
+            } else {
+                quote! {
+                    #proto_field_ident: my_struct.#field_name.into_iter().map(Into::into).collect()
+                }
+            }
+        } else {
+            quote! {
+                #proto_field_ident: my_struct.#field_name.into_iter().map(Into::into).collect()
+            }
+        }
+    }
+
+    fn generate_path_type_from_my_field(ctx: &FieldProcessingContext, field: &syn::Field) -> proc_macro2::TokenStream {
+        let field_name = ctx.field_name;
+
+        if let syn::Type::Path(type_path) = ctx.field_type {
+            let is_primitive = type_analysis::is_primitive_type(ctx.field_type);
+            let is_proto_type = type_path.path.segments.first()
+                .is_some_and(|segment| segment.ident == ctx.proto_module);
+
+            return if type_analysis::is_enum_type_with_explicit_attr(ctx.field_type, field) {
+                generate_enum_from_my_field(ctx, field)
+            } else if is_primitive {
+                generate_primitive_from_my_field(ctx, field)
+            } else if is_proto_type {
+                generate_proto_type_from_my_field(ctx, field)
+            } else {
+                generate_custom_type_from_my_field(ctx, field)
+            }
+        }
+
+        panic!("Only path types are supported for field '{}'", field_name);
+    }
+
+    fn generate_enum_from_my_field(ctx: &FieldProcessingContext, field: &syn::Field) -> proc_macro2::TokenStream {
+        let field_name = ctx.field_name;
+        let proto_field_ident = &ctx.proto_field_ident;
+        let proto_is_optional = is_optional_proto_field_for_ctx(ctx, field);
+
+        if proto_is_optional {
+            quote! {
+                #proto_field_ident: Some(my_struct.#field_name.into())
+            }
+        } else {
+            quote! {
+                #proto_field_ident: my_struct.#field_name.into()
+            }
+        }
+    }
+
+    fn generate_primitive_from_my_field(ctx: &FieldProcessingContext, field: &syn::Field) -> proc_macro2::TokenStream {
+        let field_name = ctx.field_name;
+        let proto_field_ident = &ctx.proto_field_ident;
+        let rust_is_option = type_analysis::is_option_type(ctx.field_type);
+        let proto_is_optional = is_optional_proto_field_for_ctx(ctx, field);
+
+        if debug::should_output_debug(ctx.struct_name, field_name) {
+            eprintln!("=== FROM_MY_FIELDS PRIMITIVE ===");
+            eprintln!("  proto_is_optional: {}", proto_is_optional);
+        }
+
+        match (rust_is_option, proto_is_optional) {
+            (true, false) => quote! {
+                #proto_field_ident: my_struct.#field_name.unwrap_or_default()
+            },
+            (false, true) => quote! {
+                #proto_field_ident: Some(my_struct.#field_name)
+            },
+            (true, true) => quote! {
+                #proto_field_ident: my_struct.#field_name
+            },
+            (false, false) => quote! {
+                #proto_field_ident: my_struct.#field_name
+            },
+        }
+    }
+
+    fn generate_proto_type_from_my_field(ctx: &FieldProcessingContext, _field: &syn::Field) -> proc_macro2::TokenStream {
+        let field_name = ctx.field_name;
+        let proto_field_ident = &ctx.proto_field_ident;
+
+        quote! {
+            #proto_field_ident: Some(my_struct.#field_name)
+        }
+    }
+
+    fn generate_custom_type_from_my_field(ctx: &FieldProcessingContext, field: &syn::Field) -> proc_macro2::TokenStream {
+        let field_name = ctx.field_name;
+        let proto_field_ident = &ctx.proto_field_ident;
+        let proto_is_optional = is_optional_proto_field_for_ctx(ctx, field);
+
+        // Check if proto field is optional before wrapping in Some()
+        if proto_is_optional {
+            quote! {
+                #proto_field_ident: Some(my_struct.#field_name.into())
+            }
+        } else {
+            quote! {
+                #proto_field_ident: my_struct.#field_name.into()
+            }
+        }
+    }
+
     fn is_optional_proto_field_for_ctx(ctx: &FieldProcessingContext, field: &syn::Field) -> bool {
         is_optional_proto_field(ctx.struct_name, field, ctx.proto_name)
     }
 }
+
 
 fn has_proto_default(field: &Field) -> bool {
     if let Ok(proto_meta) = attribute_parser::ProtoFieldMeta::from_field(field) {
@@ -1039,8 +1226,6 @@ pub fn proto_convert_derive(input: TokenStream) -> TokenStream {
                     };
 
                     let from_proto_fields = fields.iter().map(|field| {
-                        let field_name = field.ident.as_ref().unwrap();
-
                         let ctx = field_context::FieldProcessingContext::new(
                             name,
                             field,
@@ -1055,116 +1240,18 @@ pub fn proto_convert_derive(input: TokenStream) -> TokenStream {
                     });
 
                     let from_my_fields = fields.iter().filter(|field| !has_proto_ignore(field)).map(|field| {
-                        let field_name = field.ident.as_ref().unwrap();
-                        let proto_field_ident = if let Some(rename) = get_proto_rename(field) {
-                            syn::Ident::new(&rename, Span::call_site())
-                        } else {
-                            field_name.clone()
-                        };
-                        let field_type = &field.ty;
-                        let is_transparent = has_transparent_attr(field);
-                        let derive_into_with = get_proto_derive_into_with(field);
+                        let ctx = field_context::FieldProcessingContext::new(
+                            name,
+                            field,
+                            &error_name,
+                            &struct_level_error_type,
+                            &struct_level_error_fn,
+                            &proto_module,
+                            &proto_name,
+                        );
 
-                        if let Some(into_with_path) = derive_into_with {
-                            let into_with_path: syn::Path = syn::parse_str(&into_with_path).expect("Failed to parse derive_into_with path");
-                            quote! {
-                                #proto_field_ident: #into_with_path(my_struct.#field_name)
-                            }
-                        } else if is_transparent {
-                            let proto_is_optional = is_optional_proto_field(name, field, &proto_name);
-                            if proto_is_optional {
-                                quote! {
-                                    #proto_field_ident: Some(my_struct.#field_name.into())
-                                }
-                            } else {
-                                quote! {
-                                    #proto_field_ident: my_struct.#field_name.into()
-                                }
-                            }
-                        } else if type_analysis::is_option_type(field_type) {
-                            let inner_type = type_analysis::get_inner_type_from_option(field_type).unwrap();
-                            if type_analysis::is_vec_type(&inner_type) {
-                                quote! {
-                                    #proto_field_ident: my_struct.#field_name
-                                        .map(|vec| vec.into_iter().map(Into::into).collect())
-                                }
-                            } else {
-                                quote! {
-                                    #proto_field_ident: my_struct.#field_name.map(Into::into)
-                                }
-                            }
-                        } else if type_analysis::is_vec_type(field_type) {
-                            if let Some(inner_type) = type_analysis::get_inner_type_from_vec(field_type) {
-                                if type_analysis::is_proto_type_with_module(&inner_type, &proto_module) {
-                                    quote! {
-                                        #proto_field_ident: my_struct.#field_name
-                                    }
-                                } else {
-                                    quote! {
-                                        #proto_field_ident: my_struct.#field_name.into_iter().map(Into::into).collect()
-                                    }
-                                }
-                            } else {
-                                quote! {
-                                    #proto_field_ident: my_struct.#field_name.into_iter().map(Into::into).collect()
-                                }
-                            }
-                        } else if let syn::Type::Path(type_path) = field_type {
-                            let is_primitive = type_path.path.segments.len() == 1
-                                && constants::PRIMITIVE_TYPES.iter().any(|&p| type_path.path.segments[0].ident == p);
-                            let is_proto_type = type_path.path.segments.first()
-                                .is_some_and(|segment| segment.ident == proto_module.as_str());
-
-                            if type_analysis::is_enum_type_with_explicit_attr(field_type, field) {
-                                let proto_is_optional = is_optional_proto_field(name, field, &proto_name);
-                                if proto_is_optional {
-                                    quote! { #proto_field_ident: Some(my_struct.#field_name.into()) }
-                                } else {
-                                    quote! { #proto_field_ident: my_struct.#field_name.into() }
-                                }
-                            } else if is_primitive {
-                                let rust_is_option = type_analysis::is_option_type(field_type);
-                                let proto_is_optional = is_optional_proto_field(name, field, &proto_name);
-                                if debug::should_output_debug(name, field_name) {
-                                    eprintln!("=== FROM_MY_FIELDS PRIMITIVE ===");
-                                    eprintln!("  proto_is_optional: {}", proto_is_optional);
-                                }
-
-                                match (rust_is_option, proto_is_optional) {
-                                    (true, false) => quote! { #proto_field_ident: my_struct.#field_name.unwrap_or_default() },
-                                    (false, true) => quote! { #proto_field_ident: Some(my_struct.#field_name) },
-                                    (true, true) => quote! { #proto_field_ident: my_struct.#field_name },
-                                    (false, false) => quote! { #proto_field_ident: my_struct.#field_name },
-                                }
-                            } else if is_proto_type {
-                                    quote! { #proto_field_ident: Some(my_struct.#field_name) }
-                            } else {
-                                // check if proto field is optional before wrapping in Some()
-                                if is_optional_proto_field(name, field, &proto_name) {
-                                    quote! { #proto_field_ident: Some(my_struct.#field_name.into()) }
-                                } else {
-                                    quote! { #proto_field_ident: my_struct.#field_name.into() }
-                                }
-                            }
-                        } else {
-                            panic!("Only path types are supported for field '{}'", field_name);
-                        }
+                        field_processor::generate_from_my_field(field, &ctx)
                     });
-
-                    // let field_custom_error_type = fields.iter()
-                    //     .filter_map(|field| {
-                    //         if has_proto_ignore(field) { return None; }
-                    //         let proto_meta = ProtoFieldMeta::from_field(field).unwrap_or_default();
-                    //         if matches!(determine_expect_mode(field, &proto_meta), ExpectMode::Error) {
-                    //             proto_meta.error_type.as_ref().map(|et| {
-                    //                 syn::parse_str::<syn::Type>(et)
-                    //                     .expect("Failed to parse custom error type")
-                    //             })
-                    //         } else {
-                    //             None
-                    //         }
-                    //     })
-                    //     .next();
 
                     let actual_error_type = if needs_try_from {
                         struct_level_error_type.clone().unwrap_or_else(|| {
