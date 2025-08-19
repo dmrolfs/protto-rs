@@ -138,78 +138,6 @@ mod attribute_parser {
 
             Ok(meta)
         }
-
-        fn parse_nested_meta(meta: &mut ProtoFieldMeta, nested_meta: Meta) -> Result<(), String> {
-            match nested_meta {
-                Meta::Path(path) if path.is_ident("expect") => {
-                    meta.expect = true;
-                },
-                Meta::List(list) if list.path.is_ident("expect") => {
-                    meta.expect = true;
-                },
-                Meta::NameValue(nv) if nv.path.is_ident("optional") => {
-                    Self::parse_optional_value(meta, &nv.value)?;
-                },
-                Meta::NameValue(nv) if nv.path.is_ident("error_type") => {
-                    Self::parse_error_type_value(meta, &nv.value)?;
-                },
-                Meta::NameValue(nv) if nv.path.is_ident("error_fn") => {
-                    Self::parse_error_fn_value(meta, &nv.value)?;
-                },
-                Meta::NameValue(nv) if nv.path.is_ident("default_fn") || nv.path.is_ident("default") => {
-                    Self::parse_default_fn_value(meta, &nv.value)?;
-                },
-                Meta::Path(path) if path.is_ident("default_fn") || path.is_ident("default") => {
-                    meta.default_fn = Some("Default::default".to_string());
-                },
-                _ => {
-                    // ignore other attributes for now
-                }
-            }
-            Ok(())
-        }
-
-        fn parse_optional_value(meta: &mut ProtoFieldMeta, value: &Expr) -> Result<(), String> {
-            if let Expr::Lit(expr_lit) = value {
-                if let Lit::Bool(lit_bool) = &expr_lit.lit {
-                    meta.optional = Some(lit_bool.value);
-                }
-            }
-            Ok(())
-        }
-
-        fn parse_error_type_value(meta: &mut ProtoFieldMeta, value: &Expr) -> Result<(), String> {
-            if let Expr::Path(expr_path) = value {
-                meta.error_type = Some(quote!(#expr_path).to_string());
-            }
-            Ok(())
-        }
-
-        fn parse_error_fn_value(meta: &mut ProtoFieldMeta, value: &Expr) -> Result<(), String> {
-            if let Expr::Lit(expr_lit) = value {
-                if let Lit::Str(lit_str) = &expr_lit.lit {
-                    meta.error_fn = Some(lit_str.value());
-                }
-            }
-            Ok(())
-        }
-
-        fn parse_default_fn_value(meta: &mut ProtoFieldMeta, value: &Expr) -> Result<(), String> {
-            match value {
-                Expr::Lit(expr_lit) => {
-                    if let Lit::Str(lit_str) = &expr_lit.lit {
-                        meta.default_fn = Some(lit_str.value());
-                    }
-                },
-                Expr::Path(expr_path) => {
-                    meta.default_fn = Some(quote!(#expr_path).to_string());
-                },
-                _ => {
-                    panic!("default_fn value must be a string literal or path; e.g., default_fn = \"function_path\" or default_fn = function_path");
-                },
-            }
-            Ok(())
-        }
     }
 }
 
@@ -357,8 +285,8 @@ mod field_context {
             let field_type = &field.ty;
             let proto_meta = attribute_parser::ProtoFieldMeta::from_field(field).unwrap_or_default();
             let expect_mode = determine_expect_mode(field, &proto_meta);
-            let has_default = has_proto_default(field);
-            let default_fn = get_proto_default_fn(field);
+            let has_default = proto_meta.default_fn.is_some();
+            let default_fn = proto_meta.default_fn.clone();
 
             let proto_field_ident = if let Some(rename) = get_proto_rename(field) {
                 syn::Ident::new(&rename, proc_macro2::Span::call_site())
@@ -1052,82 +980,6 @@ mod field_processor {
 }
 
 
-fn has_proto_default(field: &Field) -> bool {
-    if let Ok(proto_meta) = attribute_parser::ProtoFieldMeta::from_field(field) {
-        return proto_meta.default_fn.is_some();
-    }
-
-    for attr in &field.attrs {
-        if attr.path().is_ident("proto") {
-            if let Meta::List(meta_list) = &attr.meta {
-                let nested_metas = Punctuated::<Meta, Comma>::parse_terminated
-                    .parse2(meta_list.tokens.clone())
-                    .unwrap_or_else(|e| panic!("Failed to parse proto attribute: {e}"));
-                for meta in nested_metas {
-                    match meta {
-                        Meta::Path(path) if path.is_ident("default_fn") || path.is_ident("default") => return true,
-                        Meta::NameValue(meta_nv) if meta_nv.path.is_ident("default_fn") || meta_nv.path.is_ident("default") => return true,
-                        _ => {},
-                    }
-                }
-            }
-        }
-    }
-    false
-}
-
-fn get_proto_default_fn(field: &Field) -> Option<String> {
-    if let Ok(proto_meta) = attribute_parser::ProtoFieldMeta::from_field(field) {
-        if let Some(default_val) = &proto_meta.default_fn {
-            if !default_val.is_empty() {
-                return Some(default_val.clone())
-            }
-        }
-    }
-
-    for attr in &field.attrs {
-        if attr.path().is_ident("proto") {
-            if let Meta::List(meta_list) = &attr.meta {
-                let nested_metas = Punctuated::<Meta, Comma>::parse_terminated
-                    .parse2(meta_list.tokens.clone())
-                    .unwrap_or_else(|e| panic!("Failed to parse proto attribute: {e}"));
-                for meta in nested_metas {
-                    if let Meta::NameValue(meta_nv) = meta {
-                        match &meta_nv.value {
-                            Expr::Lit(expr_lit) => {
-                                if let Lit::Str(lit_str) = &expr_lit.lit {
-                                    return Some(lit_str.value());
-                                }
-                            },
-                            Expr::Path(expr_path) => {
-                                return Some(quote!(#expr_path).to_string());
-                            },
-                            _ => {
-                                panic!("default_fn value must be a string literal or path; e.g., default_fn = \"function_path\" or default_fn = function_path");
-                            },
-                        }
-                    }
-                }
-            }
-        }
-    }
-    None
-}
-
-fn parse_expect_panic(field: &Field) -> bool {
-    for attr in &field.attrs {
-        if attr.path().is_ident("proto") {
-            if let Meta::List(meta_list) = &attr.meta {
-                let tokens_str = meta_list.tokens.to_string();
-                if tokens_str.contains("expect(panic)") || tokens_str.contains("expect ( panic )") {
-                    return true;
-                }
-            }
-        }
-    }
-    false
-}
-
 #[derive(Debug, Clone)]
 enum ExpectMode {
     None,
@@ -1610,25 +1462,19 @@ fn get_struct_level_error_fn(attrs: &[Attribute]) -> Option<String> {
 
 fn is_optional_proto_field(name: &syn::Ident, field: &syn::Field, proto_name: &str) -> bool {
     let field_name = field.ident.as_ref().unwrap();
-    if debug::should_output_debug(name, &field_name) {
-        eprintln!("=== DEBUG is_optional_proto_field for {} ===", field_name);
-        eprintln!("  has_proto_default: {}", has_proto_default(field));
-        eprintln!("  proto field type from proto definition should be: Option<T>");
-        eprintln!("=== PROTO NAME DEBUG: {} for field {} ===", proto_name, field_name);
-
-        for (i, attr) in field.attrs.iter().enumerate() {
-            eprintln!("  attr[{i}): {attr:?}");
-        }
-    }
 
     let proto_meta_result = attribute_parser::ProtoFieldMeta::from_field(field);
     if let Ok(proto_meta) = &proto_meta_result {
         if debug::should_output_debug(name, &field_name) {
-            eprintln!("=== PROTO META DEBUG for {} ===", field_name);
+            eprintln!("=== PROTO META DEBUG for {}.{} ===", proto_name, field_name);
             eprintln!("  proto_meta.optional: {:?}", proto_meta.optional);
             eprintln!("  proto_meta.default_fn: {:?}", proto_meta.default_fn);
             eprintln!("  proto_meta.expect: {:?}", proto_meta.expect);
         }
+
+        // for (i, attr) in field.attrs.iter().enumerate() {
+        //     eprintln!("  attr[{i}): {attr:?}");
+        // }
 
         if let Some(optional) = proto_meta.optional {
             if debug::should_output_debug(name, &field_name) {
@@ -1650,7 +1496,7 @@ fn is_optional_proto_field(name: &syn::Ident, field: &syn::Field, proto_name: &s
         return false;
     }
 
-    if has_proto_default(field) {
+    if proto_meta_result.as_ref().map(|m| m.default_fn.is_some()).unwrap_or(false) {
         if let Ok(proto_meta) = &proto_meta_result {
             let expect_mode = determine_expect_mode(field, &proto_meta);
             if !matches!(expect_mode, ExpectMode::None) {
@@ -1666,7 +1512,7 @@ fn is_optional_proto_field(name: &syn::Ident, field: &syn::Field, proto_name: &s
         return true;
     }
 
-    let has_expect = parse_expect_panic(field) ||
+    let has_expect = has_expect_panic_syntax(field) ||
         proto_meta_result.as_ref().map(|m| m.expect).unwrap_or(false);
 
     if debug::should_output_debug(name, &field_name) {
@@ -1736,7 +1582,7 @@ fn has_proto_enum_attr(field: &syn::Field) -> bool {
 
 fn determine_expect_mode(field: &Field, proto_meta: &attribute_parser::ProtoFieldMeta) -> ExpectMode {
     let field_name = field.ident.as_ref().unwrap();
-    let expect_panic = parse_expect_panic(field);
+    let expect_panic = has_expect_panic_syntax(field);
 
     let struct_name = syn::Ident::new("DEBUG", proc_macro2::Span::call_site());
     if debug::should_output_debug(&struct_name, field_name) {
@@ -1752,6 +1598,20 @@ fn determine_expect_mode(field: &Field, proto_meta: &attribute_parser::ProtoFiel
     } else {
         ExpectMode::None
     }
+}
+
+fn has_expect_panic_syntax(field: &Field) -> bool {
+    for attr in &field.attrs {
+        if attr.path().is_ident(constants::DEFAULT_PROTO_MODULE) {
+            if let Meta::List(meta_list) = &attr.meta {
+                let tokens_str = meta_list.tokens.to_string();
+                if tokens_str.replace(" ", "").contains("expect(panic)") {
+                    return true;
+                }
+            }
+        }
+    }
+    false
 }
 
 // fn get_proto_error_type(attrs: &[Attribute]) -> Option<syn::Type> {
