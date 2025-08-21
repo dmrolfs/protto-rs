@@ -1,0 +1,10 @@
+[package]
+name = "proto_convert_build"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+regex = "1.11"
+
+[features]
+default = []

@@ -109,7 +109,6 @@ proptest! {
     #[test]
     fn proptest_workflow_stress(
         track_count in 1..100usize,
-        modifications in prop::collection::vec(0..3u8, 0..10),
         base_id in any::<u64>()
     ) {
         // Generate tracks

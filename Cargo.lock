@@ -306,6 +306,7 @@ dependencies = [
  "proptest",
  "proptest-derive",
  "prost",
+ "proto_convert_build",
  "proto_convert_derive",
  "tonic",
  "tonic-build",
@@ -734,10 +735,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "proto_convert_build"
+version = "0.2.0"
+dependencies = [
+ "regex",
+]
+
+[[package]]
 name = "proto_convert_derive"
 version = "0.2.0"
 dependencies = [
  "proc-macro2",
+ "proto_convert_build",
  "quote",
  "syn",
 ]

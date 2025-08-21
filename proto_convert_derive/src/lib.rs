@@ -1,10 +1,9 @@
 use proc_macro::TokenStream;
-use proc_macro2::{Ident, Span};
+use proc_macro2::Span;
 use quote::quote;
 use syn::parse::Parser;
 use syn::{self, Attribute, DeriveInput, Expr, Field, Lit, Meta, Type};
 use syn::{punctuated::Punctuated, token::Comma};
-use crate::constants::DEFAULT_CONVERSION_ERROR_SUFFIX;
 
 mod constants {
     pub const PRIMITIVE_TYPES: &[&str] = &["i32", "u32", "i64", "u64", "f32", "f64", "bool", "String"];
@@ -15,9 +14,10 @@ mod constants {
 mod debug {
     use proc_macro2::{Ident, TokenStream};
 
+    #[allow(unused_variables)]
     pub fn should_output_debug(name: &Ident, field_name: &Ident) -> bool {
         false
-        // || name.to_string() == "ComprehensiveEnumStruct"
+        // || name.to_string() == "StatusResponse"
         // || name.to_string() == "Status"
         // || name.to_string() == "MultipleErrorTypesStruct"
         // || name.to_string() == "ExpectCustomErrorStruct" // Enable debug for this struct
@@ -737,22 +737,22 @@ mod field_analysis {
         }
     }
 
+    pub use proto_inspection::detect_proto_field_optionality;
+
     pub fn is_optional_proto_field_for_ctx(ctx: &FieldProcessingContext, field: &syn::Field) -> bool {
-        if ctx.proto_meta.optional.is_none() {
-            // user didn't specify optional, try to auto-detect
-            let rust_is_optional = type_analysis::is_option_type(ctx.field_type);
-
-            if let Some(detected_optional) = proto_inspection::detect_proto_field_optionality(ctx) {
-                if detected_optional && !rust_is_optional {
-                    return true;
-                }
-            }
+        // 1) check if user explicitly specified optionality
+        if let Some(explicit) = ctx.proto_meta.optional {
+            explicit
+        } else if let Some(build_detected) = detect_proto_field_optionality(ctx) {
+            // 2) try build-time metadata detection
+            build_detected
+        } else {
+            // 3) fallback to original analysis
+            is_optional_proto_field(ctx.struct_name, field, ctx.proto_name)
         }
-
-        is_optional_proto_field(ctx.struct_name, field, ctx.proto_name)
     }
 
-    pub fn is_optional_proto_field(name: &syn::Ident, field: &syn::Field, proto_name: &str) -> bool {
+    fn is_optional_proto_field(name: &syn::Ident, field: &syn::Field, proto_name: &str) -> bool {
         let field_name = field.ident.as_ref().unwrap();
 
         if let Ok(proto_meta) = attribute_parser::ProtoFieldMeta::from_field(field) {
@@ -765,47 +765,251 @@ mod field_analysis {
                 if debug::should_output_debug(name, &field_name) {
                     eprintln!("  RETURNING explicit optional = {optional}");
                 }
+                return optional;
             }
-
-            proto_meta.optional.unwrap_or(false)
-        } else {
-            false
         }
+
+        false
     }
 
+    /// Build-time metadata integration for proto field analysis.
+    ///
+    /// This module provides build-time metadata detection using environment variables
+    /// set by the build script. This approach provides zero-setup experience for
+    /// external developers.
+    ///
+    /// ## Migration to Prost-Style Approach
+    ///
+    /// If you encounter limitations with environment variables (see below), you can
+    /// migrate to a prost-style file inclusion approach:
+    ///
+    /// ### When to Consider Migration:
+    /// - **Large proto files**: >500 messages or >32KB of metadata (Windows env var limit)
+    /// - **Complex metadata**: Need structured data beyond simple optional/required flags
+    /// - **Debugging needs**: Want to inspect generated metadata files directly
+    /// - **Build reproducibility**: Want metadata as part of source artifacts
+    ///
+    /// ### Migration Steps:
+    /// 1. Change `proto_convert_build`'s `write_metadata_file()` to generate Rust code instead of env vars
+    /// 2. Update this module to use `include!(concat!(env!("OUT_DIR"), "/file.rs"))`
+    /// 3. Add consumer boilerplate to include generated metadata
+    /// 4. Update data structures to use static HashMap instead of env var lookup
+    ///
+    /// See prost's implementation for reference patterns.
+    mod proto_inspection {
+        use crate::{expect_analysis, field_analysis, type_analysis};
 
-        if type_analysis::is_option_type(field_type) {
-            return true;
+        /// Build-time metadata provider trait.
+        ///
+        /// Defines the metatdata inclusion mechanism
+        trait MetadataProvider {
+            /// get field metadata for a specific message and field.
+            fn get_field_metadata(message: &str, field: &str) -> Option<ProtoFieldMetadata>;
         }
 
-        if type_analysis::is_vec_type(field_type) {
-            return false;
+        #[allow(dead_code)]
+        #[derive(Debug, Clone)]
+        pub struct ProtoFieldMetadata {
+            pub optional: bool,
+            pub repeated: bool,
         }
 
-        if proto_meta_result.as_ref().map(|m| m.default_fn.is_some()).unwrap_or(false) {
-            if let Ok(proto_meta) = &proto_meta_result {
-                let expect_mode = ExpectMode::from_field_meta(field, &proto_meta);
-                if !matches!(expect_mode, ExpectMode::None) {
-                    return false;
+        /// Evironment variable-based metadata provider.
+        ///
+        /// Reads metadata from environment variables set by build script:
+        /// - Format: `PROTO_FIELD_{MESSAGE}_{FIELD}={optional|required|repeated}`
+        /// - Example: `PROTO_FIELD_USER_NAME=optional`
+        #[cfg(feature = "build-time-metadata")]
+        struct EnvVarMetadataProvider;
+
+        #[cfg(feature = "build-time-metadata")]
+        impl MetadataProvider for EnvVarMetadataProvider {
+            fn get_field_metadata(message: &str, field: &str) -> Option<ProtoFieldMetadata> {
+                let env_key = format!(
+                    "PROTO_FIELD_{}_{}",
+                    message.to_uppercase(), field.to_uppercase()
+                );
+
+                match std::env::var(env_key).ok()?.as_str() {
+                    "optional" => Some(ProtoFieldMetadata { optional: true, repeated: false }),
+                    "repeated" => Some(ProtoFieldMetadata { optional: false, repeated: true }),
+                    "required" => Some(ProtoFieldMetadata { optional: false, repeated: false }),
+                    _ => None,
                 }
+            }
+        }
 
-                // if it has a default (either bare "default_fn" or "default_fn = <function>"),
-                // assume the proto field is optional since that's the typical use case
-                return true;
+        /// Prost-style file inclusion metadat provider (for future migration).
+        ///
+        /// When migrated, this would include generated Rust code from OUT_DIR
+        /// and provide static HashMap lookup instead of runtime env var access.
+        #[cfg(feature = "build-time-metadata")]
+        #[allow(dead_code)]
+        struct FileInclusionMetadataProvider {
+            // placeholder for migration - would facilitate:
+            // include!(concat!(env!("OUT_DIR"), "/proto_field_metadata.rs"));
+            // static METADATA: LazyLock<HashMap<(String, String), ProtoFieldMetadata>> = ...;
+        }
+
+        /// Fallback provider when build-time metadat is disabled.
+        #[cfg(not(feature = "build-time-metadata"))]
+        struct NoOpMetadataProvider;
+
+        #[cfg(not(feature = "build-time-metadata"))]
+        impl MetadataProvider for NoOpMetadataProvider {
+            fn get_field_metadata(message: &str, field: &str) -> Option<ProtoFieldMetadata> {
+                None
+            }
+        }
+
+        /// Main entry point for proto field optionality detection.
+        ///
+        /// This function orchestrates multiple detection strategies in order of reliability:
+        /// 1. explicit user annotation (`#[proto(optional = true)]`)
+        /// 2. build-time metadata (this module)
+        /// 3. type-based inference (Option<T> = optional)
+        /// 4. usage pattern inference (expect/default = optional)
+        pub fn detect_proto_field_optionality(
+            ctx: &field_analysis::FieldProcessingContext,
+        ) -> Option<bool> {
+            // 1. explicit user annotation takes precedence
+            if let Some(explicit) = ctx.proto_meta.optional {
+                return Some(explicit);
             }
 
-            // fallback: if has_proto_default but can't parse meta, assume optional
-            return true;
+            // 2. build-time metadata (reliable when available)
+            if let Some(build_time) = try_build_time_metadata(ctx) {
+                return Some(build_time);
+            }
+
+            // 3. infer from rust type structure
+            if let Some(type_based) = infer_from_rust_type(ctx) {
+                return Some(type_based);
+            }
+
+            // 4. infer from usage patterns (explicit/default)
+            if let Some(usage_based) = infer_from_usage_patterns(ctx) {
+                return Some(usage_based);
+            }
+
+            // 5. cannot determine - emit helpful warning
+            emit_metadata_suggestion(ctx);
+            None
         }
 
-        let has_expect = expect_analysis::has_expect_panic_syntax(field) ||
-            proto_meta_result.as_ref().map(|m| m.expect).unwrap_or(false);
+        /// Try to get field metadata from build-time generation.
+        ///
+        /// This function abstracts the metadata provider to make migration easier.
+        /// Currently used environment variables, but can be easily switched to
+        /// file inclusion approach (but that requires more work by app developer; e.g., `prost` includes.
+        fn try_build_time_metadata(ctx: &field_analysis::FieldProcessingContext) -> Option<bool> {
+            #[cfg(feature = "build-time-metadata")]
+            {
+                if crate::debug::should_output_debug(ctx.struct_name, ctx.field_name) {
+                    let env_key = format!(
+                        "PROTO_FIELD_{}_{}",
+                        ctx.proto_name.to_uppercase(), ctx.field_name.to_string().to_uppercase()
+                    );
+                    let env_value = std::env::var(&env_key).ok();
+                    eprintln!("=== BUILD-TIME METADATA DEBUG for {}.{} ===", ctx.struct_name, ctx.field_name);
+                    eprintln!("  env_key: {}", env_key);
+                    eprintln!("  env_value: {:?}", env_value);
+                }
 
-        if debug::should_output_debug(name, &field_name) {
-            eprintln!("  has_expect: {has_expect}, returning: {has_expect}");
+                let metadata = EnvVarMetadataProvider::get_field_metadata(
+                    ctx.proto_name,
+                    &ctx.field_name.to_string(),
+                )?;
+
+                if crate::debug::should_output_debug(ctx.struct_name, ctx.field_name) {
+                    eprintln!("  metadata.optional: {}", metadata.optional);
+                    eprintln!("=== END BUILD-TIME METADATA DEBUG ===");
+                }
+
+                Some(metadata.optional)
+            }
+
+            #[cfg(not(feature = "build-time-metadata"))]
+            {
+                let _ = ctx; // avoid unused variable warnings
+                None
+            }
         }
 
-        has_expect
+        /// Infer optionality from Rust type structure.
+        ///
+        /// - `Option<T>` typically maps to optional proto fields
+        /// - `Vec<T>` typically maps to repeated proto fields (not optional)
+        fn infer_from_rust_type(ctx: &field_analysis::FieldProcessingContext) -> Option<bool> {
+            let rust_is_optional = type_analysis::is_option_type(ctx.field_type);
+            let rust_is_vec = type_analysis::is_vec_type(ctx.field_type);
+
+            if rust_is_vec {
+                // Vec<T> typically maps to repeated proto field (not optional)
+                Some(false)
+            } else if rust_is_optional {
+                // Option<T> typically maps to optional proto fields
+                Some(true)
+            } else {
+                // non-optional rust type could map to either required or optional proto field
+                None
+            }
+        }
+
+        /// Infer from usage patterns (expect/default attributes).
+        ///
+        /// If user provides `expect()` or `default()`, the proto field is likely optional
+        /// since these only make sense for fields that might be missing.
+        fn infer_from_usage_patterns(ctx: &field_analysis::FieldProcessingContext) -> Option<bool> {
+            let has_expect = !matches!(ctx.expect_mode, expect_analysis::ExpectMode::None);
+            let has_default = ctx.has_default;
+
+            if has_expect || has_default {
+                // if user provides expect() or default(), proto field is likely optional
+                Some(true)
+            } else {
+                None
+            }
+        }
+
+        /// Emit suggestion for adding build-time metadata when detection fails.
+        ///
+        /// This helps developers understand when they might benefit from proto
+        /// file analysis instead of relying on heuristics.
+        fn emit_metadata_suggestion(_ctx: &field_analysis::FieldProcessingContext) {
+            // Could emit compiler notes here in the future:
+            // - Suggest enabling build-time-metadata feature
+            // - Suggest adding explicit #[proto(optional = true/false)]
+            // - Point to documentation for proto file analysis setup
+
+            // Note: proc_macro::Diagnostic is not stable yet, so this is placeholder
+
+        //     let struct_name = ctx.struct_name;
+        //     let field_name = ctx.field_name;
+        //     let proto_name = ctx.proto_name;
+        //
+        //     // only emit once per compilation per struct
+        //     static mut WARNED_STRUCTS: std::collections::HashSet<String> = std::collections::HashSet::new();
+        //     let struct_key = format!("{struct_name}::{proto_name}");
+        //
+        //     unsafe {
+        //         if !WARNED_STRUCTS.contains(&struct_key) {
+        //             WARNED_STRUCTS.insert(struct_key);
+        //
+        //              // only in nightly now
+        //             proc_macro::Diagnostics::spanned(
+        //                 proc_macro2::Span::call_site().unwrap(),
+        //                 proc_macro::Level::Note,
+        //                 format!(
+        //                     "ProtoConvert: Could not determine optionality for field '{}' in '{}'. \
+        //                     For better detection, add to build.rs: \
+        //                     proto_convert_build::generate_proto_metadata(&[\"path/to/{}.proto\"])",
+        //                     field_name, struct_name, proto_name.to_lowercase()
+        //                 )
+        //             ).emit();
+        //         }
+        //     }
+        }
     }
 }
 
@@ -815,6 +1019,16 @@ mod field_processor {
     use crate::expect_analysis::ExpectMode;
 
     pub fn generate_from_proto_field(field: &syn::Field, ctx: &FieldProcessingContext) -> proc_macro2::TokenStream {
+        if debug::should_output_debug(ctx.struct_name, ctx.field_name) {
+            debug::debug_field_analysis(ctx.struct_name, ctx.field_name, "GENERATE_FROM_PROTO_FIELD DEBUG", &[
+                ("field_type", quote!(#(ctx.field_type)).to_string()),
+                ("has_proto_ignore", attribute_parser::has_proto_ignore(field).to_string()),
+                ("has_transparent_attr", attribute_parser::has_transparent_attr(field).to_string()),
+                ("is_option_type", type_analysis::is_option_type(ctx.field_type).to_string()),
+                ("is_vec_type", type_analysis::is_vec_type(ctx.field_type).to_string()),
+            ]);
+        }
+
         if attribute_parser::has_proto_ignore(field) {
             return generate_ignored_field(ctx);
         }
@@ -1048,8 +1262,19 @@ mod field_processor {
             let is_primitive = type_analysis::is_primitive_type(field_type);
             let is_proto_type = type_path.path.segments.first()
                 .is_some_and(|segment| segment.ident == ctx.proto_module);
+            let is_enum = type_analysis::is_enum_type_with_explicit_attr(field_type, field);
 
-            if type_analysis::is_enum_type_with_explicit_attr(field_type, field) {
+            if debug::should_output_debug(ctx.struct_name, ctx.field_name) {
+                debug::debug_field_analysis(ctx.struct_name, ctx.field_name, "PATH TYPE FIELD DEBUG", &[
+                    ("is_primitive", is_primitive.to_string()),
+                    ("is_proto_type", is_proto_type.to_string()),
+                    ("is_enum", is_enum.to_string()),
+                    ("proto_module", ctx.proto_module.to_string()),
+                    ("field_type", quote!(#field_type).to_string()),
+                ]);
+            }
+
+            if is_enum {
                 return generate_enum_field(ctx, field);
             } else if is_primitive {
                 return generate_primitive_field(ctx, field);
@@ -1070,7 +1295,17 @@ mod field_processor {
 
         let proto_is_optional = field_analysis::is_optional_proto_field_for_ctx(ctx, field);
 
-        if proto_is_optional {
+        if debug::should_output_debug(ctx.struct_name, field_name) {
+            debug::debug_field_analysis(ctx.struct_name, field_name, "ENUM FIELD DEBUG", &[
+                ("proto_is_optional (calculated)", proto_is_optional.to_string()),
+                ("expect_mode", format!("{:?}", ctx.expect_mode)),
+                ("has_default", ctx.has_default.to_string()),
+                ("proto_field_ident", proto_field_ident.to_string()),
+                ("field_type", quote!(#field_type).to_string()),
+            ]);
+        }
+
+        let generated_code = if proto_is_optional {
             match ctx.expect_mode {
                 ExpectMode::Panic => {
                     quote! {
@@ -1111,9 +1346,13 @@ mod field_processor {
         } else {
             // direct conversion for non-optional enum fields
             quote! {
-                #field_name: proto_struct.#proto_field_ident.into()
+                // #field_name: proto_struct.#proto_field_ident.into()
+                #field_name: #field_type::from(proto_struct.#proto_field_ident)
             }
-        }
+        };
+
+        debug::debug_generated_code(ctx.struct_name, field_name, &generated_code, "enum field from_proto");
+        generated_code
     }
 
     fn generate_primitive_field(ctx: &FieldProcessingContext, field: &syn::Field) -> proc_macro2::TokenStream {
@@ -1900,9 +2139,6 @@ mod expect_analysis {
 }
 
 mod utils {
-    use crate::expect_analysis::ExpectMode;
-    use super::*;
-
     pub fn to_screaming_snake_case(s: &str) -> String {
         let mut result = String::new();
         for (i, c) in s.chars().enumerate() {

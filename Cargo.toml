@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "proto_convert_derive",
+    "proto_convert_build",
     "grpc-example",
 ]
 resolver = "2"
