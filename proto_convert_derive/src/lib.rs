@@ -737,34 +737,42 @@ mod field_analysis {
         }
     }
 
-
     pub fn is_optional_proto_field_for_ctx(ctx: &FieldProcessingContext, field: &syn::Field) -> bool {
+        if ctx.proto_meta.optional.is_none() {
+            // user didn't specify optional, try to auto-detect
+            let rust_is_optional = type_analysis::is_option_type(ctx.field_type);
+
+            if let Some(detected_optional) = proto_inspection::detect_proto_field_optionality(ctx) {
+                if detected_optional && !rust_is_optional {
+                    return true;
+                }
+            }
+        }
+
         is_optional_proto_field(ctx.struct_name, field, ctx.proto_name)
     }
 
     pub fn is_optional_proto_field(name: &syn::Ident, field: &syn::Field, proto_name: &str) -> bool {
         let field_name = field.ident.as_ref().unwrap();
 
-        let proto_meta_result = attribute_parser::ProtoFieldMeta::from_field(field);
-        if let Ok(proto_meta) = &proto_meta_result {
+        if let Ok(proto_meta) = attribute_parser::ProtoFieldMeta::from_field(field) {
             if debug::should_output_debug(name, &field_name) {
                 eprintln!("=== PROTO META DEBUG for {}.{} ===", proto_name, field_name);
                 eprintln!("  proto_meta.optional: {:?}", proto_meta.optional);
-                eprintln!("  proto_meta.default_fn: {:?}", proto_meta.default_fn);
-                eprintln!("  proto_meta.expect: {:?}", proto_meta.expect);
             }
 
             if let Some(optional) = proto_meta.optional {
                 if debug::should_output_debug(name, &field_name) {
                     eprintln!("  RETURNING explicit optional = {optional}");
                 }
-                return optional;
             }
-        } else if debug::should_output_debug(name, &field_name) {
-            eprintln!("  FAILED to parse ProtoFieldMeta from field!");
-        }
 
-        let field_type = &field.ty;
+            proto_meta.optional.unwrap_or(false)
+        } else {
+            false
+        }
+    }
+
 
         if type_analysis::is_option_type(field_type) {
             return true;
@@ -1059,6 +1067,7 @@ mod field_processor {
         let field_name = ctx.field_name;
         let proto_field_ident = &ctx.proto_field_ident;
         let field_type = ctx.field_type;
+
         let proto_is_optional = field_analysis::is_optional_proto_field_for_ctx(ctx, field);
 
         if proto_is_optional {
@@ -1111,7 +1120,9 @@ mod field_processor {
         let field_name = ctx.field_name;
         let proto_field_ident = &ctx.proto_field_ident;
         let field_type = ctx.field_type;
+
         let proto_is_optional = field_analysis::is_optional_proto_field_for_ctx(ctx, field);
+
         let rust_is_option = type_analysis::is_option_type(field_type);
 
         if debug::should_output_debug(ctx.struct_name, field_name) {
@@ -1214,6 +1225,7 @@ mod field_processor {
         match ctx.expect_mode {
             ExpectMode::Panic => {
                 let proto_is_optional = field_analysis::is_optional_proto_field_for_ctx(ctx, field);
+
                 if proto_is_optional {
                     quote! {
                         #field_name: proto_struct.#proto_field_ident
@@ -1258,6 +1270,7 @@ mod field_processor {
         let field_name = ctx.field_name;
         let proto_field_ident = &ctx.proto_field_ident;
         let field_type = ctx.field_type;
+
         let proto_is_optional = field_analysis::is_optional_proto_field_for_ctx(ctx, field);
 
         // custom types - check if proto field is optional
@@ -1331,6 +1344,7 @@ mod field_processor {
     fn generate_transparent_from_my_field(ctx: &FieldProcessingContext, field: &syn::Field) -> proc_macro2::TokenStream {
         let field_name = ctx.field_name;
         let proto_field_ident = &ctx.proto_field_ident;
+
         let proto_is_optional = field_analysis::is_optional_proto_field_for_ctx(ctx, field);
 
         if proto_is_optional {
@@ -1407,6 +1421,7 @@ mod field_processor {
     fn generate_enum_from_my_field(ctx: &FieldProcessingContext, field: &syn::Field) -> proc_macro2::TokenStream {
         let field_name = ctx.field_name;
         let proto_field_ident = &ctx.proto_field_ident;
+
         let proto_is_optional = field_analysis::is_optional_proto_field_for_ctx(ctx, field);
 
         if proto_is_optional {
@@ -1424,6 +1439,7 @@ mod field_processor {
         let field_name = ctx.field_name;
         let proto_field_ident = &ctx.proto_field_ident;
         let rust_is_option = type_analysis::is_option_type(ctx.field_type);
+
         let proto_is_optional = field_analysis::is_optional_proto_field_for_ctx(ctx, field);
 
         if debug::should_output_debug(ctx.struct_name, field_name) {
@@ -1459,6 +1475,7 @@ mod field_processor {
     fn generate_custom_type_from_my_field(ctx: &FieldProcessingContext, field: &syn::Field) -> proc_macro2::TokenStream {
         let field_name = ctx.field_name;
         let proto_field_ident = &ctx.proto_field_ident;
+
         let proto_is_optional = field_analysis::is_optional_proto_field_for_ctx(ctx, field);
 
         // Check if proto field is optional before wrapping in Some()
