@@ -52,6 +52,36 @@ mod debug {
     }
 }
 
+mod metadata_registry {
+    pub fn get_field_optionality(message: &str, field: &str) -> Option<bool> {
+        #[cfg(feature = "meta-file")]
+        {
+            // This is a compile-time code generation hint
+            // The actual call will be made to the user's included module
+            // We can't actually call it here because we're in the proc macro context
+            None
+        }
+        #[cfg(not(feature = "meta-file"))]
+        {
+            None
+        }
+    }
+
+    // Generate code that will call the user's included metadata at expansion time
+    #[cfg(feature = "meta-file")]
+    pub fn generate_metadata_lookup_code(message: &str, field: &str) -> proc_macro2::TokenStream {
+        quote::quote! {
+            crate::proto_metadata::get_field_optionality(#message, #field)
+        }
+    }
+
+    #[cfg(not(feature = "meta-file"))]
+    pub fn generate_metadata_lookup_code(_message: &str, _field: &str) -> proc_macro2::TokenStream {
+        quote::quote! { None }
+    }
+}
+
+
 mod macro_input {
     use crate::constants::DEFAULT_PROTO_MODULE;
     use super::*;
@@ -819,10 +849,10 @@ mod field_analysis {
         /// Reads metadata from environment variables set by build script:
         /// - Format: `PROTO_FIELD_{MESSAGE}_{FIELD}={optional|required|repeated}`
         /// - Example: `PROTO_FIELD_USER_NAME=optional`
-        #[cfg(feature = "build-time-metadata")]
+        #[cfg(feature = "meta-env")]
         struct EnvVarMetadataProvider;
 
-        #[cfg(feature = "build-time-metadata")]
+        #[cfg(feature = "meta-env")]
         impl MetadataProvider for EnvVarMetadataProvider {
             fn get_field_metadata(message: &str, field: &str) -> Option<ProtoFieldMetadata> {
                 let env_key = format!(
@@ -843,19 +873,35 @@ mod field_analysis {
         ///
         /// When migrated, this would include generated Rust code from OUT_DIR
         /// and provide static HashMap lookup instead of runtime env var access.
-        #[cfg(feature = "build-time-metadata")]
-        #[allow(dead_code)]
-        struct FileInclusionMetadataProvider {
-            // placeholder for migration - would facilitate:
-            // include!(concat!(env!("OUT_DIR"), "/proto_field_metadata.rs"));
-            // static METADATA: LazyLock<HashMap<(String, String), ProtoFieldMetadata>> = ...;
+        #[cfg(feature = "meta-file")]
+        struct FileInclusionMetadataProvider;
+
+        #[cfg(feature = "meta-file")]
+        impl MetadataProvider for FileInclusionMetadataProvider {
+            fn get_field_metadata(message: &str, field: &str) -> Option<ProtoFieldMetadata> {
+                // The proc macro generates code that will call the user's included module
+                // This is a placeholder - the real implementation generates code that calls
+                // the user's proto_metadata module at expansion time
+
+                // This function is never actually called - it's just for trait compliance
+                // The real work happens in generate_module_access_code() below
+                None
+            }
+        }
+
+        /// Add new function to generate code that accesses the user's module
+        #[cfg(feature = "meta-file")]
+        fn generate_module_access_code(message: &str, field: &str) -> proc_macro2::TokenStream {
+            quote::quote! {
+                crate::proto_metadata::get_field_optionality(#message, #field)
+            }
         }
 
         /// Fallback provider when build-time metadat is disabled.
-        #[cfg(not(feature = "build-time-metadata"))]
+        #[cfg(not(any(feature = "meta-env", feature = "meta-file")))]
         struct NoOpMetadataProvider;
 
-        #[cfg(not(feature = "build-time-metadata"))]
+        #[cfg(not(any(feature = "meta-env", feature = "meta-file")))]
         impl MetadataProvider for NoOpMetadataProvider {
             fn get_field_metadata(message: &str, field: &str) -> Option<ProtoFieldMetadata> {
                 None
@@ -902,8 +948,13 @@ mod field_analysis {
         /// This function abstracts the metadata provider to make migration easier.
         /// Currently used environment variables, but can be easily switched to
         /// file inclusion approach (but that requires more work by app developer; e.g., `prost` includes.
+        #[allow(unreachable_code)]
         fn try_build_time_metadata(ctx: &field_analysis::FieldProcessingContext) -> Option<bool> {
-            #[cfg(feature = "build-time-metadata")]
+            if crate::debug::should_output_debug(ctx.struct_name, ctx.field_name) {
+                eprintln!("=== BUILD-TIME METADATA DEBUG for {}.{} ===", ctx.struct_name, ctx.field_name);
+            }
+
+            #[cfg(feature = "meta-env")]
             {
                 if crate::debug::should_output_debug(ctx.struct_name, ctx.field_name) {
                     let env_key = format!(
@@ -911,7 +962,7 @@ mod field_analysis {
                         ctx.proto_name.to_uppercase(), ctx.field_name.to_string().to_uppercase()
                     );
                     let env_value = std::env::var(&env_key).ok();
-                    eprintln!("=== BUILD-TIME METADATA DEBUG for {}.{} ===", ctx.struct_name, ctx.field_name);
+                    eprintln!("  provider: EnvVar");
                     eprintln!("  env_key: {}", env_key);
                     eprintln!("  env_value: {:?}", env_value);
                 }
@@ -926,13 +977,33 @@ mod field_analysis {
                     eprintln!("=== END BUILD-TIME METADATA DEBUG ===");
                 }
 
-                Some(metadata.optional)
+                return Some(metadata.optional);
             }
 
-            #[cfg(not(feature = "build-time-metadata"))]
+            #[cfg(feature = "meta-file")]
             {
+                if crate::debug::should_output_debug(ctx.struct_name, ctx.field_name) {
+                    eprintln!("  provider: FileInclusion (user module access)");
+                    eprintln!("  will generate code: crate::proto_metadata::get_field_optionality(\"{}\", \"{}\")",
+                              ctx.proto_name, ctx.field_name);
+                    eprintln!("=== END BUILD-TIME METADATA DEBUG ===");
+                }
+
+                // For file inclusion, we can't determine at proc macro time
+                // Instead, the proc macro will generate code that calls the user's module
+                // Return None here, but the field processor will handle file inclusion differently
+                return None;
+            }
+
+            #[cfg(not(any(feature = "meta-env", feature = "meta-file")))]
+            {
+                if crate::debug::should_output_debug(ctx.struct_name, ctx.field_name) {
+                    eprintln!("  provider: NoOp (no build-time metadata enabled)");
+                    eprintln!("=== END BUILD-TIME METADATA DEBUG ===");
+                }
+
                 let _ = ctx; // avoid unused variable warnings
-                None
+                return None;
             }
         }
 
@@ -978,7 +1049,7 @@ mod field_analysis {
         /// file analysis instead of relying on heuristics.
         fn emit_metadata_suggestion(_ctx: &field_analysis::FieldProcessingContext) {
             // Could emit compiler notes here in the future:
-            // - Suggest enabling build-time-metadata feature
+            // - Suggest enabling meta-* feature
             // - Suggest adding explicit #[proto(optional = true/false)]
             // - Point to documentation for proto file analysis setup
 

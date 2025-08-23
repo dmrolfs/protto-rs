@@ -1,7 +1,7 @@
 use crate::basic_types::*;
 use crate::proto;
 use crate::shared_types::*;
-use proto_convert_derive::ProtoConvert;
+use proto_convert::ProtoConvert;
 
 #[derive(ProtoConvert, PartialEq, Debug, Clone)]
 #[proto(module = "proto", rename = "HasOptional")]

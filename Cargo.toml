@@ -1,15 +1,35 @@
 [workspace]
 members = [
+    "proto_convert",
     "proto_convert_derive",
     "proto_convert_build",
-    "grpc-example",
+    "proto_convert/examples/grpc-comprehensive",
 ]
+
 resolver = "2"
 
 [workspace.package]
-publish = false
 version = "0.2.0"
 edition = "2021"
+authors = ["Christian Engel <cascade.nab0p@icloud.com>"]
+repository = "https://github.com/protortyp/proto_convert_derive"
+license = "Apache-2.0"
 
-[workspace.metadata.crane]
-name = "proto-convert-workspace"
+[workspace.dependencies]
+# internal crates
+proto_convert = { path = "proto_convert" }
+proto_convert_derive = { path = "proto_convert_derive" }
+proto_convert_build = { path = "proto_convert_build" }
+
+# external crate
+proc-macro2 = "1.0"
+quote = "1.0"
+syn = { version = "2.0", features = ["full"] }
+regex = "1.11"
+tonic = "0.12"
+prost = "0.13"
+proptest = "1.0"
+proptest-derive = "0.5"
+ctor = "0.2"
+tonic-build = "0.12"
+glob = "0.3"

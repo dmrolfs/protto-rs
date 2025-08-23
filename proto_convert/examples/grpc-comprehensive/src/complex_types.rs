@@ -1,7 +1,7 @@
 use crate::basic_types::*;
 use crate::proto;
 use crate::shared_types::*;
-use proto_convert_derive::ProtoConvert;
+use proto_convert::ProtoConvert;
 use std::collections::HashMap;
 use std::sync::atomic::AtomicU64;
 

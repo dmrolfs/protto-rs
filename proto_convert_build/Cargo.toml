@@ -2,9 +2,20 @@
 name = "proto_convert_build"
 version.workspace = true
 edition.workspace = true
+authors.workspace = true
+description = "Build-time helper for proto_convert - extracts metadata from protobuf files"
+repository.workspace = true
+license.workspace = true
+documentation = "https://docs.rs/proto_convert_build"
+keywords = ["protobuf", "build-script", "metadata"]
+categories = ["development-tools"]
 
 [dependencies]
-regex = "1.11"
+regex = { workspace = true }
 
 [features]
 default = []
+
+# Build-time metadata integration features (mutually exclusive)
+meta-env = []
+meta-file = []

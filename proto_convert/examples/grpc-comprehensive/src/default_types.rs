@@ -1,6 +1,6 @@
 use crate::proto;
 use crate::shared_types::*;
-use proto_convert_derive::ProtoConvert;
+use proto_convert::ProtoConvert;
 
 // Test struct with default handling for optional fields
 #[derive(ProtoConvert, PartialEq, Debug, Clone)]

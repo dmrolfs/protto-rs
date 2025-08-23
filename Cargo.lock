@@ -185,6 +185,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
+name = "ctor"
+version = "0.2.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "32a2785755761f3ddc1492979ce1e48d2c00d09311c39e4466429188f3dd6501"
+dependencies = [
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "either"
 version = "1.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -299,15 +309,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a8d1add55171497b4705a648c6b583acafb01d58050a51727785f0b2c8e0a2b2"
 
 [[package]]
-name = "grpc-example"
+name = "grpc_comprehensive_example"
 version = "0.1.0"
 dependencies = [
+ "ctor",
  "glob",
  "proptest",
  "proptest-derive",
  "prost",
+ "proto_convert",
  "proto_convert_build",
- "proto_convert_derive",
  "tonic",
  "tonic-build",
 ]
@@ -732,6 +743,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "52c2c1bf36ddb1a1c396b3601a3cec27c2462e45f07c386894ec3ccf5332bd16"
 dependencies = [
  "prost",
+]
+
+[[package]]
+name = "proto_convert"
+version = "0.2.0"
+dependencies = [
+ "proto_convert_build",
+ "proto_convert_derive",
 ]
 
 [[package]]

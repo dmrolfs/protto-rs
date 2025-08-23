@@ -1,6 +1,6 @@
 use crate::proto;
 use crate::shared_types::*;
-use proto_convert_derive::ProtoConvert;
+use proto_convert::ProtoConvert;
 
 #[derive(ProtoConvert, PartialEq, Debug, Clone)]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]

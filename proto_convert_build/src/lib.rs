@@ -1,15 +1,48 @@
 use std::collections::{HashMap, HashSet};
+use std::path::Path;
 use std::fs::{self, File};
 use std::io::Write;
-use std::path::Path;
 
 pub fn generate_proto_metadata<P: AsRef<Path>>(proto_files: &[P]) -> Result<(), Box<dyn std::error::Error>> {
     let metadata = extract_field_metadata(proto_files)?;
 
-    write_metadata_env_vars(metadata)?;
+    // Debug all CARGO_CFG_FEATURE_* environment variables
+    // println!("cargo:warning=proto_convert_build: All CARGO_CFG_FEATURE_* variables:");
+    // for (key, value) in std::env::vars() {
+    //     if key.starts_with("CARGO_CFG_FEATURE_") {
+    //         println!("cargo:warning=  {} = {}", key, value);
+    //     }
+    // }
 
-    // for migration to prost-style, uncomment this and comment above:
-    // write_metadata_file_prost_style(metadata)?;
+    println!("cargo:warning=proto_convert_build: Checking feature flags...");
+
+    // let env_enabled = std::env::var("CARGO_CFG_FEATURE_META_ENV").is_ok();
+    // let file_enabled = std::env::var("CARGO_CFG_FEATURE_META_FILE").is_ok();
+    let env_enabled = cfg!(feature = "meta-env");
+    let file_enabled = cfg!(feature = "meta-file");
+    println!("cargo:warning=  meta-env enabled: {}", env_enabled);
+    println!("cargo:warning=  meta-file enabled: {}", file_enabled);
+
+    match (env_enabled, file_enabled) {
+        (true, true) => {
+            return Err("Both 'meta-env' and 'meta-file' are enabled. Please enable only one.".into());
+        },
+        (true, false) => {
+            println!("cargo:warning=Using proto_convert_derive environment variable build-time integration");
+            write_metadata_env_vars(metadata)?;
+        },
+        (false, true) => {
+            println!("cargo:warning=Using proto_convert_derive generated file build-time integration (prost-style)");
+            write_metadata_file_prost_style(metadata)?;
+        },
+        (false, false) => {
+            println!("cargo:warning=No metadata build-time mechanism enabled. Build-time proto analysis disabled.");
+            println!("cargo:warning=  This usually means:");
+            println!("cargo:warning=  1. The feature isn't being passed from the example crate");
+            println!("cargo:warning=  2. The feature isn't properly declared in workspace");
+            println!("cargo:warning=  3. Build script is running in wrong crate context");
+        },
+    }
 
     // tell cargo to rerun if proto files change
     for proto_file in proto_files {
@@ -209,46 +242,76 @@ fn write_metadata_env_vars(metadata: ProtoMetadata) -> Result<(), Box<dyn std::e
 /// 1. Replace `write_metadata_env_vars()` call with this function
 /// 2. Update proc macro to use `FileInclusionMetadataProvider`
 /// 3. Add consumer boilerplate to include generated file
-#[allow(dead_code)]
 fn write_metadata_file_prost_style(metadata: ProtoMetadata) -> Result<(), Box<dyn std::error::Error>> {
-    let out_dir = std::env::var("OUT_DIR")?;
+    println!("cargo:warning=DEBUG: write_metadata_file_prost_style called");
+    println!("cargo:warning=DEBUG: Generating metadata file with {} messages", metadata.messages.len());
+
+    // Debug the metadata content
+    for (msg, fields) in &metadata.messages {
+        println!("cargo:warning=DEBUG: Message '{}' has {} fields", msg, fields.len());
+        for (field, info) in fields {
+            println!("cargo:warning=DEBUG:   {}.{} -> optional={}", msg, field, info.optional);
+        }
+    }
+
+    let out_dir = std::env::var("OUT_DIR").map_err(|e| {
+        format!("Failed to get OUT_DIR environment variable: {}", e)
+    })?;
+    println!("cargo:warning=DEBUG: OUT_DIR = {}", out_dir);
+
     let dest_path = Path::new(&out_dir).join("proto_field_metadata.rs");
-    let mut f = File::create(&dest_path)?;
+    println!("cargo:warning=DEBUG: Will write to: {}", dest_path.display());
 
-    writeln!(f, "// Generated proto field metadata - do not edit")?;
-    writeln!(f, "")?;
-    writeln!(f, "use std::collections::HashMap")?;
-    writeln!(f, "use std::sync::LazyLock;")?;
-    writeln!(f, "")?;
-    writeln!(f, "#[derive(Debug, Clone)]")?;
-    writeln!(f, "pub struct ProtoFieldMetadata {{")?;
-    writeln!(f, "    pub optional: bool,")?;
-    writeln!(f, "    pub repeated: bool,")?;
-    writeln!(f, "}}")?;
+    let mut f = File::create(&dest_path).map_err(|e| {
+        format!("Failed to create metadata file at {}: {}", dest_path.display(), e)
+    })?;
+
+    writeln!(f, "// Generated proto field metadata by proto_convert_build - do not edit")?;
+    // writeln!(f, "// Generated at: {}", chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC"))?;
     writeln!(f, "")?;
 
-    writeln!(f, "/// Static metadata lookup table generated from proto files.")?;
-    writeln!(f, "static METADATA: LazyLock<HashMap<(&'static str, &'static str), ProtoFieldMetadata>> = LazyLock::new(|| {{")?;
-    writeln!(f, "    HashMap::from([")?;
+    writeln!(f, "use std::collections::HashMap;")?;
+    writeln!(f, "")?;
 
+    writeln!(f, "/// Get field optionality for a proto message field")?;
+    writeln!(f, "pub fn get_field_optionality(message: &str, field: &str) -> Option<bool> {{")?;
+    writeln!(f, "    match (message, field) {{")?;
+
+    let mut field_count = 0;
     for (message_name, fields) in &metadata.messages {
         for (field_name, field_info) in fields {
             writeln!(
                 f,
-                "        ((\"{}\", \"{}\"), ProtoFieldMetadata {{ optional: {}, repeated: {} }}),",
-                message_name, field_name, field_info.optional, field_info.repeated
+                "        (\"{}\", \"{}\") => Some({}),",
+                message_name, field_name, field_info.optional
             )?;
+            field_count += 1;
         }
     }
 
-    writeln!(f, "    ])")?;
-    writeln!(f, "}});")?;
+    writeln!(f, "        _ => None,")?;
+    writeln!(f, "    }}")?;
+    writeln!(f, "}}")?;
     writeln!(f, "")?;
 
-    writeln!(f, "/// Get metadata for a specific proto message field.")?;
-    writeln!(f, "pub fn get_field_metadata(message: &str, field: &str) -> Option<ProtoFieldMetadata> {{")?;
-    writeln!(f, "    METADATA.get(&(message, field)).cloned()")?;
+    // DMR: Optional debug function
+    writeln!(f, "/// Get all metadata (for debugging)")?;
+    writeln!(f, "#[allow(dead_code)]")?;
+    writeln!(f, "pub fn get_all_metadata() -> &'static [(&'static str, &'static [(&'static str, bool)])] {{")?;
+    writeln!(f, "    &[")?;
+    for (message_name, fields) in &metadata.messages {
+        writeln!(f, "        (\"{}\", &[", message_name)?;
+        for (field_name, field_info) in fields {
+            writeln!(f, "            (\"{}\", {}),", field_name, field_info.optional)?;
+        }
+        writeln!(f, "        ]),")?;
+    }
+    writeln!(f, "    ]")?;
     writeln!(f, "}}")?;
 
+    f.flush()?; // Ensure file is written
+
+    println!("cargo:warning=proto_convert_build: Successfully generated metadata file at {}", dest_path.display());
+    println!("cargo:warning=proto_convert_build: Generated {} field mappings", field_count);
     Ok(())
 }

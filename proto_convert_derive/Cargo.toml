@@ -2,10 +2,10 @@
 name = "proto_convert_derive"
 version.workspace = true
 edition.workspace = true
-authors = ["Christian Engel <cascade.nab0p@icloud.com>"]
+authors.workspace = true
 description = "Automatically derive Protobuf and Rust conversions."
-repository = "https://github.com/protortyp/proto_convert_derive"
-license = "Apache-2.0"
+repository.workspace = true
+license.workspace = true
 documentation = "https://docs.rs/proto_convert_derive"
 keywords = ["protobuf", "protocol", "derive"]
 categories = ["development-tools"]
@@ -14,13 +14,16 @@ categories = ["development-tools"]
 proc-macro = true
 
 [dependencies]
-proc-macro2 = "1.0"
-quote = "1.0"
-syn = { version = "2.0", features = ["full"] }
+proc-macro2 = { workspace = true }
+quote = { workspace = true }
+syn = { workspace = true }
 
 [features]
 default = []
-build-time-metadata = []
+
+# Build-time metadata integration features
+meta-env = []
+meta-file = []
 
 [dev-dependencies]
-proto_convert_build = { path = "../proto_convert_build" }
+proto_convert_build = { workspace = true }

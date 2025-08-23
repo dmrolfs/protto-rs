@@ -1,6 +1,6 @@
 use crate::proto;
 use proptest::prelude::*;
-use proto_convert_derive::ProtoConvert;
+use proto_convert::ProtoConvert;
 use std::sync::atomic::AtomicU64;
 
 // Helper to create proto tracks with optional fields
