@@ -1,4 +1,5 @@
 use super::*;
+use crate::debug::CallStackDebug;
 
 #[derive(Debug, Clone)]
 pub enum ExpectMode {
@@ -8,16 +9,31 @@ pub enum ExpectMode {
 }
 
 impl ExpectMode {
-    pub fn from_field_meta(field: &Field, proto_meta: &attribute_parser::ProtoFieldMeta) -> ExpectMode {
+    pub fn from_field_meta(
+        field: &Field,
+        proto_meta: &attribute_parser::ProtoFieldMeta,
+    ) -> ExpectMode {
+        let _trace = CallStackDebug::new(
+            "ExpectMode::from_field_meta",
+            "",
+            field
+                .ident
+                .as_ref()
+                .map(|f| f.to_string())
+                .unwrap_or_default(),
+        );
+
         let field_name = field.ident.as_ref().unwrap();
         let expect_panic = has_expect_panic_syntax(field);
 
         let struct_name = syn::Ident::new("DEBUG", proc_macro2::Span::call_site());
-        if debug::should_output_debug(&struct_name, field_name) {
-            eprintln!("=== determine_expect_mode for {field_name} ===");
-            eprintln!("  parse_expect_panic: {expect_panic}");
-            eprintln!("  proto_meta.expect: {}", proto_meta.expect);
-        }
+        _trace.checkpoint_data(
+            "determine_expect_mode",
+            &[
+                ("expect_panic", &expect_panic.to_string()),
+                ("proto_meta.expect", &proto_meta.expect.to_string()),
+            ],
+        );
 
         if expect_panic {
             ExpectMode::Panic

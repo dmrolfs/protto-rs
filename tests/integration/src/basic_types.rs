@@ -6,6 +6,7 @@ use proto_convert::ProtoConvert;
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct Request {
     // Here we take the prost Header type instead
+    #[proto(proto_optional)]
     pub header: proto::Header,
     pub payload: String,
 }

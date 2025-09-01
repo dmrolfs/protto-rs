@@ -1,11 +1,11 @@
 [package]
-name = "grpc_comprehensive_example"
+name = "proto_convert_integration_tests"
 version = "0.1.0"
 edition.workspace = true
 publish = false
 
 [dependencies]
-proto_convert = { workspace = true }
+proto_convert = { path = "../../proto_convert" }
 tonic = { workspace = true }
 prost = { workspace = true }
 
@@ -15,13 +15,8 @@ proptest-derive = { workspace = true }
 ctor = { workspace = true }
 
 [build-dependencies]
-proto_convert = { workspace = true, features = ["build"] }
-proto_convert_build = { workspace = true }
 tonic-build = { workspace = true }
 glob = { workspace = true }
 
 [features]
 default = []
-# Declare local features to avoid cargo errors and cfg warnings
-meta-file = ["proto_convert/meta-file"]
-meta-env = ["proto_convert/meta-env"]

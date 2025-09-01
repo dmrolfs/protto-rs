@@ -304,24 +304,9 @@ checksum = "07e28edb80900c19c28f1072f2e8aeca7fa06b23cd4169cefe1af5aa3260783f"
 
 [[package]]
 name = "glob"
-version = "0.3.2"
+version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a8d1add55171497b4705a648c6b583acafb01d58050a51727785f0b2c8e0a2b2"
-
-[[package]]
-name = "grpc_comprehensive_example"
-version = "0.1.0"
-dependencies = [
- "ctor",
- "glob",
- "proptest",
- "proptest-derive",
- "prost",
- "proto_convert",
- "proto_convert_build",
- "tonic",
- "tonic-build",
-]
+checksum = "0cc23270f6e1808e30a928bdc84dea0b9b4136a8bc82338574f23baf47bbd280"
 
 [[package]]
 name = "h2"
@@ -749,15 +734,7 @@ dependencies = [
 name = "proto_convert"
 version = "0.2.0"
 dependencies = [
- "proto_convert_build",
  "proto_convert_derive",
-]
-
-[[package]]
-name = "proto_convert_build"
-version = "0.2.0"
-dependencies = [
- "regex",
 ]
 
 [[package]]
@@ -765,9 +742,22 @@ name = "proto_convert_derive"
 version = "0.2.0"
 dependencies = [
  "proc-macro2",
- "proto_convert_build",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "proto_convert_integration_tests"
+version = "0.1.0"
+dependencies = [
+ "ctor",
+ "glob",
+ "proptest",
+ "proptest-derive",
+ "prost",
+ "proto_convert",
+ "tonic",
+ "tonic-build",
 ]
 
 [[package]]

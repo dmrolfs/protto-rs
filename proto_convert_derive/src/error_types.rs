@@ -3,19 +3,23 @@ use super::*;
 /// Generates the default error name for a struct
 pub fn default_error_name(struct_name: &syn::Ident) -> syn::Ident {
     syn::Ident::new(
-        &format!("{struct_name}{}", crate::constants::DEFAULT_CONVERSION_ERROR_SUFFIX),
-        struct_name.span()
+        &format!(
+            "{struct_name}{}",
+            crate::constants::DEFAULT_CONVERSION_ERROR_SUFFIX
+        ),
+        struct_name.span(),
     )
 }
 
 /// Determines the effective error type for a field
 pub fn get_effective_error_type(
     proto_meta: &attribute_parser::ProtoFieldMeta,
-    struct_level_error_type: &Option<syn::Type>
+    struct_level_error_type: &Option<syn::Type>,
 ) -> Option<syn::Type> {
     if let Some(field_error_type) = &proto_meta.error_type {
-        return Some(syn::parse_str(field_error_type)
-            .expect("Failed to parse field-level error_type"));
+        return Some(
+            syn::parse_str(field_error_type).expect("Failed to parse field-level error_type"),
+        );
     }
 
     struct_level_error_type.clone()

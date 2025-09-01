@@ -1,7 +1,5 @@
-use crate::expect_analysis::ExpectMode;
 use super::*;
-
-mod proto_inspection;
+use crate::expect_analysis::ExpectMode;
 
 #[derive(Clone)]
 pub struct FieldProcessingContext<'a> {
@@ -79,37 +77,4 @@ impl<'a> FieldProcessingContext<'a> {
     }
 }
 
-pub use proto_inspection::detect_proto_field_optionality;
-
-pub fn is_optional_proto_field_for_ctx(ctx: &FieldProcessingContext, field: &syn::Field) -> bool {
-    // 1) check if user explicitly specified optionality
-    if let Some(explicit) = ctx.proto_meta.optional {
-        explicit
-    } else if let Some(build_detected) = detect_proto_field_optionality(ctx) {
-        // 2) try build-time metadata detection
-        build_detected
-    } else {
-        // 3) fallback to original analysis
-        is_optional_proto_field(ctx.struct_name, field, ctx.proto_name)
-    }
-}
-
-fn is_optional_proto_field(name: &syn::Ident, field: &syn::Field, proto_name: &str) -> bool {
-    let field_name = field.ident.as_ref().unwrap();
-
-    if let Ok(proto_meta) = attribute_parser::ProtoFieldMeta::from_field(field) {
-        if debug::should_output_debug(name, &field_name) {
-            eprintln!("=== PROTO META DEBUG for {}.{} ===", proto_name, field_name);
-            eprintln!("  proto_meta.optional: {:?}", proto_meta.optional);
-        }
-
-        if let Some(optional) = proto_meta.optional {
-            if debug::should_output_debug(name, &field_name) {
-                eprintln!("  RETURNING explicit optional = {optional}");
-            }
-            return optional;
-        }
-    }
-
-    false
-}
+pub use proto_inspection::determine_proto_field_optionality;

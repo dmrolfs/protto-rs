@@ -4,4 +4,4 @@
 #
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
-cc 54a6f81d72e9cbcebc2aad023a69180ced6f9b02c93b8747ecd1dbdd1800c1de # shrinks to renamed_value = None, transparent_value = "", enum_value = None, tracks = []
+cc 2a395af69adcb14d0653b6d555da77d47a25663314aaf616e5d901535ce80414 # shrinks to proto_track = TrackWithOptionals { track_id: 0, name: None, duration: None }

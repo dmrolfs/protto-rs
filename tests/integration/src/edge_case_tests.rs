@@ -128,7 +128,7 @@ proptest! {
         match (field1.is_some(), field2.is_some(), field3.is_some()) {
             (true, true, true) => {
                 // All required fields present - should succeed
-                let result: Result<MultipleErrorTypesStruct, DetailedValidationError> = proto_msg.try_into();
+                let result: Result<MultipleErrorFnsStruct, DetailedValidationError> = proto_msg.try_into();
                 if result.is_err() {
                     println!("Conversion failed with error: {:?}", result.as_ref().err());
                 }
@@ -136,7 +136,7 @@ proptest! {
             },
             _ => {
                 // First field missing - should get DetailedValidationError
-                let result: Result<MultipleErrorTypesStruct, DetailedValidationError> = proto_msg.try_into();
+                let result: Result<MultipleErrorFnsStruct, DetailedValidationError> = proto_msg.try_into();
                 prop_assert!(result.is_err());
             },
         }

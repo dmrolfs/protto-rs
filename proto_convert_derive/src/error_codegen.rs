@@ -11,7 +11,10 @@ pub fn generate_error_handling(
     struct_level_error_fn: &Option<String>,
 ) -> proc_macro2::TokenStream {
     let is_rust_optional = type_analysis::is_option_type(field_type);
-    let error_fn_to_use = proto_meta.error_fn.as_ref().or(struct_level_error_fn.as_ref());
+    let error_fn_to_use = proto_meta
+        .error_fn
+        .as_ref()
+        .or(struct_level_error_fn.as_ref());
 
     if let Some(error_fn) = error_fn_to_use {
         generate_custom_error_handling(field_name, proto_field_ident, is_rust_optional, error_fn)
@@ -27,8 +30,8 @@ fn generate_custom_error_handling(
     is_rust_optional: bool,
     error_fn: &str,
 ) -> proc_macro2::TokenStream {
-    let error_fn_path: syn::Path = syn::parse_str(error_fn)
-        .expect("Failed to parse error function path");
+    let error_fn_path: syn::Path =
+        syn::parse_str(error_fn).expect("Failed to parse error function path");
 
     if is_rust_optional {
         quote! {

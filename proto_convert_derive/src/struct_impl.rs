@@ -18,7 +18,7 @@ pub fn generate_struct_implementations(config: StructImplConfig) -> proc_macro2:
         error_handler::generate_error_definitions_if_needed(
             config.name,
             config.fields,
-            config.struct_level_error_type
+            config.struct_level_error_type,
         );
 
     let actual_error_type = error_handler::get_actual_error_type(
@@ -27,13 +27,15 @@ pub fn generate_struct_implementations(config: StructImplConfig) -> proc_macro2:
         &error_name,
     );
 
-    let from_proto_fields = generate_from_proto_fields(config.fields, &config, &error_name);
-    let from_my_fields = generate_from_my_fields(config.fields, &config, &error_name);
+    let from_proto_fields: Vec<_> =
+        generate_from_proto_fields(config.fields, &config, &error_name).collect();
+    let from_my_fields: Vec<_> =
+        generate_from_my_fields(config.fields, &config, &error_name).collect();
 
     let name = config.name;
     let proto_path = config.proto_path;
 
-    if needs_try_from {
+    let final_impl = if needs_try_from {
         quote! {
             #conversion_error_def
             #error_conversions
@@ -74,7 +76,31 @@ pub fn generate_struct_implementations(config: StructImplConfig) -> proc_macro2:
                 }
             }
         }
-    }
+    };
+
+    debug::debug_struct_conversion_generation(
+        name,
+        "FINAL_GENERATION",
+        &quote! {
+            Self {
+                #(#from_proto_fields),*
+            }
+        },
+        &quote! {
+            Self {
+                #(#from_my_fields),*
+            }
+        },
+        &[
+            ("total_fields", config.fields.len().to_string()),
+            ("proto_module", config.proto_module.to_string()),
+            ("proto_name", config.proto_name.to_string()),
+            ("needs_try_from", needs_try_from.to_string()),
+            ("error_type", quote!(#actual_error_type).to_string()),
+        ],
+    );
+
+    final_impl
 }
 
 fn generate_from_proto_fields<'a>(

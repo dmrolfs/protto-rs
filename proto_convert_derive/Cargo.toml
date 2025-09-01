@@ -20,10 +20,3 @@ syn = { workspace = true }
 
 [features]
 default = []
-
-# Build-time metadata integration features
-meta-env = []
-meta-file = []
-
-[dev-dependencies]
-proto_convert_build = { workspace = true }

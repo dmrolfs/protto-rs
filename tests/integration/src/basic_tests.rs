@@ -81,7 +81,7 @@ proptest! {
     }
 }
 
-// Test all examples from the documentation
+// Test all tests from the documentation
 #[test]
 fn test_basic_usage_example() {
     let proto_track = proto::Track { track_id: 42 };

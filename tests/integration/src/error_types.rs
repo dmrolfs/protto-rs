@@ -53,7 +53,7 @@ pub struct ComplexExpectStruct {
     error_type = DetailedValidationError
 )]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
-pub struct MultipleErrorTypesStruct {
+pub struct MultipleErrorFnsStruct {
     #[proto(
         expect,
         rename = "required_field",

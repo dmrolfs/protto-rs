@@ -10,9 +10,10 @@ pub fn generate_error_definitions_if_needed(
 ) -> (proc_macro2::TokenStream, proc_macro2::TokenStream, bool) {
     let requirements = error_analysis::analyze_error_requirements(fields, struct_level_error_type);
 
-    let conversion_error_def = if requirements.needs_try_from &&
-        requirements.needs_default_error &&
-        struct_level_error_type.is_none() {
+    let conversion_error_def = if requirements.needs_try_from
+        && requirements.needs_default_error
+        && struct_level_error_type.is_none()
+    {
         error_types::generate_conversion_error_enum(name)
     } else {
         quote! {}
@@ -25,7 +26,11 @@ pub fn generate_error_definitions_if_needed(
         quote! {}
     };
 
-    (conversion_error_def, error_conversions, requirements.needs_try_from)
+    (
+        conversion_error_def,
+        error_conversions,
+        requirements.needs_try_from,
+    )
 }
 
 /// Generates error handling code for a specific field
@@ -47,4 +52,45 @@ pub fn generate_error_handling(
         struct_level_error_type,
         struct_level_error_fn,
     )
+}
+
+pub fn generate_error_handling_expr(
+    proto_field_ident: &syn::Ident,
+    proto_meta: &attribute_parser::ProtoFieldMeta,
+    struct_level_error_fn: &Option<String>,
+    error_name: &syn::Ident,
+    needs_into: bool,
+) -> proc_macro2::TokenStream {
+    let error_fn_to_use = proto_meta
+        .error_fn
+        .as_ref()
+        .or(struct_level_error_fn.as_ref());
+
+    let error_expr = error_fn_to_use
+        .map(|error_fn| {
+            let error_fn_path: syn::Path =
+                syn::parse_str(error_fn).expect("Failed to parse error function path");
+
+            quote! {
+                #error_fn_path(stringify!(#proto_field_ident))
+            }
+        })
+        .unwrap_or_else(|| {
+            quote! {
+                #error_name::MissingField(stringify!(#proto_field_ident).to_string())
+            }
+        });
+
+    if needs_into {
+        quote! {
+            proto_struct.#proto_field_ident
+                .ok_or_else(|| #error_expr)?
+                .into()
+        }
+    } else {
+        quote! {
+            proto_struct.#proto_field_ident
+                .ok_or_else(|| #error_expr)?
+        }
+    }
 }

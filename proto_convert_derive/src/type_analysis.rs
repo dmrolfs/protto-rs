@@ -46,8 +46,10 @@ pub fn get_inner_type_from_vec(ty: &Type) -> Option<Type> {
 
 pub fn is_primitive_type(ty: &Type) -> bool {
     if let Type::Path(type_path) = ty {
-        type_path.path.segments.len() == 1 &&
-            PRIMITIVE_TYPES.iter().any(|&p| type_path.path.segments[0].ident == p)
+        type_path.path.segments.len() == 1
+            && PRIMITIVE_TYPES
+                .iter()
+                .any(|&p| type_path.path.segments[0].ident == p)
     } else {
         false
     }
@@ -69,7 +71,10 @@ pub fn is_enum_type(ty: &Type) -> bool {
             return false;
         }
 
-        let is_proto_type = type_path.path.segments.first()
+        let is_proto_type = type_path
+            .path
+            .segments
+            .first()
             .map(|segment| segment.ident == "proto")
             .unwrap_or(false);
 

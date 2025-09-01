@@ -89,9 +89,9 @@ proptest! {
         // Test that error types are consistent across different conversion attempts
         if present_fields.iter().all(|&p| p) {
             // All present - should succeed with any error type
-            let result1: Result<MultipleErrorTypesStruct, DetailedValidationError> = proto_msg.clone().try_into();
-            let result2: Result<MultipleErrorTypesStruct, DetailedValidationError> = proto_msg.clone().try_into();
-            let result3: Result<MultipleErrorTypesStruct, DetailedValidationError> = proto_msg.try_into();
+            let result1: Result<MultipleErrorFnsStruct, DetailedValidationError> = proto_msg.clone().try_into();
+            let result2: Result<MultipleErrorFnsStruct, DetailedValidationError> = proto_msg.clone().try_into();
+            let result3: Result<MultipleErrorFnsStruct, DetailedValidationError> = proto_msg.try_into();
 
             prop_assert!(result1.is_ok());
             prop_assert!(result2.is_ok());
@@ -100,7 +100,7 @@ proptest! {
             // Some missing - error behavior depends on which field is missing
             // This tests that the same input produces consistent error types
             if !present_fields[0] {
-                let result: Result<MultipleErrorTypesStruct, DetailedValidationError> = proto_msg.clone().try_into();
+                let result: Result<MultipleErrorFnsStruct, DetailedValidationError> = proto_msg.clone().try_into();
                 prop_assert!(result.is_err());
             }
         }
@@ -475,7 +475,7 @@ fn test_map_conversion_workflow() {
 #[test]
 fn test_all_attributes_in_one_struct() {
     // This would require a dedicated proto message and struct that uses all attributes
-    // For now, test existing comprehensive examples
+    // For now, test existing comprehensive tests
 
     let proto_msg = proto::CombinationMessage {
         rename_with_default: None,                         // Tests rename + default

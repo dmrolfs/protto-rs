@@ -9,7 +9,8 @@ pub fn requires_try_from(
         if attribute_parser::has_proto_ignore(field) {
             false
         } else {
-            let proto_meta = attribute_parser::ProtoFieldMeta::from_field(field).unwrap_or_default();
+            let proto_meta =
+                attribute_parser::ProtoFieldMeta::from_field(field).unwrap_or_default();
             let expect_mode = ExpectMode::from_field_meta(field, &proto_meta);
             matches!(expect_mode, ExpectMode::Error)
         }
@@ -26,8 +27,12 @@ pub fn requires_default_error_type(
             return false;
         }
         let proto_meta = attribute_parser::ProtoFieldMeta::from_field(field).unwrap_or_default();
-        if matches!(ExpectMode::from_field_meta(field, &proto_meta), ExpectMode::Error) {
-            let effective_error_type = error_types::get_effective_error_type(&proto_meta, struct_level_error_type);
+        if matches!(
+            ExpectMode::from_field_meta(field, &proto_meta),
+            ExpectMode::Error
+        ) {
+            let effective_error_type =
+                error_types::get_effective_error_type(&proto_meta, struct_level_error_type);
             effective_error_type.is_none()
         } else {
             false
@@ -48,7 +53,8 @@ pub fn analyze_error_requirements(
 ) -> ErrorRequirements {
     let needs_try_from = requires_try_from(fields);
     let needs_default_error = requires_default_error_type(fields, struct_level_error_type);
-    let needs_error_conversions = needs_try_from && needs_default_error && struct_level_error_type.is_none();
+    let needs_error_conversions =
+        needs_try_from && needs_default_error && struct_level_error_type.is_none();
 
     ErrorRequirements {
         needs_try_from,

@@ -12,14 +12,6 @@ documentation = "https://docs.rs/proto_convert"
 
 [dependencies]
 proto_convert_derive = { workspace = true }
-proto_convert_build = { workspace = true, optional = true }
 
 [features]
 default = []
-
-# Feature to enable build script helpers
-build = ["dep:proto_convert_build"]
-
-# Metadata integration features (mutually exclusive)
-meta-env = ["build", "proto_convert_build?/meta-env"]
-meta-file = ["build", "proto_convert_build?/meta-file"]

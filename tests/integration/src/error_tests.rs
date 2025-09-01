@@ -201,7 +201,7 @@ fn test_complex_expect_all_present() {
 }
 
 #[test]
-#[should_panic(expected = "Field field_with_panic is required")]
+#[should_panic(expected = "Proto field field_with_panic is required")]
 fn test_complex_expect_panic_missing() {
     let proto_msg = proto::ComplexExpectMessage {
         field_with_panic: None, // Should panic
@@ -276,7 +276,7 @@ fn test_default_with_missing_field() {
 }
 
 #[test]
-#[should_panic(expected = "Field enum_with_panic is required")]
+#[should_panic(expected = "Proto field enum_with_panic is required")]
 fn test_enum_expect_panic_missing() {
     let proto_msg = proto::ComplexExpectMessage {
         field_with_panic: Some("panic_field".to_string()),
@@ -342,7 +342,7 @@ fn test_multiple_error_types_success() {
         optional_field: Some("field3".to_string()),
     };
 
-    let result: Result<MultipleErrorTypesStruct, DetailedValidationError> = proto_msg.try_into();
+    let result: Result<MultipleErrorFnsStruct, DetailedValidationError> = proto_msg.try_into();
     assert!(result.is_ok());
     let rust_msg = result.unwrap();
     assert_eq!(rust_msg.field_with_detailed_error, "field1");
@@ -358,7 +358,7 @@ fn test_multiple_error_types_detailed_error() {
         optional_field: None,
     };
 
-    let result: Result<MultipleErrorTypesStruct, DetailedValidationError> = proto_msg.try_into();
+    let result: Result<MultipleErrorFnsStruct, DetailedValidationError> = proto_msg.try_into();
     assert!(result.is_err());
     assert_eq!(
         result.unwrap_err(),
@@ -374,7 +374,7 @@ fn test_multiple_error_types_basic_error() {
         optional_field: None,
     };
 
-    let result: Result<MultipleErrorTypesStruct, DetailedValidationError> = proto_msg.try_into();
+    let result: Result<MultipleErrorFnsStruct, DetailedValidationError> = proto_msg.try_into();
     assert!(result.is_err());
     // The exact error depends on how the macro generates the conversion
     assert!(result.is_err());
@@ -389,7 +389,7 @@ fn test_multiple_error_types_generated_error() {
     };
 
     // When all required fields are present, conversion should succeed
-    let result: Result<MultipleErrorTypesStruct, DetailedValidationError> = proto_msg.try_into();
+    let result: Result<MultipleErrorFnsStruct, DetailedValidationError> = proto_msg.try_into();
     assert!(result.is_ok());
 }
 
@@ -402,7 +402,7 @@ fn test_error_function_vs_default_error() {
         optional_field: None,
     };
 
-    let result: Result<MultipleErrorTypesStruct, DetailedValidationError> = proto_msg.try_into();
+    let result: Result<MultipleErrorFnsStruct, DetailedValidationError> = proto_msg.try_into();
     assert!(result.is_err());
     assert_eq!(
         result.unwrap_err(),
@@ -433,20 +433,20 @@ fn test_heterogeneous_error_types() {
     };
 
     // Each should fail with the appropriate error type
-    let result1: Result<MultipleErrorTypesStruct, DetailedValidationError> = proto_msg1.try_into();
+    let result1: Result<MultipleErrorFnsStruct, DetailedValidationError> = proto_msg1.try_into();
     assert!(matches!(
         result1,
         Err(DetailedValidationError::MissingRequired(_))
     ));
 
-    let result2: Result<MultipleErrorTypesStruct, DetailedValidationError> = proto_msg2.try_into();
+    let result2: Result<MultipleErrorFnsStruct, DetailedValidationError> = proto_msg2.try_into();
     assert!(matches!(
         result2,
         Err(DetailedValidationError::InvalidFormat(_))
     ));
 
     // Generated error should work when no custom error is specified
-    let result3: Result<MultipleErrorTypesStruct, DetailedValidationError> = proto_msg3.try_into();
+    let result3: Result<MultipleErrorFnsStruct, DetailedValidationError> = proto_msg3.try_into();
     assert!(matches!(
         result3,
         Err(DetailedValidationError::OutOfRange(_))
@@ -508,7 +508,7 @@ fn test_comprehensive_enum_defaults() {
 }
 
 #[test]
-#[should_panic(expected = "Field status_panic is required")]
+#[should_panic(expected = "Proto field status_panic is required")]
 fn test_comprehensive_enum_required_explicit_missing() {
     let proto_msg = proto::EnumMessage {
         status_panic: None, // This should cause panic since it has expect(panic)
@@ -574,7 +574,7 @@ fn test_transparent_with_expect_success() {
 }
 
 #[test]
-#[should_panic(expected = "Field transparent_with_expect is required")]
+#[should_panic(expected = "Proto field transparent_with_expect is required")]
 fn test_transparent_with_expect_missing() {
     let proto_msg = proto::CombinationMessage {
         rename_with_default: Some("renamed".to_string()),
@@ -638,7 +638,7 @@ fn test_custom_error_message_quality() {
         optional_field: None,
     };
 
-    let result: Result<MultipleErrorTypesStruct, DetailedValidationError> = proto_msg.try_into();
+    let result: Result<MultipleErrorFnsStruct, DetailedValidationError> = proto_msg.try_into();
     assert!(result.is_err());
 
     let error = result.unwrap_err();

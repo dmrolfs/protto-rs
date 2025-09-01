@@ -7,8 +7,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let proto_files = generate_prost_protos()?;
 
     if !proto_files.is_empty() {
-        println!("cargo:warning=Generating metadata for {} proto files", proto_files.len());
-        proto_convert::generate_proto_metadata(&proto_files)?;
+        println!(
+            "cargo:warning=Generating metadata for {} proto files",
+            proto_files.len()
+        );
     } else {
         println!("cargo:warning=No proto files found for metadata generation");
     }
@@ -21,7 +23,10 @@ fn generate_prost_protos() -> Result<Vec<Box<Path>>, Box<dyn std::error::Error>>
     let manifest_path = Path::new(&manifest_dir);
     let proto_dir = manifest_path.join("proto");
     if !proto_dir.exists() {
-        println!("cargo:warning=Proto directory {:?} does not exist", proto_dir);
+        println!(
+            "cargo:warning=Proto directory {:?} does not exist",
+            proto_dir
+        );
         return Ok(Vec::new());
     }
 
