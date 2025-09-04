@@ -159,3 +159,24 @@ pub struct ExpectCustomErrorStruct {
     #[proto(rename = "optional_field")]
     pub optional_field: Option<String>,
 }
+
+// This struct will trigger generate_custom_type_field for the track field
+#[derive(ProtoConvert, PartialEq, Debug, Clone)]
+#[proto(module = "proto", rename = "CustomTypeMessage")]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
+pub struct CustomTypeStruct {
+    // DMR: This field should trigger generate_custom_type_field()
+    // - Not Option<Track> (would go to generate_option_field)
+    // - Not Vec<Track> (would go to generate_vec_field)
+    // - Not a primitive type
+    // - Not a proto:: type
+    // - Not marked with any special attributes
+    pub track: Track,
+
+    // DMR: This should also trigger custom type path
+    pub track_id: TrackId,
+
+    // DMR: Test with transparent wrapper too
+    // #[proto(transparent, expect(panic))]
+    pub wrapper: TransparentWrapper,
+}

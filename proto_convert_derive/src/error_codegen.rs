@@ -1,7 +1,9 @@
+use crate::field_analysis::ConversionStrategy;
 use super::*;
 
 /// Generates error handling code for a specific field
 pub fn generate_error_handling(
+    strategy: &ConversionStrategy,
     field_name: &syn::Ident,
     proto_field_ident: &syn::Ident,
     field_type: &syn::Type,
@@ -17,14 +19,27 @@ pub fn generate_error_handling(
         .or(struct_level_error_fn.as_ref());
 
     if let Some(error_fn) = error_fn_to_use {
-        generate_custom_error_handling(field_name, proto_field_ident, is_rust_optional, error_fn)
+        generate_custom_error_handling(
+            strategy,
+            field_name,
+            proto_field_ident,
+            is_rust_optional,
+            error_fn
+        )
     } else {
-        generate_default_error_handling(field_name, proto_field_ident, is_rust_optional, error_name)
+        generate_default_error_handling(
+            strategy,
+            field_name,
+            proto_field_ident,
+            is_rust_optional,
+            error_name
+        )
     }
 }
 
 /// Generates error handling using a custom error function
 fn generate_custom_error_handling(
+    strategy: &ConversionStrategy,
     field_name: &syn::Ident,
     proto_field_ident: &syn::Ident,
     is_rust_optional: bool,
@@ -50,13 +65,20 @@ fn generate_custom_error_handling(
 
 /// Generates error handling using the default error type
 fn generate_default_error_handling(
+    strategy: &ConversionStrategy,
     field_name: &syn::Ident,
     proto_field_ident: &syn::Ident,
     is_rust_optional: bool,
     error_name: &syn::Ident,
 ) -> proc_macro2::TokenStream {
+    let strategy_info = strategy.debug_info();
+
     let error_expr = quote! {
-        #error_name::MissingField(stringify!(#proto_field_ident).to_string())
+        #error_name::MissingField(format!(
+            "{} (strategy: {})",
+            stringify!(#proto_field_ident),
+            #strategy_info
+        ))
     };
 
     if is_rust_optional {

@@ -1,5 +1,6 @@
 use super::*;
 use constants::PRIMITIVE_TYPES;
+use crate::debug::CallStackDebug;
 
 pub fn is_option_type(ty: &Type) -> bool {
     matches!(ty, Type::Path(type_path) if type_path.path.segments.first().map(|s| s.ident == "Option").unwrap_or(false))
@@ -55,7 +56,34 @@ pub fn is_primitive_type(ty: &Type) -> bool {
     }
 }
 
-pub fn is_proto_type_with_module(ty: &Type, proto_module: &str) -> bool {
+/// Unified detection for any non-primitive, non-collection custom type
+pub fn is_custom_type(ty: &Type) -> bool {
+    if let Type::Path(type_path) = ty {
+        // Skip primitives, collections, and proto types
+        if is_primitive_type(ty) || is_vec_type(ty) || is_option_type(ty) {
+            return false;
+        }
+
+        // Skip proto module types
+        if type_path
+            .path
+            .segments
+            .first()
+            .map(|segment| segment.ident == "proto")
+            .unwrap_or(false)
+        {
+            return false;
+        }
+
+        // DMR: Any remaining single-segment type is a custom type (struct, enum, newtype)
+        // Let the Rust compiler and From trait implementations determine what works
+        type_path.path.segments.len() == 1
+    } else {
+        false
+    }
+}
+
+pub fn is_proto_type(ty: &Type, proto_module: &str) -> bool {
     if let Type::Path(type_path) = ty {
         if let Some(segment) = type_path.path.segments.first() {
             return segment.ident == proto_module;
@@ -65,30 +93,11 @@ pub fn is_proto_type_with_module(ty: &Type, proto_module: &str) -> bool {
 }
 
 pub fn is_enum_type(ty: &Type) -> bool {
-    if let Type::Path(type_path) = ty {
-        // Skip primitive types, collections, and proto types
-        if is_primitive_type(ty) || is_vec_type(ty) || is_option_type(ty) {
-            return false;
-        }
-
-        let is_proto_type = type_path
-            .path
-            .segments
-            .first()
-            .map(|segment| segment.ident == "proto")
-            .unwrap_or(false);
-
-        if is_proto_type {
-            return false;
-        }
-
-        // Single-segment non-primitive types are likely enums or simple structs
-        type_path.path.segments.len() == 1
+    if let Type::Path(type_path) = ty
+    && let Some(last_segment) = type_path.path.segments.last() {
+        let type_name = last_segment.ident.to_string();
+        registry::is_registered_enum_type(&type_name)
     } else {
         false
     }
-}
-
-pub fn is_enum_type_with_explicit_attr(ty: &Type, field: &Field) -> bool {
-    attribute_parser::has_proto_enum_attr(field) || is_enum_type(ty)
 }

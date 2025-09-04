@@ -1,7 +1,7 @@
 use super::*;
 use crate::debug::CallStackDebug;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum ExpectMode {
     None,
     Error,
@@ -23,10 +23,7 @@ impl ExpectMode {
                 .unwrap_or_default(),
         );
 
-        let field_name = field.ident.as_ref().unwrap();
         let expect_panic = has_expect_panic_syntax(field);
-
-        let struct_name = syn::Ident::new("DEBUG", proc_macro2::Span::call_site());
         _trace.checkpoint_data(
             "determine_expect_mode",
             &[

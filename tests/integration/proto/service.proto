@@ -102,3 +102,9 @@ message CombinationMessage {
     optional Status enum_with_default_and_optional = 3;
     repeated Track collection_with_expect = 4;
 }
+
+message CustomTypeMessage {
+    optional Track track = 1;
+    optional uint64 track_id = 2;
+    optional string wrapper = 3;
+}

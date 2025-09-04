@@ -1,6 +1,8 @@
 use super::*;
 
 pub use error_types::{default_error_name, get_actual_error_type};
+use crate::debug::CallStackDebug;
+use crate::field_analysis::ConversionStrategy;
 
 /// Main orchestration function for generating all error-related definitions
 pub fn generate_error_definitions_if_needed(
@@ -35,6 +37,7 @@ pub fn generate_error_definitions_if_needed(
 
 /// Generates error handling code for a specific field
 pub fn generate_error_handling(
+    strategy: &ConversionStrategy,
     field_name: &syn::Ident,
     proto_field_ident: &syn::Ident,
     field_type: &syn::Type,
@@ -43,7 +46,19 @@ pub fn generate_error_handling(
     struct_level_error_type: &Option<syn::Type>,
     struct_level_error_fn: &Option<String>,
 ) -> proc_macro2::TokenStream {
+    let _trace = CallStackDebug::with_context(
+        "generate_error_handling_with_strategy",
+        &field_name.to_string(),
+        &proto_field_ident.to_string(),
+        &[
+            ("strategy", &format!("{:?}", strategy)),
+            ("strategy_info", &strategy.debug_info()),
+            ("strategy_category", &strategy.category()),
+        ],
+    );
+
     error_codegen::generate_error_handling(
+        strategy,
         field_name,
         proto_field_ident,
         field_type,
@@ -71,14 +86,10 @@ pub fn generate_error_handling_expr(
             let error_fn_path: syn::Path =
                 syn::parse_str(error_fn).expect("Failed to parse error function path");
 
-            quote! {
-                #error_fn_path(stringify!(#proto_field_ident))
-            }
+            quote! { #error_fn_path(stringify!(#proto_field_ident)) }
         })
         .unwrap_or_else(|| {
-            quote! {
-                #error_name::MissingField(stringify!(#proto_field_ident).to_string())
-            }
+            quote! { #error_name::MissingField(stringify!(#proto_field_ident).to_string()) }
         });
 
     if needs_into {

@@ -1,10 +1,5 @@
+use crate::optionality::FieldOptionality;
 use super::*;
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub enum ProtoOptionalityFlag {
-    ProtoOptional,
-    ProtoRequired,
-}
 
 #[derive(Debug, Default, Clone)]
 pub struct ProtoFieldMeta {
@@ -12,7 +7,7 @@ pub struct ProtoFieldMeta {
     pub error_fn: Option<String>,
     pub error_type: Option<String>,
     pub default_fn: Option<String>,
-    pub optionality_flag: Option<ProtoOptionalityFlag>,
+    pub optionality: Option<FieldOptionality>,
 }
 
 impl ProtoFieldMeta {
@@ -37,18 +32,16 @@ impl ProtoFieldMeta {
                                         meta.expect = true;
                                     }
                                     Meta::Path(path) if path.is_ident("proto_optional") => {
-                                        if meta.optionality_flag.is_some() {
+                                        if meta.optionality.is_some() {
                                             return Err("Cannot specify both proto_optional and proto_required".to_string());
                                         }
-                                        meta.optionality_flag =
-                                            Some(ProtoOptionalityFlag::ProtoOptional);
+                                        meta.optionality = Some(FieldOptionality::Optional);
                                     }
                                     Meta::Path(path) if path.is_ident("proto_required") => {
-                                        if meta.optionality_flag.is_some() {
+                                        if meta.optionality.is_some() {
                                             return Err("Cannot specify both proto_optional and proto_required".to_string());
                                         }
-                                        meta.optionality_flag =
-                                            Some(ProtoOptionalityFlag::ProtoRequired);
+                                        meta.optionality = Some(FieldOptionality::Required);
                                     }
                                     Meta::NameValue(nv) if nv.path.is_ident("error_type") => {
                                         if let Expr::Path(expr_path) = &nv.value {
@@ -107,29 +100,26 @@ impl ProtoFieldMeta {
     }
 
     /// Get the explicit proto optionality flag if present
-    pub fn get_proto_optionality(&self) -> Option<&ProtoOptionalityFlag> {
-        self.optionality_flag.as_ref()
+    #[allow(unused)]
+    pub fn get_proto_optionality(&self) -> Option<&FieldOptionality> {
+        self.optionality.as_ref()
     }
 
     /// Check if this field is explicitly marked as proto optional
+    #[allow(unused)]
     pub fn is_proto_optional(&self) -> bool {
-        matches!(
-            self.optionality_flag,
-            Some(ProtoOptionalityFlag::ProtoOptional)
-        )
+        self.optionality.map(|o| o.is_optional()).unwrap_or(false)
     }
 
     /// Check if this field is explicitly marked as proto required
+    #[allow(unused)]
     pub fn is_proto_required(&self) -> bool {
-        matches!(
-            self.optionality_flag,
-            Some(ProtoOptionalityFlag::ProtoRequired)
-        )
+        self.optionality.map(|o| o.is_required()).unwrap_or(false)
     }
 
     /// Check if any explicit optionality annotation is present
     pub fn has_explicit_optionality(&self) -> bool {
-        self.optionality_flag.is_some()
+        self.optionality.is_some()
     }
 }
 

@@ -1,8 +1,7 @@
-use crate::attribute_parser::ProtoOptionalityFlag::ProtoRequired;
 use crate::debug::CallStackDebug;
 use crate::expect_analysis::ExpectMode;
-use crate::field_analysis::FieldProcessingContext;
-use crate::{attribute_parser, debug, expect_analysis, field_analysis, type_analysis};
+use crate::field_analysis::{FieldProcessingContext, RustFieldInfo};
+use crate::{attribute_parser, expect_analysis, type_analysis};
 use quote::{ToTokens, quote};
 
 /// Main entry point for proto field optionality detection.
@@ -16,6 +15,8 @@ pub fn determine_proto_field_optionality(
     struct_name: &syn::Ident,
     field: &syn::Field,
     proto_name: &str,
+    rust_field: &RustFieldInfo,
+    ctx: &FieldProcessingContext
 ) -> FieldOptionality {
     let _trace = CallStackDebug::with_context(
         "determine_proto_field_optionality",
@@ -28,8 +29,6 @@ pub fn determine_proto_field_optionality(
         &[("proto_name", proto_name)],
     );
 
-    let field_name = field.ident.as_ref().unwrap();
-
     // 1. Explicit annotation takes absolute precedence
     if let Ok(proto_meta) = attribute_parser::ProtoFieldMeta::from_field(field)
         && proto_meta.has_explicit_optionality()
@@ -37,6 +36,12 @@ pub fn determine_proto_field_optionality(
         _trace.decision(
             "explicit optional",
             "Explicit annotation takes absolute precedence",
+        );
+        _trace.metadata_lookup(
+            proto_name,
+            &field.ident.as_ref().unwrap().to_string(),
+            Some(proto_meta.is_proto_optional()),
+            "explicit_user_annotation"
         );
         return if proto_meta.is_proto_optional() {
             FieldOptionality::Optional
@@ -51,6 +56,12 @@ pub fn determine_proto_field_optionality(
         _trace.decision(
             "is_option_type",
             "✓ PATTERN: Option<T> → optional proto field",
+        );
+        _trace.metadata_lookup(
+            proto_name,
+            &field.ident.as_ref().unwrap().to_string(),
+            Some(true),
+            "option_type_pattern"
         );
         return FieldOptionality::Optional;
     }
@@ -107,17 +118,8 @@ pub fn determine_proto_field_optionality(
     FieldOptionality::Required
 }
 
-/// Legacy wrapper for backwards compatibility
-pub fn is_optional_proto_field(
-    struct_name: &syn::Ident,
-    field: &syn::Field,
-    proto_name: &str,
-) -> bool {
-    determine_proto_field_optionality(struct_name, field, proto_name).is_optional()
-}
-
-/// Result of build-time metadata detection for proto field optionality
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+/// Result of build-time metadata detection for field optionality
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum FieldOptionality {
     /// Indicates whether the proto field is optional.
     Optional,
@@ -189,55 +191,68 @@ impl FieldOptionality {
             &[],
         );
 
-        let field_name = field.ident.as_ref().unwrap();
         let field_type = &field.ty;
 
-        // Pattern 1: Option<T> in Rust → optional proto field
+        // Pattern: Option<T> in Rust → optional proto field
         if type_analysis::is_option_type(field_type) {
             _trace.decision("is_option", "Option<T> in Rust → optional proto field");
             return Some(Self::Optional);
         }
 
-        // Pattern 2: Vec<T> → required repeated proto field
+        // Pattern: Vec<T> → required repeated proto field
         if type_analysis::is_vec_type(field_type) {
             _trace.decision("is_vec", " Vec<T> → required repeated proto field");
             return Some(Self::Required);
         }
 
-        // Pattern 3: Fields with expect() or default() → optional proto field
-        // This pattern indicates the field might be missing, so proto should be optional
-        if Self::has_optional_usage_indicators(ctx, field) {
+        // Pattern: Check for ACTUAL optional usage indicators before assuming optional
+        // Only if there are explicit expect/default attributes should we infer optional
+        if Self::has_explicit_optional_usage_indicators(ctx, field) {
             _trace.decision(
-                "has_usage_indicators",
-                "Fields with expect() or default() → optional proto field",
+                "has_explicit_usage_indicators",
+                "Fields with explicit expect() or default() → optional proto field",
             );
             return Some(Self::Optional);
         }
 
-        // Pattern 4: Enums -> required (like primitives)
-        if type_analysis::is_enum_type_with_explicit_attr(field_type, field) {
-            _trace.decision("is_enum", "Enum -> required proto field");
-            return Some(Self::Required);
-        }
+        // // Pattern: Fields with expect() or default() → optional proto field
+        // // This pattern indicates the field might be missing, so proto should be optional
+        // if Self::has_optional_usage_indicators(ctx, field) {
+        //     _trace.decision(
+        //         "has_usage_indicators",
+        //         "Fields with expect() or default() → optional proto field",
+        //     );
+        //     return Some(Self::Optional);
+        // }
 
-        // Pattern 5: Primitives -> required
+        // Pattern: Primitives -> required
         if type_analysis::is_primitive_type(field_type) {
             _trace.decision("is_primitive", "Primitive -> required proto field");
             return Some(Self::Required);
         }
 
-        // Pattern 6: Newtype wrappers (single-field tuple structs) -> required like primitives
-        if Self::is_newtype_wrapper(field_type)
-            && let Some(inner_type) = Self::get_newtype_inner_type(field_type)
-        {
-            _trace.decision("is_newtype", "Newtype → infer from inner type");
+        // Pattern: Enums -> required (like primitives)
+        if type_analysis::is_enum_type(field_type) {
+            _trace.decision("is_enum", "Enum -> required proto field");
+            return Some(Self::Required);
+        }
 
-            // For newtypes, the optionality depends on the wrapped type's characteristics
-            // and usage patterns, not just whether it's primitive
-            if Self::has_optional_usage_indicators(ctx, field) {
+        // DMR: Pattern: Custom types (structs, newtypes) → required by default
+        // This is the key fix - custom types without explicit optional indicators should be required
+        if Self::is_custom_type_without_optional_indicators(ctx, field_type) {
+            _trace.decision(
+                "custom_type_required",
+                "Custom type without optional indicators → required proto field"
+            );
+            return Some(Self::Required);
+        }
+
+        // Pattern: Newtype wrappers with optional usage -> optional
+        if Self::is_newtype_wrapper(field_type) {
+            if Self::has_explicit_optional_usage_indicators(ctx, field) {
                 _trace.decision(
                     "newtype_with_usage",
-                    "Newtype with expect/default → optional",
+                    "Newtype with explicit expect/default → optional",
                 );
                 return Some(Self::Optional);
             } else {
@@ -253,6 +268,72 @@ impl FieldOptionality {
         _trace.error("? AMBIGUOUS: Requires explicit #[proto(optional = true/false)]");
         None
     }
+
+    // only return true for EXPLICIT optional usage indicators
+    fn has_explicit_optional_usage_indicators(ctx: &FieldProcessingContext, field: &syn::Field) -> bool {
+        // Check for explicit expect() attribute or usage - not just context
+        let has_explicit_expect = expect_analysis::has_expect_panic_syntax(field) ||
+            (ctx.expect_mode != ExpectMode::None && Self::has_expect_attribute_on_field(field));
+
+        // Check for explicit default() attribute on the field itself
+        let has_explicit_default = Self::has_default_fn_attribute(field) ||
+            Self::has_any_default_attribute(field);
+
+        let result = has_explicit_expect || has_explicit_default;
+
+        if result {
+            CallStackDebug::new("has_explicit_optional_usage_indicators", ctx.struct_name, ctx.field_name)
+                .checkpoint_data("explicit_usage_found", &[
+                    ("has_explicit_expect", &has_explicit_expect.to_string()),
+                    ("has_explicit_default", &has_explicit_default.to_string()),
+                ]);
+        }
+
+        result
+    }
+
+    // detect custom types that should be required by default
+    fn is_custom_type_without_optional_indicators(ctx: &FieldProcessingContext, field_type: &syn::Type) -> bool {
+        if let syn::Type::Path(type_path) = field_type {
+            let segments = &type_path.path.segments;
+
+            // Single-segment types that aren't primitives or std types
+            if segments.len() == 1 {
+                let is_primitive = type_analysis::is_primitive_type(field_type);
+                let is_std_type = Self::is_std_type(field_type);
+                let is_proto_type = type_analysis::is_proto_type(field_type, ctx.proto_module);
+
+                // Custom type = not primitive, not std, not proto
+                let is_custom = !is_primitive && !is_std_type && !is_proto_type;
+
+                if is_custom {
+                    CallStackDebug::new("is_custom_type_without_optional_indicators", ctx.struct_name, ctx.field_name)
+                        .checkpoint_data("custom_type_detected", &[
+                            ("type_name", &segments[0].ident.to_string()),
+                            ("is_primitive", &is_primitive.to_string()),
+                            ("is_std_type", &is_std_type.to_string()),
+                            ("is_proto_type", &is_proto_type.to_string()),
+                        ]);
+                }
+
+                is_custom
+            } else {
+                false
+            }
+        } else {
+            false
+        }
+    }
+
+    // check if field has explicit expect attribute
+    fn has_expect_attribute_on_field(field: &syn::Field) -> bool {
+        if let Ok(proto_meta) = attribute_parser::ProtoFieldMeta::from_field(field) {
+            proto_meta.expect
+        } else {
+            false
+        }
+    }
+
 
     /// Check if field has usage patterns indicating optional proto field
     fn has_optional_usage_indicators(ctx: &FieldProcessingContext, field: &syn::Field) -> bool {

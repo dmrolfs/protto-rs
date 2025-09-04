@@ -1,4 +1,4 @@
-use proc_macro2::{Ident, TokenStream};
+use proc_macro2::TokenStream;
 use std::fmt::Display;
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -37,7 +37,6 @@ fn parse_debug_env() -> DebugMode {
 }
 
 /// Check if debug output should be enabled for a specific struct/field combination
-#[allow(unused_variables)]
 pub fn should_output_debug(name: impl Display, field_name: impl Display) -> bool {
     let name = name.to_string();
 
@@ -88,6 +87,7 @@ fn matches_debug_pattern(pattern: &str, name: &str) -> bool {
 }
 
 /// Print available debug configuration options
+#[allow(unused)]
 pub fn print_debug_help() {
     eprintln!("ProtoConvert Debug Options:");
     eprintln!("  Environment variable PROTO_CONVERT_DEBUG supports:");
@@ -103,27 +103,6 @@ pub fn print_debug_help() {
     eprintln!("  Usage during proc macro expansion:");
     eprintln!("    PROTO_CONVERT_DEBUG=Request cargo build");
     eprintln!("    PROTO_CONVERT_DEBUG=Track* cargo test");
-}
-
-/// Enhanced debug configuration
-pub struct DebugConfig {
-    pub show_field_analysis: bool,
-    pub show_generated_code: bool,
-    pub show_type_resolution: bool,
-    pub show_metadata_lookup: bool,
-    pub show_conversion_logic: bool,
-}
-
-impl Default for DebugConfig {
-    fn default() -> Self {
-        Self {
-            show_field_analysis: true,
-            show_generated_code: true,
-            show_type_resolution: true,
-            show_metadata_lookup: true,
-            show_conversion_logic: true,
-        }
-    }
 }
 
 // Global call depth counter for indentation
@@ -162,6 +141,7 @@ impl CallStackDebug {
         }
     }
 
+    #[allow(unused)]
     pub fn with_struct_field(
         function_name: &str,
         struct_name: impl Display,
@@ -182,7 +162,7 @@ impl CallStackDebug {
         field_name: impl Display,
         extra_context: &[(&str, &str)],
     ) -> Self {
-        let mut tracker = Self::new(function_name, struct_name, field_name);
+        let tracker = Self::new(function_name, struct_name, field_name);
 
         if tracker.enabled && !extra_context.is_empty() {
             let indent = "  ".repeat(tracker.depth);
@@ -217,28 +197,8 @@ impl CallStackDebug {
         }
     }
 
-    /// Log metadata lookup with results
-    pub fn metadata_lookup(
-        &self,
-        proto_message: &str,
-        proto_field: &str,
-        result: Option<bool>,
-        strategy: &str,
-    ) {
-        if self.enabled {
-            let indent = "  ".repeat(self.depth);
-            eprintln!("{}│  📋 METADATA LOOKUP", indent);
-            eprintln!(
-                "{}│    🏷️  Proto: {}.{}",
-                indent, proto_message, proto_field
-            );
-            eprintln!("{}│    ✅ Result: {:?}", indent, result);
-            eprintln!("{}│    🚩 Strategy: {}", indent, strategy);
-        }
-    }
-
     /// Log conversion logic decision tree
-    pub fn conversion_logic(&self, conversion_type: &str, decisions: &[(&str, &str)]) {
+    pub fn conversion_logic(&self, conversion_type: &str, decisions: &[(&str, &str)]) -> &Self {
         if self.enabled {
             let indent = "  ".repeat(self.depth);
             eprintln!("{}│  ⚡ CONVERSION: {}", indent, conversion_type);
@@ -246,6 +206,7 @@ impl CallStackDebug {
                 eprintln!("{}│    🛤️  {}: {}", indent, condition, result);
             }
         }
+        self
     }
 
     /// Log generated code with context
@@ -318,11 +279,12 @@ impl CallStackDebug {
     }
 
     /// Log a decision point
-    pub fn decision(&self, condition: &str, choice: &str) {
+    pub fn decision(&self, condition: &str, choice: &str) -> &Self{
         if self.enabled {
             let indent = "  ".repeat(self.depth);
             eprintln!("{}│  🔀 IF {} THEN {}", indent, condition, choice);
         }
+        self
     }
 
     /// Log conditional expressions for metadata-driven code
@@ -346,6 +308,89 @@ impl CallStackDebug {
             }
         }
     }
+
+    /// Debug type mismatch analysis (replaces debug_type_mismatch_analysis)
+    pub fn type_mismatch(
+        &self,
+        expected_rust_type: &str,
+        actual_proto_type: &str,
+        conversion_attempt: &str,
+        suggested_fixes: &[&str],
+    ) -> &Self {
+        if self.enabled {
+            let indent = "  ".repeat(self.depth);
+            eprintln!("{}│  🎯 TYPE MISMATCH", indent);
+            eprintln!("{}│    🦀 Expected: {}", indent, expected_rust_type);
+            eprintln!("{}│    📦 Actual: {}", indent, actual_proto_type);
+            eprintln!("{}│    🔄 Attempted: {}", indent, conversion_attempt);
+            if !suggested_fixes.is_empty() {
+                eprintln!("{}│    💡 Fixes: {}", indent, suggested_fixes.join(", "));
+            }
+        }
+        self
+    }
+
+    /// Debug type resolution (replaces debug_type_resolution)
+    pub fn type_resolution(
+        &self,
+        rust_type: &str,
+        proto_field_name: &str,
+        proto_type_info: &str,
+        metadata_result: Option<bool>,
+    ) -> &Self {
+        if self.enabled {
+            let indent = "  ".repeat(self.depth);
+            eprintln!("{}│  🎯 TYPE RESOLUTION", indent);
+            eprintln!("{}│    🦀 Rust: {}", indent, rust_type);
+            eprintln!("{}│    📦 Proto field: {}", indent, proto_field_name);
+            eprintln!("{}│    🔧 Type info: {}", indent, proto_type_info);
+            eprintln!("{}│    📋 Metadata: {:?}", indent, metadata_result);
+        }
+        self
+    }
+
+    /// Debug metadata lookup (replaces debug_metadata_lookup)
+    pub fn metadata_lookup(
+        &self,
+        proto_message: &str,
+        proto_field: &str,
+        metadata_result: Option<bool>,
+        strategy: &str,
+    ) -> &Self {
+        if self.enabled {
+            let indent = "  ".repeat(self.depth);
+            eprintln!("{}│  📋 METADATA LOOKUP", indent);
+            eprintln!("{}│    🏷️  Proto: {}.{}", indent, proto_message, proto_field);
+            eprintln!("{}│    ✅ Result: {:?}", indent, metadata_result);
+            eprintln!("{}│    🚩 Strategy: {}", indent, strategy);
+        }
+        self
+    }
+
+    /// Debug error condition (replaces debug_error_condition)
+    pub fn error_condition(&self, error_type: &str, details: &str, suggested_fix: Option<&str>) -> &Self {
+        if self.enabled {
+            let indent = "  ".repeat(self.depth);
+            eprintln!("{}│  ❌ ERROR: {}", indent, error_type);
+            eprintln!("{}│    📝 Details: {}", indent, details);
+            if let Some(fix) = suggested_fix {
+                eprintln!("{}│    💡 Fix: {}", indent, fix);
+            }
+        }
+        self
+    }
+
+    /// Debug struct-level generation (replaces debug_struct_generation)
+    pub fn struct_generation(&self, phase: &str, info: &[(&str, &str)]) -> &Self {
+        if self.enabled {
+            let indent = "  ".repeat(self.depth);
+            eprintln!("{}│  🏢 STRUCT: {}", indent, phase);
+            for (key, value) in info {
+                eprintln!("{}│    🔧 {}: {}", indent, key, value);
+            }
+        }
+        self
+    }
 }
 
 impl Drop for CallStackDebug {
@@ -361,73 +406,6 @@ impl Drop for CallStackDebug {
             );
         }
     }
-}
-
-/// Format code for compact preview
-fn format_code_preview(code: &str) -> String {
-    // Take first meaningful part, collapse whitespace
-    let preview = code
-        .lines()
-        .map(|line| line.trim())
-        .filter(|line| !line.is_empty())
-        .collect::<Vec<_>>()
-        .join(" ");
-
-    if preview.len() > 80 {
-        format!("{}...", &preview[..77])
-    } else {
-        preview
-    }
-}
-
-/// simplify debug calls
-#[inline]
-pub fn debug_step(
-    struct_name: impl Display,
-    field_name: impl Display,
-    step: &str,
-    context: &[(&str, &str)],
-) {
-    let struct_name = struct_name.to_string();
-    let field_name = field_name.to_string();
-
-    if should_output_debug(&struct_name, &field_name) {
-        debug_field_analysis(&struct_name, &field_name, step, context);
-    }
-}
-
-pub fn debug_context(
-    struct_name: impl Display,
-    field_name: impl Display,
-    phase: &str,
-    context: &[(&str, &str)],
-) {
-    let struct_name = struct_name.to_string();
-    let field_name = field_name.to_string();
-
-    if !should_output_debug(&struct_name, &field_name) {
-        return;
-    }
-
-    eprintln!(
-        "\n=== {} DEBUG: {}.{} - {} ===",
-        match phase {
-            p if p.contains("FIELD") => "🔍 FIELD",
-            p if p.contains("TYPE") => "🎯 TYPE",
-            p if p.contains("METADATA") => "📋 META",
-            p if p.contains("CONVERSION") => "⚡ CONV",
-            p if p.contains("CODE") => "🏗️  CODE",
-            _ => "ℹ️  INFO",
-        },
-        struct_name,
-        field_name,
-        phase
-    );
-
-    for (key, value) in context {
-        eprintln!("  📊 {}: {}", key, value);
-    }
-    eprintln!("=== END {} ===\n", phase);
 }
 
 pub fn debug_struct_conversion_generation(
@@ -459,119 +437,6 @@ pub fn debug_struct_conversion_generation(
     );
 
     eprintln!("=== END STRUCT ===\n");
-}
-
-/// Debug feature flag detection and metadata strategy
-pub fn debug_feature_strategy(struct_name: impl Display) {
-    let name = struct_name.to_string();
-    if !should_output_debug(&name, "") {
-        return;
-    }
-
-    eprintln!("\n=== 🚩 FEATURES: {} ===", name);
-    // Show compile-time feature detection
-    eprintln!("=== END FEATURES ===\n");
-}
-
-/// Add comprehensive error analysis
-pub fn debug_type_mismatch_analysis(
-    struct_name: impl Display,
-    field_name: impl Display,
-    expected_rust_type: &str,
-    actual_proto_type: &str,
-    conversion_attempt: &str,
-    suggested_fixes: &[&str],
-) {
-    let struct_name = struct_name.to_string();
-    let field_name = field_name.to_string();
-
-    eprintln!("\n=== 🎯 MISMATCH: {}.{} ===", struct_name, field_name);
-    eprintln!("  🦀 Expected Rust: {}", expected_rust_type);
-    eprintln!("  📦 Actual Proto: {}", actual_proto_type);
-    eprintln!("  🔄 Conversion: {}", conversion_attempt);
-    eprintln!("  💡 Fixes:");
-    for (i, fix) in suggested_fixes.iter().enumerate() {
-        eprintln!("    {}. {}", i + 1, fix);
-    }
-    eprintln!("=== END MISMATCH ===\n");
-}
-
-/// Enhanced field analysis debug with more context
-pub fn debug_field_analysis(
-    struct_name: impl Display,
-    field_name: impl Display,
-    phase: &str,
-    context: &[(&str, &str)],
-) {
-    let struct_name = struct_name.to_string();
-    let field_name = field_name.to_string();
-
-    if !should_output_debug(&struct_name, &field_name) {
-        return;
-    }
-
-    eprintln!(
-        "\n=== 🔍 FIELD ANALYSIS DEBUG: {}.{} - {} ===",
-        struct_name, field_name, phase
-    );
-    for (key, value) in context {
-        eprintln!("  📊 {}: {}", key, value);
-    }
-    eprintln!("=== END FIELD ANALYSIS ===\n");
-}
-
-/// Debug type resolution with proto vs rust type comparison
-pub fn debug_type_resolution(
-    struct_name: impl Display,
-    field_name: impl Display,
-    rust_type: &str,
-    proto_field_name: &str,
-    proto_type_info: &str,
-    metadata_result: Option<bool>,
-) {
-    let struct_name = struct_name.to_string();
-    let field_name = field_name.to_string();
-
-    if !should_output_debug(&struct_name, &field_name) {
-        return;
-    }
-
-    eprintln!(
-        "\n=== 🎯 TYPE RESOLUTION: {}.{} ===",
-        struct_name, field_name
-    );
-    eprintln!("  🦀 Rust field type: {}", rust_type);
-    eprintln!("  📦 Proto field name: {}", proto_field_name);
-    eprintln!("  🔧 Proto type info: {}", proto_type_info);
-    eprintln!("  📋 Metadata result: {:?}", metadata_result);
-    eprintln!("=== END TYPE RESOLUTION ===\n");
-}
-
-/// Debug metadata lookup with detailed results
-pub fn debug_metadata_lookup(
-    struct_name: impl Display,
-    field_name: impl Display,
-    proto_message: &str,
-    proto_field: &str,
-    metadata_result: Option<bool>,
-    feature_flags: &str,
-) {
-    let struct_name = struct_name.to_string();
-    let field_name = field_name.to_string();
-
-    if !should_output_debug(&struct_name, &field_name) {
-        return;
-    }
-
-    eprintln!(
-        "\n=== 📋 METADATA LOOKUP: {}.{} ===",
-        struct_name, field_name
-    );
-    eprintln!("  🏢 Proto message: {}", proto_message);
-    eprintln!("  🏷️  Proto field: {}", proto_field);
-    eprintln!("  ✅ Metadata result: {:?}", metadata_result);
-    eprintln!("  🚩 Feature flags: {}", feature_flags);
-    eprintln!("=== END METADATA LOOKUP ===\n");
 }
 
 /// Debug conversion logic showing the decision tree

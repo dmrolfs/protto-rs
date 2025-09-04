@@ -23,7 +23,7 @@ mod expect_analysis;
 mod field_analysis;
 mod field_processor;
 mod macro_input;
-mod proto_inspection;
+mod optionality;
 mod struct_impl;
 mod tuple_impl;
 mod type_analysis;
@@ -52,6 +52,34 @@ mod utils {
     }
 }
 
+mod registry {
+    use std::collections::HashSet;
+    use std::sync::{Mutex, OnceLock};
+
+    /// Global registry for tracking enum types across macro invocations
+    static ENUM_TYPE_REGISTRY: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+
+    /// Initialize the global enum registry
+    fn get_enum_registry() -> &'static Mutex<HashSet<String>> {
+        ENUM_TYPE_REGISTRY.get_or_init(|| Mutex::new(HashSet::new()))
+    }
+
+    /// Register a type as an enum (called during enum processing)
+    pub fn register_enum_type(type_name: &str) {
+        if let Ok(mut registry) = get_enum_registry().lock() {
+            registry.insert(type_name.to_string());
+        }
+    }
+
+    /// Check if a type is registered as an enum (called during field processing)
+    pub fn is_registered_enum_type(type_name: &str) -> bool {
+        get_enum_registry()
+            .lock()
+            .map(|registry| registry.contains(type_name))
+            .unwrap_or(false)
+    }
+}
+
 #[proc_macro_derive(ProtoConvert, attributes(proto))]
 pub fn proto_convert_derive(input: TokenStream) -> TokenStream {
     let ast: DeriveInput = syn::parse(input).unwrap();
@@ -59,6 +87,12 @@ pub fn proto_convert_derive(input: TokenStream) -> TokenStream {
 
     let name = parsed_input.name;
 
+    // -- phase 1 - check if this is an enum type with #[proto(enum)] --
+    if let syn::Data::Enum(_) = &ast.data {
+        registry::register_enum_type(&ast.ident.to_string())
+    }
+
+    // -- phase 2 - process the struct/enum --
     match &ast.data {
         syn::Data::Struct(data_struct) => match &data_struct.fields {
             syn::Fields::Named(fields_named) => {
