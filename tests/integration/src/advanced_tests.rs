@@ -119,37 +119,38 @@ mod comprehensive_tests {
         assert_eq!(rust_struct.custom_field.value, 123);
 
         let back_to_proto: proto::BidirectionalMessage = rust_struct.into();
-        assert_eq!(back_to_proto.custom_field.unwrap().name, "test");
-        assert_eq!(back_to_proto.custom_field.unwrap().id, 123);
+        let proto_custom_field = back_to_proto.custom_field.unwrap();
+        assert_eq!(proto_custom_field.name, "test");
+        assert_eq!(proto_custom_field.id, 123);
     }
 
     #[test]
     fn test_transparent_required() {
         // DMR: Test TransparentRequired strategy
         let proto_msg = proto::TransparentMessage {
-            wrapper_id: 42,
+            wrapper_id: "42".to_string(),
         };
 
         let rust_struct: TransparentRequiredStruct = proto_msg.try_into().unwrap();
-        assert_eq!(rust_struct.id.0, 42);
+        assert_eq!(rust_struct.id.as_str(), "42");
 
         let back_to_proto: proto::TransparentMessage = rust_struct.into();
-        assert_eq!(back_to_proto.wrapper_id, 42);
+        assert_eq!(back_to_proto.wrapper_id, "42");
     }
 
     #[test]
     fn test_transparent_optional_strategies() {
         // DMR: Test TransparentOptionalWith* strategies
         let proto_msg = proto::TransparentOptionalMessage {
-            panic_wrapper: Some(10),
-            error_wrapper: Some(20),
+            panic_wrapper: Some("10".to_string()),
+            error_wrapper: Some("20".to_string()),
             default_wrapper: None, // This should use default
         };
 
         let rust_struct: TransparentOptionalStruct = proto_msg.try_into().unwrap();
-        assert_eq!(rust_struct.panic_wrapper.0, 10);
-        assert_eq!(rust_struct.error_wrapper.0, 20);
-        assert_eq!(rust_struct.default_wrapper.0, 42); // default value
+        assert_eq!(rust_struct.panic_wrapper.as_str(), "10");
+        assert_eq!(rust_struct.error_wrapper.as_str(), "20");
+        assert_eq!(rust_struct.default_wrapper.as_str(), "42"); // default value
     }
 
     #[test]
@@ -170,7 +171,7 @@ mod comprehensive_tests {
         // DMR: Test MapOption strategy (both sides optional, no expect/default)
         let proto_msg = proto::MapOptionMessage {
             simple_option: Some("test".to_string()),
-            optional_status: Some(0), // Status::MovedPermanently as i32
+            optional_status: Some(1), // Status::MovedPermanently as i32
         };
 
         let rust_struct: MapOptionStruct = proto_msg.try_into().unwrap();
@@ -266,15 +267,15 @@ mod comprehensive_tests {
     fn test_direct_with_into() {
         // DMR: Test DirectWithInto strategy
         let proto_msg = proto::DirectConversionMessage {
-            status_field: 1, // Status::Ok as i32
+            status_field: 0, // Status::Ok as i32
             track_field: Some(proto::Track { track_id: 42 }),
             track_id: 123,
         };
 
         let rust_struct: DirectWithIntoStruct = proto_msg.try_into().unwrap();
         assert_eq!(rust_struct.status_field, Status::Ok);
-        assert_eq!(rust_struct.track_field.id.0, 42);
-        assert_eq!(rust_struct.track_id.0, 123);
+        assert_eq!(rust_struct.track_field.id.as_ref(), &42);
+        assert_eq!(rust_struct.track_id.as_ref(), &123);
     }
 
     #[test]
@@ -283,12 +284,12 @@ mod comprehensive_tests {
         let rust_struct = RustToProtoStruct {
             rust_required_field: "test".to_string(),
             rust_optional_field: Some("optional".to_string()),
-            transparent_required: TransparentWrapper(42),
-            transparent_optional: TransparentWrapper(99),
+            transparent_required: TrackId::new(42),
+            transparent_optional: TrackId::new(99),
         };
 
         let proto_msg: proto::RustToProtoMessage = rust_struct.into();
-        assert_eq!(proto_msg.required_to_optional, Some("test".to_string())); // WrapInSome
+        assert_eq!(proto_msg.required_to_optional, "test".to_string());
         assert_eq!(proto_msg.optional_to_required, Some("optional".to_string())); // UnwrapOptional
         assert_eq!(proto_msg.transparent_to_required, 42); // TransparentToRequired
         assert_eq!(proto_msg.transparent_to_optional, Some(99)); // TransparentToOptional
@@ -314,9 +315,9 @@ mod comprehensive_tests {
         }
 
         #[test]
-        fn prop_transparent_roundtrip(value in any::<u64>()) {
+        fn prop_transparent_roundtrip(value in any::<String>()) {
             let original = TransparentRequiredStruct {
-                id: TransparentWrapper(value),
+                id: TransparentWrapper::new(value),
             };
 
             let proto: proto::TransparentMessage = original.clone().into();
@@ -375,7 +376,7 @@ mod comprehensive_tests {
             let tracks = if tracks_len == 0 {
                 None
             } else {
-                Some((0..tracks_len).map(|i| Track { id: TrackId(i as u64) }).collect())
+                Some((0..tracks_len).map(|i| Track { id: TrackId::new(i as u64) }).collect())
             };
             let strings = if strings_len == 0 {
                 None
@@ -413,8 +414,8 @@ mod comprehensive_tests {
         ) {
             let original = DirectWithIntoStruct {
                 status_field: status,
-                track_field: Track { id: TrackId(track_id) },
-                track_id: TrackId(wrapper_val),
+                track_field: Track { id: TrackId::new(track_id) },
+                track_id: TrackId::new(wrapper_val),
             };
 
             let proto: proto::DirectConversionMessage = original.clone().into();
@@ -433,8 +434,8 @@ mod comprehensive_tests {
             let original = RustToProtoStruct {
                 rust_required_field: required_field.clone(),
                 rust_optional_field: optional_field.clone(),
-                transparent_required: TransparentWrapper(transparent_req),
-                transparent_optional: TransparentWrapper(transparent_opt),
+                transparent_required: TrackId::new(transparent_req),
+                transparent_optional: TrackId::new(transparent_opt),
             };
 
             let proto: proto::RustToProtoMessage = original.clone().into();

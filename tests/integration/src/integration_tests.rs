@@ -555,14 +555,14 @@ fn test_all_strategies_compilation() {
 
     // TransparentRequired
     let _transparent_req = TransparentRequiredStruct {
-        id: TransparentWrapper(123),
+        id: TransparentWrapper::new("123"),
     };
 
     // TransparentOptionalWith* variants
     let _transparent_opt = TransparentOptionalStruct {
-        panic_wrapper: TransparentWrapper(1),
-        error_wrapper: TransparentWrapper(2),
-        default_wrapper: TransparentWrapper(3),
+        panic_wrapper: TransparentWrapper::new("1"),
+        error_wrapper: TransparentWrapper::new("2"),
+        default_wrapper: TransparentWrapper::new("3"),
     };
 
     // WrapInSome
@@ -579,7 +579,7 @@ fn test_all_strategies_compilation() {
 
     // MapVecInOption
     let _vec_option = VecOptionStruct {
-        optional_tracks: Some(vec![Track { id: TrackId(1) }]),
+        optional_tracks: Some(vec![Track { id: TrackId::new(1) }]),
         optional_strings: None,
         optional_proto_tracks: Some(vec![]),
     };
@@ -599,23 +599,23 @@ fn test_all_strategies_compilation() {
     // DirectWithInto
     let _direct_into = DirectWithIntoStruct {
         status_field: Status::Found,
-        track_field: Track { id: TrackId(99) },
-        track_id: TrackId(456),
+        track_field: Track { id: TrackId::new(99) },
+        track_id: TrackId::new(456),
     };
 
     // EdgeCaseCombinations
     let _edge_cases = EdgeCaseCombinationsStruct {
         optional_custom: None,
         vec_custom: vec![],
-        transparent_option: Some(TransparentWrapper(789)),
+        transparent_option: Some(TransparentWrapper::new("789")),
     };
 
     // RustToProto strategies
     let _rust_to_proto = RustToProtoStruct {
         rust_required_field: "required".to_string(),
         rust_optional_field: Some("optional".to_string()),
-        transparent_required: TransparentWrapper(111),
-        transparent_optional: TransparentWrapper(222),
+        transparent_required: TrackId::new(111),
+        transparent_optional: TrackId::new(222),
     };
 
     // If we get here, all types compile successfully
@@ -628,7 +628,7 @@ fn test_error_handling_strategies() {
 
     // Test TransparentOptionalWithError - should fail when proto field is None
     let proto_with_none = proto::TransparentOptionalMessage {
-        panic_wrapper: Some(10),
+        panic_wrapper: Some("10".to_string()),
         error_wrapper: None,  // This should trigger error strategy
         default_wrapper: None,
     };

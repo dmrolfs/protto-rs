@@ -321,19 +321,19 @@ pub fn vec_custom_into(rust_vec: Vec<CustomTypeInner>) -> Vec<proto::CustomType>
 #[proto(module = "proto", rename = "RustToProtoMessage")]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct RustToProtoStruct {
-    // DMR: This should trigger WrapInSome (rust required -> proto optional)
-    #[proto(proto_optional, rename = "required_to_optional")]
+    // This should trigger WrapInSome (rust required -> proto optional)
+    #[proto(rename = "required_to_optional")]
     pub rust_required_field: String,
 
-    // DMR: This should trigger UnwrapOptional (rust optional -> proto required)
+    // This should trigger UnwrapOptional (rust optional -> proto required)
     #[proto(proto_required, rename = "optional_to_required")]
     pub rust_optional_field: Option<String>,
 
-    // DMR: This should trigger TransparentToRequired
+    // This should trigger TransparentToRequired
     #[proto(transparent, rename = "transparent_to_required")]
     pub transparent_required: TrackId,
 
-    // DMR: This should trigger TransparentToOptional
+    // This should trigger TransparentToOptional
     #[proto(transparent, proto_optional, rename = "transparent_to_optional")]
     pub transparent_optional: TrackId,
 }

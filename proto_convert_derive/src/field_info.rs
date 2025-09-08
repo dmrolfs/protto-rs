@@ -400,8 +400,18 @@ impl ProtoFieldInfo {
             trace.decision("explicit_proto_optional_attribute", "proto(optional = true) found");
             Some(FieldOptionality::Optional)
         } else if let Some(explicit_optionality) = ctx.proto_meta.get_proto_optionality() {
-            trace.decision("explicit_proto_optionality", &format!("User specified: {:?}", explicit_optionality));
-            Some(*explicit_optionality)
+            match explicit_optionality {
+                FieldOptionality::Optional => {
+                    trace.decision("explicit_proto_optionality", "User specified: Optional");
+                    Some(FieldOptionality::Optional)
+                },
+                FieldOptionality::Required => {
+                    // proto_required is for validation semantics, not field type detection
+                    // Let the actual proto schema detection determine field optionality
+                    trace.decision("proto_required_attribute", "proto_required affects validation only, not field type detection");
+                    None  // Fall back to schema-based detection
+                }
+            }
         } else {
             None
         }

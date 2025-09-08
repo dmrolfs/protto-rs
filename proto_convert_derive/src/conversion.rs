@@ -224,6 +224,53 @@ impl ConversionStrategy {
         Ok(())
     }
 
+    /// Validate proto_optional attribute usage against strategy outcome
+    pub fn validate_proto_optional_attribute(
+        ctx: &FieldProcessingContext,
+        rust: &RustFieldInfo,
+        strategy: &ConversionStrategy,
+    ) -> Result<(), String> {
+        // Only validate if proto_optional attribute is present
+        if !ctx.proto_meta.is_proto_optional() {
+            return Ok(());
+        }
+
+        if rust.has_transparent {
+            return Ok(());
+        }
+
+        match strategy {
+            Self::UnwrapOptionalWithExpect => {
+                // Only validate the specific problematic pattern:
+                // - Primitive field with no attributes
+                // - Same field name (suggests direct mapping confusion)
+                // - No handling attributes
+                if !rust.is_option && rust.is_primitive &&
+                    !rust.has_default && matches!(rust.expect_mode, ExpectMode::None) &&
+                    ctx.proto_name == ctx.field_name.to_string() {
+                    return Err(format!(
+                        "INVALID #[proto(proto_optional)] on field '{}'.\n\
+                    \n\
+                    Field appears to be direct mapping but uses proto_optional.\n\
+                    Proto schema likely shows: {} {} = N; (required)\n\
+                    For proto_optional, should be: optional {} {} = N;\n\
+                    \n\
+                    Fix: Remove #[proto(proto_optional)] or add expect()/default if proto is optional",
+                        ctx.field_name,
+                        rust.type_name(),
+                        ctx.field_name,
+                        rust.type_name(),
+                        ctx.field_name
+                    ));
+                }
+            },
+
+            _ => {}
+        }
+
+        Ok(())
+    }
+
     pub fn from_field_info(
         ctx: &FieldProcessingContext,
         _field: &syn::Field,
@@ -262,19 +309,19 @@ impl ConversionStrategy {
         } else if rust.has_transparent {
             // -- Handle transparent fields --
             Self::determine_transparent_strategy(ctx, rust, proto, &_trace)
-        } else if ctx.proto_meta.is_proto_optional() && !rust.is_option && proto.is_optional() {
-            // - Rust field is required (e.g., `header: proto::Header`)
-            // - Proto field is optional (e.g., `header: Option<Header>`)
-            // - User added #[proto(proto_optional)] to indicate unwrapping
-            _trace.decision("proto_optional_attribute_unwrap_case",
-                            "rust required + proto optional + proto_optional attr -> unwrap strategy");
-
-            match rust.expect_mode {
-                ExpectMode::Panic => Self::UnwrapOptionalWithExpect,
-                ExpectMode::Error => Self::UnwrapOptionalWithError,
-                ExpectMode::None if rust.has_default => Self::UnwrapOptionalWithDefault,
-                ExpectMode::None => Self::UnwrapOptionalWithExpect, // Default to expect
-            }
+        // } else if ctx.proto_meta.is_proto_optional() && !rust.is_option && proto.is_optional() {
+        //     // - Rust field is required (e.g., `header: proto::Header`)
+        //     // - Proto field is optional (e.g., `header: Option<Header>`)
+        //     // - User added #[proto(proto_optional)] to indicate unwrapping
+        //     _trace.decision("proto_optional_attribute_unwrap_case",
+        //                     "rust required + proto optional + proto_optional attr -> unwrap strategy");
+        //
+        //     match rust.expect_mode {
+        //         ExpectMode::Panic => Self::UnwrapOptionalWithExpect,
+        //         ExpectMode::Error => Self::UnwrapOptionalWithError,
+        //         ExpectMode::None if rust.has_default => Self::UnwrapOptionalWithDefault,
+        //         ExpectMode::None => Self::UnwrapOptionalWithExpect, // Default to expect
+        //     }
         } else {
             match (rust.is_option, proto.mapping, rust.expect_mode) {
                 // -- Collection handling first --
@@ -370,8 +417,16 @@ impl ConversionStrategy {
                     Self::UnwrapOptionalWithDefault
                 },
                 (false, ProtoMapping::Optional, ExpectMode::None) => {
-                    _trace.decision("rust_required + proto_optional + no_expect + no_default", "UnwrapOptionalWithExpect");
-                    Self::UnwrapOptionalWithExpect
+                    if ctx.proto_meta.is_proto_optional() {
+                        // User explicitly marked proto_optional, meaning they want to handle
+                        // the rust required -> proto optional conversion
+                        _trace.decision("explicit_proto_optional_for_wrapping", "WrapInSome");
+                        Self::WrapInSome
+                    } else {
+                        // No explicit proto_optional, assume unwrapping direction
+                        _trace.decision("rust_required + proto_optional + no_expect + no_default", "UnwrapOptionalWithExpect");
+                        Self::UnwrapOptionalWithExpect
+                    }
                 },
 
                 // -- Custom derived mappings --
@@ -392,6 +447,10 @@ impl ConversionStrategy {
                 },
             }
         };
+
+        if let Err(validation_error) = Self::validate_proto_optional_attribute(ctx, rust, &result) {
+            panic!("ProtoConvert validation error: {}", validation_error);
+        }
 
         result
     }
@@ -460,7 +519,7 @@ impl ConversionStrategy {
                             Self::TransparentOptionalWithDefault
                         } else {
                             trace.decision("transparent + proto_optional + no_expect + no_default", "TransparentRequired");
-                            Self::TransparentRequired
+                            Self::TransparentOptionalWithExpect
                         }
                     }
                 }

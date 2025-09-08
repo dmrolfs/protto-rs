@@ -341,8 +341,19 @@ impl FieldAnalysis {
                     }
                 }
             },
+            ConversionStrategy::CollectVecWithError if ctx.default_fn.is_some() => {
+                _trace.decision("CollectVecWithError + has_default", "use default when empty, error on conversion failures");
+                let default_expr = generate_default_value(ctx.field_type, ctx.default_fn.as_deref());
+                quote! {
+                    #field_name: if proto_struct.#proto_field_ident.is_empty() {
+                        #default_expr
+                    } else {
+                        proto_struct.#proto_field_ident.into_iter().map(Into::into).collect()
+                    }
+                }
+            },
             ConversionStrategy::CollectVecWithError => {
-                _trace.decision("CollectVecWithError", "generate error handling for vec with strategy context");
+                _trace.decision("CollectVecWithError + no_default", "generate error handling for vec with strategy context");
                 error_handler::generate_error_handling(
                     &self.conversion_strategy,
                     field_name,
@@ -485,8 +496,12 @@ impl FieldAnalysis {
                 _trace.decision("WrapInSome", "wrap in Some with into");
                 quote! { #proto_field_ident: Some(my_struct.#field_name.into()) }
             },
-            ConversionStrategy::UnwrapOptional => {
-                _trace.decision("UnwrapOptional", "unwrap with unwrap_or_default");
+            ConversionStrategy::UnwrapOptional if self.proto_field.is_optional() => {
+                _trace.decision("UnwrapOptional + proto_optional", "map instead of unwrap for Option->Option");
+                quote! { #proto_field_ident: my_struct.#field_name.map(|v| v.into()) }
+            },
+            ConversionStrategy::UnwrapOptional  => {
+                _trace.decision("UnwrapOptional + proto_required", "unwrap with unwrap_or_default");
                 quote! { #proto_field_ident: my_struct.#field_name.unwrap_or_default().into() }
             },
             ConversionStrategy::MapOption => {
