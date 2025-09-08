@@ -539,3 +539,161 @@ fn test_module_override_behavior() {
     let back_to_proto: proto::Track = rust_track.into();
     assert_eq!(back_to_proto, proto_track);
 }
+
+#[test]
+fn test_all_strategies_compilation() {
+    // DMR: This test ensures all strategy types compile and can be instantiated
+    // It doesn't test functionality, just that the macro generation works
+
+    // DeriveBidirectional
+    let _bidirectional = BidirectionalConversionStruct {
+        custom_field: CustomComplexType {
+            inner: "test".to_string(),
+            value: 42,
+        },
+    };
+
+    // TransparentRequired
+    let _transparent_req = TransparentRequiredStruct {
+        id: TransparentWrapper(123),
+    };
+
+    // TransparentOptionalWith* variants
+    let _transparent_opt = TransparentOptionalStruct {
+        panic_wrapper: TransparentWrapper(1),
+        error_wrapper: TransparentWrapper(2),
+        default_wrapper: TransparentWrapper(3),
+    };
+
+    // WrapInSome
+    let _wrap_some = WrapInSomeStruct {
+        required_rust_field: "test".to_string(),
+        status: Status::Ok,
+    };
+
+    // MapOption
+    let _map_option = MapOptionStruct {
+        optional_string: Some("test".to_string()),
+        optional_status: None,
+    };
+
+    // MapVecInOption
+    let _vec_option = VecOptionStruct {
+        optional_tracks: Some(vec![Track { id: TrackId(1) }]),
+        optional_strings: None,
+        optional_proto_tracks: Some(vec![]),
+    };
+
+    // VecDirectAssignment
+    let _vec_direct = VecDirectAssignmentStruct {
+        proto_tracks: vec![],
+        proto_headers: vec![],
+    };
+
+    // CollectVecWithError
+    let _vec_error = VecWithErrorStruct {
+        tracks_with_error: vec![],
+        tags_with_error: vec!["tag".to_string()],
+    };
+
+    // DirectWithInto
+    let _direct_into = DirectWithIntoStruct {
+        status_field: Status::Found,
+        track_field: Track { id: TrackId(99) },
+        track_id: TrackId(456),
+    };
+
+    // EdgeCaseCombinations
+    let _edge_cases = EdgeCaseCombinationsStruct {
+        optional_custom: None,
+        vec_custom: vec![],
+        transparent_option: Some(TransparentWrapper(789)),
+    };
+
+    // RustToProto strategies
+    let _rust_to_proto = RustToProtoStruct {
+        rust_required_field: "required".to_string(),
+        rust_optional_field: Some("optional".to_string()),
+        transparent_required: TransparentWrapper(111),
+        transparent_optional: TransparentWrapper(222),
+    };
+
+    // If we get here, all types compile successfully
+    assert!(true, "All ConversionStrategy variants compile successfully");
+}
+
+#[test]
+fn test_error_handling_strategies() {
+    // DMR: Test that error strategies actually produce errors when expected
+
+    // Test TransparentOptionalWithError - should fail when proto field is None
+    let proto_with_none = proto::TransparentOptionalMessage {
+        panic_wrapper: Some(10),
+        error_wrapper: None,  // This should trigger error strategy
+        default_wrapper: None,
+    };
+
+    let result: Result<TransparentOptionalStruct, _> = proto_with_none.try_into();
+    assert!(result.is_err(), "TransparentOptionalWithError should fail when proto field is None");
+
+    // Test VecWithError - should succeed with default when empty
+    let proto_empty_vecs = proto::VecErrorMessage {
+        tracks_with_error: vec![],  // Should use default
+        tags_with_error: vec![],    // Should use default
+    };
+
+    let result: Result<VecWithErrorStruct, _> = proto_empty_vecs.try_into();
+    assert!(result.is_ok(), "VecWithError should succeed with defaults when vectors are empty");
+}
+
+#[test]
+fn test_custom_derive_functions() {
+    // DMR: Test that custom derive functions are called correctly
+
+    let original_type = CustomComplexType {
+        inner: "custom_test".to_string(),
+        value: 9999,
+    };
+
+    // Test the conversion functions directly
+    let proto_converted = custom_into_conversion(original_type.clone());
+    assert_eq!(proto_converted.name, "custom_test");
+    assert_eq!(proto_converted.id, 9999);
+
+    let rust_converted = custom_from_conversion(proto_converted);
+    assert_eq!(rust_converted, original_type);
+}
+
+#[test]
+fn test_option_vec_empty_vs_none() {
+    // DMR: Test the critical distinction between empty Vec and None
+
+    // Proto with empty repeated fields
+    let proto_empty = proto::VecOptionMessage {
+        optional_tracks: vec![],     // Empty vec
+        optional_strings: vec![],    // Empty vec
+        optional_proto_tracks: vec![],
+    };
+
+    let rust_from_empty: VecOptionStruct = proto_empty.try_into().unwrap();
+
+    // The behavior here depends on the MapVecInOption implementation
+    // Empty proto repeated fields might become None or Some(vec![])
+    // Both are valid interpretations
+    assert!(
+        rust_from_empty.optional_tracks.is_none() ||
+            rust_from_empty.optional_tracks == Some(vec![]),
+        "Empty proto repeated field should become None or Some(empty_vec)"
+    );
+
+    // Test roundtrip with None
+    let rust_with_none = VecOptionStruct {
+        optional_tracks: None,
+        optional_strings: None,
+        optional_proto_tracks: None,
+    };
+
+    let proto_from_none: proto::VecOptionMessage = rust_with_none.into();
+    assert_eq!(proto_from_none.optional_tracks.len(), 0);
+    assert_eq!(proto_from_none.optional_strings.len(), 0);
+}

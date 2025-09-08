@@ -37,7 +37,7 @@ fn parse_debug_env() -> DebugMode {
 }
 
 /// Check if debug output should be enabled for a specific struct/field combination
-pub fn should_output_debug(name: impl Display, field_name: impl Display) -> bool {
+pub fn should_output_debug(name: impl Display, _field_name: impl Display) -> bool {
     let name = name.to_string();
 
     match get_debug_mode() {
@@ -175,6 +175,7 @@ impl CallStackDebug {
     }
 
     /// Log field analysis with structured data
+    #[allow(unused)]
     pub fn field_analysis(&self, phase: &str, data: &[(&str, &str)]) {
         if self.enabled {
             let indent = "  ".repeat(self.depth);
@@ -186,6 +187,7 @@ impl CallStackDebug {
     }
 
     /// Log type resolution analysis
+    #[allow(unused)]
     pub fn type_analysis(&self, rust_type: &str, proto_info: &[(&str, &str)]) {
         if self.enabled {
             let indent = "  ".repeat(self.depth);
@@ -195,18 +197,6 @@ impl CallStackDebug {
                 eprintln!("{}│    📦 {}: {}", indent, key, value);
             }
         }
-    }
-
-    /// Log conversion logic decision tree
-    pub fn conversion_logic(&self, conversion_type: &str, decisions: &[(&str, &str)]) -> &Self {
-        if self.enabled {
-            let indent = "  ".repeat(self.depth);
-            eprintln!("{}│  ⚡ CONVERSION: {}", indent, conversion_type);
-            for (condition, result) in decisions {
-                eprintln!("{}│    🛤️  {}: {}", indent, condition, result);
-            }
-        }
-        self
     }
 
     /// Log generated code with context
@@ -268,6 +258,7 @@ impl CallStackDebug {
     }
 
     /// Log an error with context data
+    #[allow(unused)]
     pub fn error_data(&self, message: &str, data: &[(&str, &str)]) {
         if self.enabled {
             let indent = "  ".repeat(self.depth);
@@ -288,6 +279,7 @@ impl CallStackDebug {
     }
 
     /// Log conditional expressions for metadata-driven code
+    #[allow(unused)]
     pub fn conditional_exprs(
         &self,
         label: &str,
@@ -310,6 +302,7 @@ impl CallStackDebug {
     }
 
     /// Debug type mismatch analysis (replaces debug_type_mismatch_analysis)
+    #[allow(unused)]
     pub fn type_mismatch(
         &self,
         expected_rust_type: &str,
@@ -331,6 +324,7 @@ impl CallStackDebug {
     }
 
     /// Debug type resolution (replaces debug_type_resolution)
+    #[allow(unused)]
     pub fn type_resolution(
         &self,
         rust_type: &str,
@@ -350,6 +344,7 @@ impl CallStackDebug {
     }
 
     /// Debug metadata lookup (replaces debug_metadata_lookup)
+    #[allow(unused)]
     pub fn metadata_lookup(
         &self,
         proto_message: &str,
@@ -368,6 +363,7 @@ impl CallStackDebug {
     }
 
     /// Debug error condition (replaces debug_error_condition)
+    #[allow(unused)]
     pub fn error_condition(&self, error_type: &str, details: &str, suggested_fix: Option<&str>) -> &Self {
         if self.enabled {
             let indent = "  ".repeat(self.depth);
@@ -381,6 +377,7 @@ impl CallStackDebug {
     }
 
     /// Debug struct-level generation (replaces debug_struct_generation)
+    #[allow(unused)]
     pub fn struct_generation(&self, phase: &str, info: &[(&str, &str)]) -> &Self {
         if self.enabled {
             let indent = "  ".repeat(self.depth);
@@ -413,6 +410,7 @@ pub fn debug_struct_conversion_generation(
     phase: &str,
     from_proto_impl: &TokenStream,
     from_my_impl: &TokenStream,
+    final_impl: &TokenStream,
     additional_info: &[(&str, String)],
 ) {
     let name = struct_name.to_string();
@@ -427,118 +425,16 @@ pub fn debug_struct_conversion_generation(
     }
 
     // Only show structure, not full implementation
-    eprintln!(
-        "  FROM_PROTO fields: {} lines",
-        from_proto_impl.to_string().lines().count()
-    );
-    eprintln!(
-        "  FROM_MY fields: {} lines",
-        from_my_impl.to_string().lines().count()
-    );
+    eprintln!("  FROM_PROTO: {}", format_rust_code(from_proto_impl.to_string()));
+    eprintln!( "  FROM_MY: {}", format_rust_code(from_my_impl.to_string()));
+    eprintln!( "  FINAL_IMPL:\n{}", format_rust_code(final_impl.to_string()));
 
     eprintln!("=== END STRUCT ===\n");
 }
 
-/// Debug conversion logic showing the decision tree
-pub fn debug_conversion_logic(
-    struct_name: impl Display,
-    field_name: impl Display,
-    conversion_type: &str,
-    decision_path: &[(&str, &str)],
-    final_expression: &TokenStream,
-) {
-    let struct_name = struct_name.to_string();
-    let field_name = field_name.to_string();
-
-    if !should_output_debug(&struct_name, &field_name) {
-        return;
-    }
-
-    eprintln!(
-        "\n=== ⚡ CONVERSION LOGIC: {}.{} - {} ===",
-        struct_name, field_name, conversion_type
-    );
-    eprintln!("  🛤️  Decision path:");
-    for (condition, result) in decision_path {
-        eprintln!("    ├─ {}: {}", condition, result);
-    }
-    eprintln!("  🎯 Final expression:");
-    eprintln!("    {}", final_expression);
-    eprintln!("=== END CONVERSION LOGIC ===\n");
-}
-
-/// Debug struct-level generation
-pub fn debug_struct_generation(struct_name: impl Display, phase: &str, info: &[(&str, String)]) {
-    let struct_name = struct_name.to_string();
-    eprintln!(
-        "\n=== 🏢 STRUCT GENERATION: {} - {} ===",
-        struct_name, phase
-    );
-    for (key, value) in info {
-        eprintln!("  🔧 {}: {}", key, value);
-    }
-    eprintln!("=== END STRUCT GENERATION ===\n");
-}
-
-/// Debug error conditions
-pub fn debug_error_condition(
-    struct_name: impl Display,
-    field_name: impl Display,
-    error_type: &str,
-    details: &str,
-    suggested_fix: Option<&str>,
-) {
-    let struct_name = struct_name.to_string();
-    let field_name = field_name.to_string();
-
-    if !should_output_debug(&struct_name, &field_name) {
-        return;
-    }
-
-    eprintln!("\n=== ❌ ERROR: {}.{} ===", struct_name, field_name);
-    eprintln!("  🚨 Error type: {}", error_type);
-    eprintln!("  📝 Details: {}", details);
-    if let Some(fix) = suggested_fix {
-        eprintln!("  💡 fix: {}", fix);
-    }
-    eprintln!("=== END ERROR ===\n");
-}
-
-/// Debug the complete generated code with formatted output
-pub fn debug_generated_code(
-    struct_name: impl Display,
-    field_name: impl Display,
-    generated_code: &TokenStream,
-    context: &str,
-    additional_info: &[(&str, &str)],
-) {
-    let struct_name = struct_name.to_string();
-    let field_name = field_name.to_string();
-
-    if !should_output_debug(&struct_name, &field_name) {
-        return;
-    }
-
-    eprintln!("\n    🏗️  GENERATED CODE: {struct_name}.{field_name} - {context}");
-
-    // Show additional context
-    for (key, value) in additional_info {
-        eprintln!("    {}: {}", key, value);
-    }
-
-    // Format and display the generated code
-    let code_str = generated_code.to_string();
-    let formatted_code = format_rust_code(&code_str);
-
-    eprintln!("  📝 Generated code:");
-    for (i, line) in formatted_code.lines().enumerate() {
-        eprintln!("    {:3} | {}", i + 1, line);
-    }
-    eprintln!("    END GENERATED CODE \n");
-}
-
 /// Format generated code for better readability with proper Rust syntax handling
-fn format_rust_code(code: &str) -> String {
+fn format_rust_code(code: impl AsRef<str>) -> String {
+    let code = code.as_ref();
     let mut result = String::new();
     let mut indent_level = 0;
     let mut chars = code.chars().peekable();
@@ -687,76 +583,4 @@ fn cleanup_formatting(code: &str) -> String {
         .replace("\n\n\n", "\n\n") // Collapse multiple empty lines
         .trim()
         .to_string()
-}
-
-/// Alternative simpler formatter for very complex expressions
-fn format_rust_code_simple(code: &str) -> String {
-    let mut result = String::new();
-    let mut indent_level = 0;
-    let mut in_string = false;
-    let mut escape_next = false;
-
-    for ch in code.chars() {
-        if escape_next {
-            result.push(ch);
-            escape_next = false;
-            continue;
-        }
-
-        match ch {
-            '\\' if in_string => {
-                result.push(ch);
-                escape_next = true;
-            }
-            '"' => {
-                result.push(ch);
-                in_string = !in_string;
-            }
-            '{' if !in_string => {
-                result.push_str(" {\n");
-                indent_level += 1;
-                result.push_str(&"    ".repeat(indent_level));
-            }
-            '}' if !in_string => {
-                if !result.ends_with('\n') {
-                    result.push('\n');
-                }
-                indent_level = indent_level.saturating_sub(1);
-                result.push_str(&"    ".repeat(indent_level));
-                result.push('}');
-                result.push('\n');
-                if indent_level > 0 {
-                    result.push_str(&"    ".repeat(indent_level));
-                }
-            }
-            ';' if !in_string => {
-                result.push_str(";\n");
-                if indent_level > 0 {
-                    result.push_str(&"    ".repeat(indent_level));
-                }
-            }
-            _ => {
-                result.push(ch);
-            }
-        }
-    }
-
-    // Clean up extra whitespace and empty lines
-    result
-        .lines()
-        .map(|line| line.trim_end())
-        .collect::<Vec<_>>()
-        .join("\n")
-        .trim()
-        .to_string()
-}
-
-/// Update the format_generated_code function to use the new formatter
-fn format_generated_code(code: &str) -> String {
-    // For very long or complex code, use the simple formatter
-    if code.len() > 300 || code.matches("::").count() > 5 {
-        format_rust_code_simple(code)
-    } else {
-        format_rust_code(code)
-    }
 }

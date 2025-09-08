@@ -108,3 +108,79 @@ message CustomTypeMessage {
     optional uint64 track_id = 2;
     optional string wrapper = 3;
 }
+
+// DMR: Add these messages to service.proto for complete test coverage
+
+// DMR: For BidirectionalConversionStruct
+message BidirectionalMessage {
+    optional ComplexType custom_field = 1;
+}
+
+message ComplexType {
+    string name = 1;
+    uint64 id = 2;
+}
+
+message TransparentMessage {
+    string wrapper_id = 1;  // required field for transparent wrapper
+}
+
+message TransparentOptionalMessage {
+    optional string panic_wrapper = 1;   // transparent optional -> expect(panic)
+    optional string error_wrapper = 2;   // transparent optional -> expect(error)
+    optional string default_wrapper = 3; // transparent optional -> default
+}
+
+message WrapInSomeMessage {
+    optional string wrapped_field = 1;   // rust String -> proto optional string
+    optional Status wrapped_status = 2;  // rust Status -> proto optional Status
+}
+
+message MapOptionMessage {
+    optional string simple_option = 1;   // Option<String> -> Option<String>
+    optional Status optional_status = 2; // Option<Status> -> Option<Status>
+}
+
+message VecOptionMessage {
+    repeated Track optional_tracks = 1;      // Option<Vec<Track>> -> repeated Track
+    repeated string optional_strings = 2;    // Option<Vec<String>> -> repeated string
+    repeated Track optional_proto_tracks = 3; // Option<Vec<proto::Track>> -> repeated Track
+}
+
+message DirectVecMessage {
+    repeated Track proto_tracks = 1;   // Vec<proto::Track> -> repeated Track (no conversion)
+    repeated Header proto_headers = 2; // Vec<proto::Header> -> repeated Header (no conversion)
+}
+
+message VecErrorMessage {
+    repeated Track tracks_with_error = 1; // Vec<Track> with expect + default + error_fn
+    repeated string tags_with_error = 2;  // Vec<String> with expect + default + error_fn
+}
+
+message DirectConversionMessage {
+    Status status_field = 1;  // Status -> Status (enum conversion)
+    Track track_field = 2;    // Track -> Track (message conversion)
+    uint64 track_id = 3;      // TrackId -> uint64 (transparent conversion)
+}
+
+message EdgeCaseCombinationMessage {
+    optional CustomType optional_custom = 1;   // Option<CustomType> with custom derive
+    repeated CustomType vec_custom = 2;        // Vec<CustomType> with custom derive
+    optional string transparent_option = 3;    // Option<TransparentWrapper> - edge case
+}
+
+message CustomType {
+    string data = 1;
+}
+
+message RustToProtoMessage {
+    string required_to_optional = 1;     // Test rust required -> proto optional (WrapInSome)
+    optional string optional_to_required = 2; // Test rust optional -> proto required (UnwrapOptional)
+    uint64 transparent_to_required = 3;   // Test transparent -> proto required (TransparentToRequired)
+    optional uint64 transparent_to_optional = 4; // Test transparent -> proto optional (TransparentToOptional)
+}
+
+message ValidationTestMessage {
+    optional string should_fail_validation = 1;  // For testing validation errors
+    repeated Track impossible_combination = 2;   // For testing RequiresCustomLogic
+}

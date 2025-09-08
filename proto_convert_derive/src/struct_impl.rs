@@ -27,6 +27,7 @@ pub fn generate_struct_implementations(config: StructImplConfig) -> proc_macro2:
         &error_name,
     );
 
+    //todo: refactor to perform a single interation on fields w dual generation
     let from_proto_fields: Vec<_> =
         generate_from_proto_fields(config.fields, &config, &error_name).collect();
     let from_my_fields: Vec<_> =
@@ -91,6 +92,7 @@ pub fn generate_struct_implementations(config: StructImplConfig) -> proc_macro2:
                 #(#from_my_fields),*
             }
         },
+        &quote!(#final_impl),
         &[
             ("total_fields", config.fields.len().to_string()),
             ("proto_module", config.proto_module.to_string()),

@@ -27,7 +27,8 @@ mod optionality;
 mod struct_impl;
 mod tuple_impl;
 mod type_analysis;
-// mod conversion;
+mod field_info;
+mod conversion;
 
 mod utils {
     use proc_macro2::TokenStream;
@@ -78,6 +79,58 @@ mod registry {
             .map(|registry| registry.contains(type_name))
             .unwrap_or(false)
     }
+}
+
+mod validation {
+    use crate::conversion::ConversionStrategy;
+    use crate::field_analysis::FieldProcessingContext;
+    use crate::field_info::{ProtoFieldInfo, RustFieldInfo};
+
+    #[derive(Debug, Clone)]
+    pub struct ValidationError {
+        pub field_path: String,
+        pub message: String,
+        pub rust_type: String,
+        pub proto_type: String,
+        pub strategy: String,
+    }
+
+    impl ValidationError {
+        pub fn new(
+            ctx: &FieldProcessingContext,
+            rust: &RustFieldInfo,
+            proto: &ProtoFieldInfo,
+            strategy: &ConversionStrategy,
+            message: String,
+        ) -> Self {
+            Self {
+                field_path: format!("{}.{}", ctx.struct_name, ctx.field_name),
+                message,
+                rust_type: rust.type_name(),
+                proto_type: proto.type_name.clone(),
+                strategy: format!("{:?}", strategy),
+            }
+        }
+
+        pub fn detailed_message(&self) -> String {
+            format!(
+                "ProtoConvert validation failed for field '{}':\n\n{}\n\nField details:\n• Rust type: {}\n• Proto type: {}\n• Strategy: {}",
+                self.field_path,
+                self.message,
+                self.rust_type,
+                self.proto_type,
+                self.strategy
+            )
+        }
+    }
+
+    impl std::fmt::Display for ValidationError {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "{}", self.detailed_message())
+        }
+    }
+
+    impl std::error::Error for ValidationError {}
 }
 
 #[proc_macro_derive(ProtoConvert, attributes(proto))]

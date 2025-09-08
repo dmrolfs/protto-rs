@@ -1,4 +1,4 @@
-use crate::field_analysis::ConversionStrategy;
+use crate::conversion::ConversionStrategy;
 use super::*;
 
 /// Generates error handling code for a specific field
@@ -48,18 +48,32 @@ fn generate_custom_error_handling(
     let error_fn_path: syn::Path =
         syn::parse_str(error_fn).expect("Failed to parse error function path");
 
-    if is_rust_optional {
-        quote! {
-            #field_name: Some(proto_struct.#proto_field_ident
-                .ok_or_else(|| #error_fn_path(stringify!(#proto_field_ident)))?
-                .into())
-        }
-    } else {
-        quote! {
-            #field_name: proto_struct.#proto_field_ident
-                .ok_or_else(|| #error_fn_path(stringify!(#proto_field_ident)))?
-                .into()
-        }
+    match strategy {
+        ConversionStrategy::CollectVecWithError => {
+            // Vec<T> error handling - check if empty, not missing
+            quote! {
+                #field_name: if proto_struct.#proto_field_ident.is_empty() {
+                    return Err(#error_fn_path(stringify!(#field_name)));
+                } else {
+                    proto_struct.#proto_field_ident.into_iter().map(Into::into).collect()
+                }
+            }
+        },
+        _ => {
+            if is_rust_optional {
+                quote! {
+                    #field_name: Some(proto_struct.#proto_field_ident
+                        .ok_or_else(|| #error_fn_path(stringify!(#proto_field_ident)))?
+                        .into())
+                }
+            } else {
+                quote! {
+                    #field_name: proto_struct.#proto_field_ident
+                        .ok_or_else(|| #error_fn_path(stringify!(#proto_field_ident)))?
+                        .into()
+                }
+            }
+        },
     }
 }
 

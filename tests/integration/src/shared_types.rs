@@ -19,6 +19,12 @@ pub fn arb_proto_track_with_optionals() -> impl Strategy<Value = proto::TrackWit
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct TrackId(u64);
 
+impl Default for TrackId {
+    fn default() -> Self {
+        Self(42)
+    }
+}
+
 impl TrackId {
     pub fn new(track_id: u64) -> Self {
         TrackId(track_id)
@@ -41,7 +47,7 @@ impl AsRef<u64> for TrackId {
     }
 }
 
-#[derive(ProtoConvert, PartialEq, Debug, Clone)]
+#[derive(ProtoConvert, Default, PartialEq, Debug, Clone)]
 #[proto(module = "proto")]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct Track {
@@ -58,10 +64,20 @@ impl TransparentWrapper {
         Self(str.into())
     }
 
+    pub fn into_inner(self) -> String {
+        self.0
+    }
+
     pub fn as_str(&self) -> &str {
         &self.0
     }
 }
+
+// impl From<TransparentWrapper> for String {
+//     fn from(t: TransparentWrapper) -> String {
+//         t.into_inner()
+//     }
+// }
 
 impl From<&str> for TransparentWrapper {
     fn from(str: &str) -> Self {

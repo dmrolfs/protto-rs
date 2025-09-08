@@ -1,10 +1,7 @@
 use super::*;
 use crate::debug::CallStackDebug;
-use crate::expect_analysis::ExpectMode;
 use crate::optionality::FieldOptionality;
-use crate::utils::maybe_option_expr;
 use field_analysis::FieldProcessingContext;
-use crate::field_analysis::{generate_field_conversions, ConversionStrategy};
 
 pub fn generate_from_proto_field(
     field: &syn::Field,
@@ -22,17 +19,24 @@ pub fn generate_from_proto_field(
         ],
     );
 
-    let (proto_to_rust, _) = generate_field_conversions(field, ctx);
+    field_analysis::generate_field_conversions(field, ctx)
+        .map(|(proto_to_rust, _)| {
+            _trace.generated_code(
+                &proto_to_rust,
+                ctx.struct_name,
+                ctx.field_name,
+                "from_proto_field_bidirectional",
+                &[("conversion_direction", &"proto -> rust")],
+            );
 
-    _trace.generated_code(
-        &proto_to_rust,
-        ctx.struct_name,
-        ctx.field_name,
-        "from_proto_field_bidirectional",
-        &[("conversion_direction", &"proto -> rust")],
-    );
+            proto_to_rust
+        })
+        .unwrap_or_else(|error| {
+            let error_msg = error.detailed_message();
+            _trace.error(&format!("Validation failed: {}", error_msg));
 
-    proto_to_rust
+            quote! { compile_error!(#error_msg); }
+        })
 }
 
 pub fn generate_from_my_field(
@@ -45,17 +49,24 @@ pub fn generate_from_my_field(
         ctx.field_name,
     );
 
-    let (_, rust_to_proto) = generate_field_conversions(field, ctx);
+    field_analysis::generate_field_conversions(field, ctx)
+        .map(|(_, rust_to_proto)| {
+            _trace.generated_code(
+                &rust_to_proto,
+                ctx.struct_name,
+                ctx.field_name,
+                "from_my_field_bidirectional",
+                &[("conversion_direction", &"rust -> proto")],
+            );
 
-    _trace.generated_code(
-        &rust_to_proto,
-        ctx.struct_name,
-        ctx.field_name,
-        "from_my_field_bidirectional",
-        &[("conversion_direction", &"rust -> proto")],
-    );
+            rust_to_proto
+        })
+        .unwrap_or_else(|error| {
+            let error_msg = error.detailed_message();
+            _trace.error(&format!("Validation failed: {}", error));
 
-    rust_to_proto
+            quote! { compile_error!(#error_msg); }
+        })
 }
 
 // #[deprecated(note = "Use generate_field_conversions from field_analysis instead")]

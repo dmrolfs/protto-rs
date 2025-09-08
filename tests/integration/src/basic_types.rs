@@ -165,7 +165,7 @@ pub struct ExpectCustomErrorStruct {
 #[proto(module = "proto", rename = "CustomTypeMessage")]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct CustomTypeStruct {
-    // DMR: This field should trigger generate_custom_type_field()
+    // This field should trigger generate_custom_type_field()
     // - Not Option<Track> (would go to generate_option_field)
     // - Not Vec<Track> (would go to generate_vec_field)
     // - Not a primitive type
@@ -173,10 +173,10 @@ pub struct CustomTypeStruct {
     // - Not marked with any special attributes
     pub track: Track,
 
-    // DMR: This should also trigger custom type path
+    // This should also trigger custom type path
     pub track_id: TrackId,
 
-    // DMR: Test with transparent wrapper too
+    // Test with transparent wrapper too
     // #[proto(transparent, expect(panic))]
     pub wrapper: TransparentWrapper,
 }

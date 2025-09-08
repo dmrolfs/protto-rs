@@ -343,25 +343,3 @@ pub fn has_proto_ignore(field: &Field) -> bool {
     }
     false
 }
-
-pub fn has_proto_enum_attr(field: &syn::Field) -> bool {
-    for attr in &field.attrs {
-        if attr.path().is_ident(constants::DEFAULT_PROTO_MODULE) {
-            if let Meta::List(meta_list) = &attr.meta {
-                let nested_metas: Punctuated<Meta, Comma> = Punctuated::parse_terminated
-                    .parse2(meta_list.tokens.clone())
-                    .unwrap_or_else(|e| panic!("Failed to parse meta list: {e}"));
-
-                for meta in nested_metas {
-                    if let Meta::Path(path) = meta {
-                        if path.is_ident("enum") {
-                            return true;
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    false
-}
