@@ -251,11 +251,6 @@ impl FieldAnalysis {
                 _trace.decision("WrapInSome", "wrap proto value in Some");
                 quote! { #field_name: Some(proto_struct.#proto_field_ident.into()) }
             },
-            // ConversionStrategy::UnwrapOptional => {
-            //     todo: Is this correct?
-                // _trace.decision("UnwrapOptional", "unwrap with unwrap_or_default");
-                // quote! { #field_name: proto_struct.#proto_field_ident.unwrap_or_default().into() }
-            // },
             ConversionStrategy::UnwrapOptionalWithExpect => {
                 _trace.decision("UnwrapOptionalWithExpect", "expect with panic message");
                 quote! {
@@ -319,9 +314,13 @@ impl FieldAnalysis {
             ConversionStrategy::CollectVec => {
                 _trace.decision("CollectVec", "collect with into_iter.map");
                 if self.rust_field.is_option {
-                    // Proto Vec<T> → Rust Option<Vec<U>>
+                    // Proto Vec<T> → Rust Option<Vec<U>> - preserve None for empty vecs
                     quote! {
-                        #field_name: Some(proto_struct.#proto_field_ident.into_iter().map(Into::into).collect())
+                        #field_name: if proto_struct.#proto_field_ident.is_empty() {
+                            None
+                        } else {
+                            Some(proto_struct.#proto_field_ident.into_iter().map(Into::into).collect())
+                        }
                     }
                 } else {
                     // Proto Vec<T> → Rust Vec<U>
