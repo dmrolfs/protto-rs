@@ -12,12 +12,12 @@ enum DebugMode {
 
 static DEBUG_MODE: OnceLock<DebugMode> = OnceLock::new();
 
-// DMR: Parse debug configuration once on first call
+// Parse debug configuration once on first call
 fn get_debug_mode() -> &'static DebugMode {
-    DEBUG_MODE.get_or_init(|| parse_debug_env())
+    DEBUG_MODE.get_or_init(parse_debug_env)
 }
 
-// DMR: Parse PROTO_CONVERT_DEBUG environment variable
+// Parse PROTO_CONVERT_DEBUG environment variable
 fn parse_debug_env() -> DebugMode {
     match std::env::var("PROTO_CONVERT_DEBUG") {
         Ok(env_debug) => match env_debug.as_str() {
@@ -72,13 +72,11 @@ fn matches_debug_pattern(pattern: &str, name: &str) -> bool {
             // e.g.,  *Track* - contains
             let middle = &pattern[1..pattern.len() - 1];
             return name.contains(middle);
-        } else if pattern.starts_with('*') {
+        } else if let Some(suffix) = pattern.strip_prefix('*') {
             // e.g.,  *Request - ends with
-            let suffix = &pattern[1..];
             return name.ends_with(suffix);
-        } else if pattern.ends_with('*') {
+        } else if let Some(prefix) = pattern.strip_suffix('*') {
             // e.g., Track* - starts with
-            let prefix = &pattern[..pattern.len() - 1];
             return name.starts_with(prefix);
         }
     }
@@ -99,7 +97,7 @@ pub fn print_debug_help() {
     eprintln!("    *Track*                # Debug structs containing 'Track'");
     eprintln!("    Request,Track*,*Response # Combine patterns");
     eprintln!("    0 | false | none       # Disable all debug");
-    eprintln!("");
+    eprintln!();
     eprintln!("  Usage during proc macro expansion:");
     eprintln!("    PROTO_CONVERT_DEBUG=Request cargo build");
     eprintln!("    PROTO_CONVERT_DEBUG=Track* cargo test");
@@ -290,7 +288,7 @@ impl CallStackDebug {
             let indent = "  ".repeat(self.depth);
             eprintln!("{}│  🔀 CONDITIONAL: {} ({})", indent, label, optionality);
             for (name, expr) in exprs {
-                let formatted_code = format_rust_code(&expr.to_string());
+                let formatted_code = format_rust_code(expr.to_string());
                 eprintln!("{}│    📝 Generated code:", indent);
                 eprintln!("{}│       {} -> {{", indent, name);
                 for (i, line) in formatted_code.lines().enumerate() {
@@ -445,7 +443,7 @@ fn format_rust_code(code: impl AsRef<str>) -> String {
             // Handle opening braces
             '{' => {
                 current_line.push(ch);
-                result.push_str(&current_line.trim());
+                result.push_str(current_line.trim());
                 result.push('\n');
                 indent_level += 1;
                 current_line.clear();
@@ -501,8 +499,8 @@ fn format_rust_code(code: impl AsRef<str>) -> String {
             '.' => {
                 current_line.push(ch);
                 // Look ahead to see if this starts a new method call
-                if let Some(next_ch) = chars.peek() {
-                    if next_ch.is_alphabetic() {
+                if let Some(next_ch) = chars.peek() 
+                    && next_ch.is_alphabetic() {
                         // This is a method call, check if we should break the line
                         if current_line.trim().len() > 60 {
                             // Break long method chains
@@ -514,7 +512,6 @@ fn format_rust_code(code: impl AsRef<str>) -> String {
                             current_line.clear();
                             current_line.push_str(&format!("{}.", "    ".repeat(indent_level + 1)));
                         }
-                    }
                 }
             }
 

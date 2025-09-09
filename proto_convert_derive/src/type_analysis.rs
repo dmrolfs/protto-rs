@@ -6,42 +6,34 @@ pub fn is_option_type(ty: &Type) -> bool {
 }
 
 pub fn get_inner_type_from_option(ty: &Type) -> Option<Type> {
-    if let Type::Path(type_path) = ty {
-        if type_path.path.segments.len() == 1 && type_path.path.segments[0].ident == "Option" {
-            if let syn::PathArguments::AngleBracketed(angle_bracketed) =
-                &type_path.path.segments[0].arguments
-            {
-                if let Some(syn::GenericArgument::Type(inner_type)) = angle_bracketed.args.first() {
-                    return Some(inner_type.clone());
-                }
-            }
-        }
+    if let Type::Path(type_path) = ty
+        && type_path.path.segments.len() == 1 && type_path.path.segments[0].ident == "Option"
+        && let syn::PathArguments::AngleBracketed(angle_bracketed) = &type_path.path.segments[0].arguments
+        && let Some(syn::GenericArgument::Type(inner_type)) = angle_bracketed.args.first() {
+            Some(inner_type.clone())
+    } else {
+        None
     }
-    None
 }
 
 pub fn is_vec_type(ty: &Type) -> bool {
-    if let Type::Path(type_path) = ty {
-        if type_path.path.segments.len() == 1 && type_path.path.segments[0].ident == "Vec" {
-            return true;
-        }
+    if let Type::Path(type_path) = ty
+    && type_path.path.segments.len() == 1 && type_path.path.segments[0].ident == "Vec" {
+            true
+    } else {
+        false
     }
-    false
 }
 
 pub fn get_inner_type_from_vec(ty: &Type) -> Option<Type> {
-    if let Type::Path(type_path) = ty {
-        if type_path.path.segments.len() == 1 && type_path.path.segments[0].ident == "Vec" {
-            if let syn::PathArguments::AngleBracketed(angle_bracketed) =
-                &type_path.path.segments[0].arguments
-            {
-                if let Some(syn::GenericArgument::Type(inner_type)) = angle_bracketed.args.first() {
-                    return Some(inner_type.clone());
-                }
-            }
-        }
+    if let Type::Path(type_path) = ty
+    && type_path.path.segments.len() == 1 && type_path.path.segments[0].ident == "Vec"
+    && let syn::PathArguments::AngleBracketed(angle_bracketed) = &type_path.path.segments[0].arguments
+    && let Some(syn::GenericArgument::Type(inner_type)) = angle_bracketed.args.first() {
+        Some(inner_type.clone())
+    } else {
+        None
     }
-    None
 }
 
 pub fn is_primitive_type(ty: &Type) -> bool {
@@ -74,7 +66,7 @@ pub fn is_custom_type(ty: &Type) -> bool {
             return false;
         }
 
-        // DMR: Any remaining single-segment type is a custom type (struct, enum, newtype)
+        // Any remaining single-segment type is a custom type (struct, enum, newtype)
         // Let the Rust compiler and From trait implementations determine what works
         type_path.path.segments.len() == 1
     } else {
@@ -83,12 +75,12 @@ pub fn is_custom_type(ty: &Type) -> bool {
 }
 
 pub fn is_proto_type(ty: &Type, proto_module: &str) -> bool {
-    if let Type::Path(type_path) = ty {
-        if let Some(segment) = type_path.path.segments.first() {
-            return segment.ident == proto_module;
-        }
+    if let Type::Path(type_path) = ty
+    && let Some(segment) = type_path.path.segments.first() {
+        segment.ident == proto_module
+    } else {
+        false
     }
-    false
 }
 
 pub fn is_enum_type(ty: &Type) -> bool {

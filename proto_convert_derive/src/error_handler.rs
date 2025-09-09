@@ -36,6 +36,7 @@ pub fn generate_error_definitions_if_needed(
 }
 
 /// Generates error handling code for a specific field
+#[allow(clippy::too_many_arguments)]
 pub fn generate_error_handling(
     strategy: &ConversionStrategy,
     field_name: &syn::Ident,
@@ -48,12 +49,12 @@ pub fn generate_error_handling(
 ) -> proc_macro2::TokenStream {
     let _trace = CallStackDebug::with_context(
         "generate_error_handling_with_strategy",
-        &field_name.to_string(),
-        &proto_field_ident.to_string(),
+        field_name.to_string(),
+        proto_field_ident.to_string(),
         &[
             ("strategy", &format!("{:?}", strategy)),
-            ("strategy_info", &strategy.debug_info()),
-            ("strategy_category", &strategy.category()),
+            ("strategy_info", strategy.debug_info()),
+            ("strategy_category", strategy.category()),
         ],
     );
 

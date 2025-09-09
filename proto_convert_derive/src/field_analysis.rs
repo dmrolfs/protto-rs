@@ -91,7 +91,7 @@ impl FieldAnalysis {
             ConversionStrategy::ProtoIgnore => {
                 if let Some(default_fn_name) = &ctx.default_fn {
                     _trace.decision("ProtoIgnore + default_fn", "use custom default function");
-                    let default_fn_path: syn::Path = syn::parse_str(&default_fn_name)
+                    let default_fn_path: syn::Path = syn::parse_str(default_fn_name)
                         .expect("Failed to parse default_fn function path");
                     quote! { #field_name: #default_fn_path() }
                 } else {
@@ -104,15 +104,12 @@ impl FieldAnalysis {
             ConversionStrategy::DeriveBidirectional(from_with_path, _) => {
                 // Use from_with for proto->rust conversion
                 _trace.decision("DeriveBidirectional_proto_to_rust", &format!("path: {}", from_with_path));
-                let from_with_path: syn::Path = syn::parse_str(&from_with_path)
+                let from_with_path: syn::Path = syn::parse_str(from_with_path)
                     .expect("Failed to parse derive_from_with path");
 
                 if self.rust_field.is_option && self.proto_field.is_optional() {
                     // Custom function handles Option<T> -> Option<U> transformation
-                    let result = quote! { #field_name: #from_with_path(proto_struct.#proto_field_ident) };
-                    // eprintln!("DMR RAW TOKENS: {:?}", result);
-                    // eprintln!("DMR TOKEN STRING: {}", result);
-                    result
+                    quote! { #field_name: #from_with_path(proto_struct.#proto_field_ident) }
                 } else if self.proto_field.is_optional() {
                     // Custom function expects unwrapped value - use single line quote
                     quote! { #field_name: #from_with_path(proto_struct.#proto_field_ident.expect(&format!("Proto field {} is required for custom conversion", stringify!(#proto_field_ident)))) }
@@ -123,7 +120,7 @@ impl FieldAnalysis {
             ConversionStrategy::DeriveFromWith(from_with_path) => {
                 // Handle standalone DeriveFromWith in rust->proto (fallback to from_with
                 _trace.decision("DeriveFromWith", &format!("path: {}", from_with_path));
-                let from_with_path: syn::Path = syn::parse_str(&from_with_path)
+                let from_with_path: syn::Path = syn::parse_str(from_with_path)
                     .expect("Failed to parse derive_from_with path");
 
                 if self.rust_field.is_option && self.proto_field.is_optional() {
@@ -158,26 +155,6 @@ impl FieldAnalysis {
                 }
             },
 
-            // -- Transparent field handling --
-            // ConversionStrategy::TransparentRequired => {
-            //     _trace.decision("TransparentRequired", "transparent conversion with option handling");
-            //     // For transparent Option fields, use map instead of From
-            //     if self.rust_field.has_transparent && self.rust_field.is_option {
-            //         if let Some(inner_type) = self.rust_field.get_inner_type() {
-            //             quote! {
-            //                 #field_name: proto_struct.#proto_field_ident.map(|proto_val| {
-            //                     // Use Into to convert proto type to inner transparent type
-            //                     #inner_type::from(proto_val)
-            //                 })
-            //             }
-            //         } else {
-            //             panic!("Could not extract inner type from {}", self.rust_field.type_name());
-            //         }
-            //     } else {
-            //         let field_type = ctx.field_type;
-            //         quote! { #field_name: #field_type::from(proto_struct.#proto_field_ident) }
-            //     }
-            // },
             ConversionStrategy::TransparentRequired => {
                 _trace.decision("TransparentRequired", "transparent conversion with option handling");
 
@@ -333,10 +310,12 @@ impl FieldAnalysis {
                 _trace.decision("CollectVecWithDefault", "check empty then collect or default");
                 let default_expr = generate_default_value(ctx.field_type, ctx.default_fn.as_deref());
                 quote! {
-                    #field_name: if proto_struct.#proto_field_ident.is_empty() {
-                        #default_expr
-                    } else {
-                        proto_struct.#proto_field_ident.into_iter().map(Into::into).collect()
+                    #field_name: {
+                        if proto_struct.#proto_field_ident.is_empty() {
+                            #default_expr
+                        } else {
+                            proto_struct.#proto_field_ident.into_iter().map(Into::into).collect()
+                        }
                     }
                 }
             },
@@ -393,7 +372,6 @@ impl FieldAnalysis {
             },
 
             // -- Rust-to-proto specific strategies (handled in other direction) --
-            // ConversionStrategy::TransparentToOptional | ConversionStrategy::TransparentToRequired |
             ConversionStrategy::UnwrapOptional => {
                 _trace.decision("UnwrapOptional_fallback", "falling back to DirectWithInto");
                 quote! { #field_name: proto_struct.#proto_field_ident.into() }
@@ -411,9 +389,7 @@ impl FieldAnalysis {
             ctx.struct_name,
             ctx.field_name,
             "proto_to_rust",
-            &[
-                // ("strategy", &format!("{:?}", self.conversion_strategy)),
-            ],
+            &[],
         );
 
         result
@@ -444,7 +420,7 @@ impl FieldAnalysis {
             ConversionStrategy::DeriveBidirectional(_, into_with_path) => {
                 // Use into_with for rust->proto conversion
                 _trace.decision("DeriveBidirectional_rust_to_proto", &format!("path: {}", into_with_path));
-                let into_with_path: syn::Path = syn::parse_str(&into_with_path)
+                let into_with_path: syn::Path = syn::parse_str(into_with_path)
                     .expect("Failed to parse derive_into_with path");
 
                 if self.rust_field.is_option && self.proto_field.is_optional() {
@@ -468,7 +444,7 @@ impl FieldAnalysis {
             },
             ConversionStrategy::DeriveIntoWith(into_with_path) => {
                 _trace.decision("DeriveIntoWith", &format!("path: {}", into_with_path));
-                let into_with_path: syn::Path = syn::parse_str(&into_with_path)
+                let into_with_path: syn::Path = syn::parse_str(into_with_path)
                     .expect("Failed to parse derive_into_with path");
 
                 if self.rust_field.is_option && self.proto_field.is_optional() {
@@ -550,24 +526,15 @@ impl FieldAnalysis {
                 // These are proto-to-rust specific, fall back to appropriate rust-to-proto logic
                 _trace.decision("proto_to_rust_specific_strategy", "determine appropriate rust_to_proto conversion");
 
-                if self.proto_field.is_optional() {
+                if self.rust_field.is_option {
+                    quote! { #proto_field_ident: my_struct.#field_name.map(|v| v.into()) }
+                } else if self.proto_field.is_optional() {
                     quote! { #proto_field_ident: Some(my_struct.#field_name.into()) }
                 } else {
                     quote! { #proto_field_ident: my_struct.#field_name.into() }
                 }
             },
 
-            // ConversionStrategy::TransparentRequired => {
-            //     _trace.decision("TransparentRequired", "transparent rust->proto using existing Into trait");
-            //
-            //     // Check if this is Option<TransparentType> (wrongly classified as Required)
-            //     if self.rust_field.has_transparent && self.rust_field.is_option {
-            //         quote! { #proto_field_ident: my_struct.#field_name.map(|rust_val| rust_val.into()) }
-            //     } else {
-            //         // Non-option transparent field
-            //         quote! { #proto_field_ident: my_struct.#field_name.into() }
-            //     }
-            // },
             ConversionStrategy::TransparentRequired => {
                 _trace.decision("TransparentRequired", "transparent rust->proto using Into trait");
 
@@ -584,12 +551,7 @@ impl FieldAnalysis {
             ConversionStrategy::TransparentOptionalWithError |
             ConversionStrategy::TransparentOptionalWithDefault => {
                 _trace.decision("transparent_rust_to_proto", "use Into conversion");
-
-                // if self.proto_field.is_optional() {
-                    quote! { #proto_field_ident: Some(my_struct.#field_name.into()) }
-                // } else {
-                //     quote! { #proto_field_ident: my_struct.#field_name.into() }
-                // }
+                quote! { #proto_field_ident: Some(my_struct.#field_name.into()) }
             },
 
             ConversionStrategy::CollectVecWithDefault |
@@ -602,11 +564,7 @@ impl FieldAnalysis {
 
                 match (rust.is_option, proto.mapping) {
                     (true, ProtoMapping::Optional) => {
-                        let result = quote! {
-                            #proto_field_ident: my_struct.#field_name.map(|v| v.into())
-                        };
-                        // eprintln!("DMR DEBUG: Generated tokens: {}", result);
-                        result
+                        quote! { #proto_field_ident: my_struct.#field_name.map(|v| v.into()) }
                     },
 
                     (true, ProtoMapping::Repeated) => {
@@ -663,9 +621,7 @@ impl FieldAnalysis {
             ctx.struct_name,
             ctx.field_name,
             "rust_to_proto",
-            &[
-                // ("strategy", &format!("{:?}", self.conversion_strategy)),
-            ],
+            &[],
         );
 
         result

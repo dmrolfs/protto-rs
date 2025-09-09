@@ -10,6 +10,7 @@ mod constants {
         &["i32", "u32", "i64", "u64", "f32", "f64", "bool", "String"];
     pub const DEFAULT_PROTO_MODULE: &str = "proto";
     pub const DEFAULT_CONVERSION_ERROR_SUFFIX: &str = "ConversionError";
+    pub const USE_DEFAULT_IMPL: &str = "__USE_DEFAULT_IMPL__";
 }
 
 mod attribute_parser;
@@ -31,16 +32,6 @@ mod field_info;
 mod conversion;
 
 mod utils {
-    use proc_macro2::TokenStream;
-    use quote::quote;
-    pub fn maybe_option_expr(is_option: bool, inner: TokenStream) -> TokenStream {
-        if is_option {
-            quote! { Some(#inner) }
-        } else {
-            inner
-        }
-    }
-
     pub fn to_screaming_snake_case(s: &str) -> String {
         let mut result = String::new();
         for (i, c) in s.chars().enumerate() {

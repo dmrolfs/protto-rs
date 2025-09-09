@@ -81,12 +81,40 @@ proptest! {
     }
 }
 
+#[test]
+fn test_track_id_conversion() {
+    let original = TrackId::new(999);
+    println!("Original TrackId: {:?}", original);
+
+    let proto_val: u64 = original.clone().into();
+    println!("Converted to u64: {}", proto_val);
+
+    let back_to_rust: TrackId = proto_val.into();
+    println!("Converted back to TrackId: {:?}", back_to_rust);
+
+    assert_eq!(original, back_to_rust);
+}
+
+#[test]
+fn test_track_conversion() {
+    let original = Track { id: TrackId::new(999) };
+    println!("Original Track: {:?}", original);
+
+    let proto_track: proto::Track = original.clone().into();
+    println!("Converted to proto::Track: {:?}", proto_track);
+
+    let back_to_rust: Track = proto_track.into();
+    println!("Converted back to Track: {:?}", back_to_rust);
+
+    assert_eq!(original, back_to_rust);
+}
+
 // Test all tests from the documentation
 #[test]
 fn test_basic_usage_example() {
     let proto_track = proto::Track { track_id: 42 };
     let rust_track: Track = proto_track.clone().into();
-    assert_eq!(rust_track.id, 42);
+    assert_eq!(rust_track.id.as_ref(), &42);
 
     let back_to_proto: proto::Track = rust_track.into();
     assert_eq!(back_to_proto, proto_track);

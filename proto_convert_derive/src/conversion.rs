@@ -1,5 +1,4 @@
 use quote::quote;
-use crate::attribute_parser::ProtoFieldMeta;
 use crate::debug::CallStackDebug;
 use crate::expect_analysis::ExpectMode;
 use crate::field_analysis::FieldProcessingContext;
@@ -22,8 +21,6 @@ pub enum ConversionStrategy {
     TransparentOptionalWithExpect,          // proto optional -> rust required (expect)
     TransparentOptionalWithError,           // proto optional -> rust required (error)
     TransparentOptionalWithDefault,         // proto optional -> rust required (default)
-    // TransparentToOptional,                  // rust -> proto optional (rust_to_proto)
-    // TransparentToRequired,                  // rust -> proto required (rust_to_proto)
 
     // Direct conversions (no wrapping/unwrapping)
     DirectAssignment,                       // T -> T (primitives, proto types)
@@ -48,6 +45,7 @@ pub enum ConversionStrategy {
     CollectVec,                            // Vec<T> -> Vec<U>
     CollectVecWithDefault,                 // Vec<T> -> Vec<U> (with default when empty)
     CollectVecWithError,                   // Vec<T> -> Vec<U> (with error handling)
+    #[allow(dead_code)]
     MapVecInOption,                        // Option<Vec<T>> -> Option<Vec<U>>
     VecDirectAssignment,                   // Vec<ProtoType> -> Vec<ProtoType> (no conversion needed)
 
@@ -55,6 +53,7 @@ pub enum ConversionStrategy {
     // - Scenario: Impossible/complex combinations that need manual handling
     // - Should be constructed when validation detects invalid combinations
     // - Currently never constructed because validation logic isn't integrated
+    #[allow(dead_code)]
     RequiresCustomLogic,                    // Complex cases needing manual handling
 }
 
@@ -70,8 +69,6 @@ impl ConversionStrategy {
             Self::TransparentOptionalWithExpect => "transparent field, proto optional -> expect",
             Self::TransparentOptionalWithError => "transparent field, proto optional -> error",
             Self::TransparentOptionalWithDefault => "transparent field, proto optional -> default",
-            // Self::TransparentToOptional => "transparent field -> proto optional",
-            // Self::TransparentToRequired => "transparent field -> proto required",
             Self::DirectAssignment => "direct assignment (no conversion)",
             Self::DirectWithInto => "direct conversion with Into",
             Self::WrapInSome => "wrap value in Some()",
@@ -97,7 +94,6 @@ impl ConversionStrategy {
 
             Self::DeriveFromWith(_) | Self::DeriveIntoWith(_) | Self::DeriveBidirectional(_, _) => "custom_derive",
 
-            // Self::TransparentToOptional | Self::TransparentToRequired |
             Self::TransparentRequired | Self::TransparentOptionalWithExpect |
             Self::TransparentOptionalWithError | Self::TransparentOptionalWithDefault => "transparent",
 
@@ -114,7 +110,7 @@ impl ConversionStrategy {
         }
     }
 
-    // DMR: Validation to catch impossible strategy combinations early
+    // Validation to catch impossible strategy combinations early
     pub fn validate_for_context(
         &self,
         ctx: &FieldProcessingContext,
@@ -140,14 +136,14 @@ impl ConversionStrategy {
             // -- Validate wrap strategies require rust non-optional to proto optional --
             Self::WrapInSome => {
                 if rust.is_option {
-                    return Err(format!(
-                        "WrapInSome strategy incompatible with rust Option type. Use MapOption instead."
-                    ));
+                    return Err(
+                        "WrapInSome strategy incompatible with rust Option type. Use MapOption instead.".to_string()
+                    );
                 }
                 if !proto.mapping.is_optional() {
-                    return Err(format!(
-                        "WrapInSome strategy requires proto field to be optional, but detected as required."
-                    ));
+                    return Err(
+                        "WrapInSome strategy requires proto field to be optional, but detected as required.".to_string()
+                    );
                 }
             },
 
@@ -189,7 +185,7 @@ impl ConversionStrategy {
                 if !Self::is_option_vec_type(ctx.field_type) && !proto.mapping.is_repeated() {
                     return Err(format!(
                         "MapVecInOption strategy requires Option<Vec<T>> type, found: {}",
-                        quote!(ctx.field_type).to_string()
+                        quote!(ctx.field_type)
                     ));
                 }
             },
@@ -197,23 +193,23 @@ impl ConversionStrategy {
             // -- Validate derive strategies have paths --
             Self::DeriveFromWith(path) | Self::DeriveIntoWith(path) => {
                 if path.is_empty() {
-                    return Err(format!("Derive strategy requires non-empty function path"));
+                    return Err("Derive strategy requires non-empty function path".to_string());
                 }
                 //todo: Could add path validation here
             },
 
             Self::DeriveBidirectional(from_path, into_path) => {
                 if from_path.is_empty() || into_path.is_empty() {
-                    return Err(format!("DeriveBidirectional strategy requires non-empty function paths"));
+                    return Err("DeriveBidirectional strategy requires non-empty function paths".to_string());
                 }
             },
 
             // -- Validate ignore strategy --
             Self::ProtoIgnore => {
                 if !rust.has_proto_ignore {
-                    return Err(format!(
-                        "ProtoIgnore strategy requires #[proto(ignore)] attribute on field."
-                    ));
+                    return Err(
+                        "ProtoIgnore strategy requires #[proto(ignore)] attribute on field.".to_string()
+                    );
                 }
             },
 
@@ -239,17 +235,16 @@ impl ConversionStrategy {
             return Ok(());
         }
 
-        match strategy {
-            Self::UnwrapOptionalWithExpect => {
-                // Only validate the specific problematic pattern:
-                // - Primitive field with no attributes
-                // - Same field name (suggests direct mapping confusion)
-                // - No handling attributes
-                if !rust.is_option && rust.is_primitive &&
-                    !rust.has_default && matches!(rust.expect_mode, ExpectMode::None) &&
-                    ctx.proto_name == ctx.field_name.to_string() {
-                    return Err(format!(
-                        "INVALID #[proto(proto_optional)] on field '{}'.\n\
+        if strategy == &Self::UnwrapOptionalWithExpect {
+            // Only validate the specific problematic pattern:
+            // - Primitive field with no attributes
+            // - Same field name (suggests direct mapping confusion)
+            // - No handling attributes
+            if !rust.is_option && rust.is_primitive
+            && !rust.has_default && matches!(rust.expect_mode, ExpectMode::None)
+            && *ctx.field_name == ctx.proto_name {
+                return Err(format!(
+                    "INVALID #[proto(proto_optional)] on field '{}'.\n\
                     \n\
                     Field appears to be direct mapping but uses proto_optional.\n\
                     Proto schema likely shows: {} {} = N; (required)\n\
@@ -262,10 +257,7 @@ impl ConversionStrategy {
                         rust.type_name(),
                         ctx.field_name
                     ));
-                }
-            },
-
-            _ => {}
+            }
         }
 
         Ok(())
@@ -309,19 +301,6 @@ impl ConversionStrategy {
         } else if rust.has_transparent {
             // -- Handle transparent fields --
             Self::determine_transparent_strategy(ctx, rust, proto, &_trace)
-        // } else if ctx.proto_meta.is_proto_optional() && !rust.is_option && proto.is_optional() {
-        //     // - Rust field is required (e.g., `header: proto::Header`)
-        //     // - Proto field is optional (e.g., `header: Option<Header>`)
-        //     // - User added #[proto(proto_optional)] to indicate unwrapping
-        //     _trace.decision("proto_optional_attribute_unwrap_case",
-        //                     "rust required + proto optional + proto_optional attr -> unwrap strategy");
-        //
-        //     match rust.expect_mode {
-        //         ExpectMode::Panic => Self::UnwrapOptionalWithExpect,
-        //         ExpectMode::Error => Self::UnwrapOptionalWithError,
-        //         ExpectMode::None if rust.has_default => Self::UnwrapOptionalWithDefault,
-        //         ExpectMode::None => Self::UnwrapOptionalWithExpect, // Default to expect
-        //     }
         } else {
             match (rust.is_option, proto.mapping, rust.expect_mode) {
                 // -- Collection handling first --
@@ -365,6 +344,16 @@ impl ConversionStrategy {
                 },
 
                 // -- Option wrapping (rust optional -> proto required) --
+                (true, ProtoMapping::Scalar | ProtoMapping::Message, ExpectMode::Error) => {
+                    if proto.is_optional() {
+                        _trace.decision("rust_optional + proto_optional + expect_error", "UnwrapOptionalWithError");
+                        Self::UnwrapOptionalWithError  // Honor expect mode before MapOption
+                    } else {
+                        _trace.decision("rust_optional + proto_required + has_expect_or_default", "WrapInSome");
+                        Self::WrapInSome
+                    }
+                },
+
                 (true, ProtoMapping::Scalar | ProtoMapping::Message, ExpectMode::None) if !rust.has_default => {
                     _trace.decision("rust_optional + proto_required + no_attributes", "UnwrapOptional");
                     if proto.is_optional() {
@@ -527,102 +516,102 @@ impl ConversionStrategy {
         }
     }
 
-    fn determine_vec_strategy(
-        ctx: &FieldProcessingContext,
-        rust: &RustFieldInfo,
-        _proto: &ProtoFieldInfo,
-        trace: &CallStackDebug,
-    ) -> Self {
-        // -- Handle Option<Vec<T>> case first --
-        if Self::is_option_vec_type(ctx.field_type) {
-            trace.decision("option_vec_type", "MapVecInOption");
-            return Self::MapVecInOption;
-        }
+    // fn determine_vec_strategy(
+    //     ctx: &FieldProcessingContext,
+    //     rust: &RustFieldInfo,
+    //     _proto: &ProtoFieldInfo,
+    //     trace: &CallStackDebug,
+    // ) -> Self {
+    //     // -- Handle Option<Vec<T>> case first --
+    //     if Self::is_option_vec_type(ctx.field_type) {
+    //         trace.decision("option_vec_type", "MapVecInOption");
+    //         return Self::MapVecInOption;
+    //     }
+    //
+    //     // -- Enhanced vector strategy determination with better proto type detection --
+    //     if let Some(inner_type) = type_analysis::get_inner_type_from_vec(ctx.field_type) {
+    //         let is_proto_inner = type_analysis::is_proto_type(&inner_type, ctx.proto_module);
+    //
+    //         if is_proto_inner {
+    //             trace.decision("vec + proto_inner_type", "VecDirectAssignment");
+    //             return Self::VecDirectAssignment;
+    //         }
+    //     }
+    //
+    //     if rust.has_default {
+    //         match rust.expect_mode {
+    //             ExpectMode::Error => {
+    //                 trace.decision("vec + has_default + expect_error", "CollectVecWithError");
+    //                 Self::CollectVecWithError
+    //             },
+    //             _ => {
+    //                 trace.decision("vec + has_default", "CollectVecWithDefault");
+    //                 Self::CollectVecWithDefault
+    //             }
+    //         }
+    //     } else {
+    //         trace.decision("vec + no_default", "CollectVec");
+    //         Self::CollectVec
+    //     }
+    // }
 
-        // -- Enhanced vector strategy determination with better proto type detection --
-        if let Some(inner_type) = type_analysis::get_inner_type_from_vec(ctx.field_type) {
-            let is_proto_inner = type_analysis::is_proto_type(&inner_type, ctx.proto_module);
-
-            if is_proto_inner {
-                trace.decision("vec + proto_inner_type", "VecDirectAssignment");
-                return Self::VecDirectAssignment;
-            }
-        }
-
-        if rust.has_default {
-            match rust.expect_mode {
-                ExpectMode::Error => {
-                    trace.decision("vec + has_default + expect_error", "CollectVecWithError");
-                    Self::CollectVecWithError
-                },
-                _ => {
-                    trace.decision("vec + has_default", "CollectVecWithDefault");
-                    Self::CollectVecWithDefault
-                }
-            }
-        } else {
-            trace.decision("vec + no_default", "CollectVec");
-            Self::CollectVec
-        }
-    }
-
-    fn determine_option_strategy(
-        _ctx: &FieldProcessingContext,
-        rust: &RustFieldInfo,
-        proto: &ProtoFieldInfo,
-        trace: &CallStackDebug,
-    ) -> Self {
-        match (rust.is_option, proto.is_optional(), rust.expect_mode) {
-            (false, true, ExpectMode::Panic) => {
-                trace.decision("rust_required + proto_optional + expect_panic", "UnwrapOptionalWithExpect");
-                Self::UnwrapOptionalWithExpect
-            },
-            (false, true, ExpectMode::Error) => {
-                trace.decision("rust_required + proto_optional + expect_error", "UnwrapOptionalWithError");
-                Self::UnwrapOptionalWithError
-            },
-            (false, true, ExpectMode::None) if rust.has_default => {
-                trace.decision("rust_required + proto_optional + has_default", "UnwrapOptionalWithDefault");
-                Self::UnwrapOptionalWithDefault
-            },
-            (false, true, ExpectMode::None) => {
-                trace.decision("rust_required + proto_optional + no_expect + no_default", "UnwrapOptionalWithExpect");
-                Self::UnwrapOptionalWithExpect
-            },
-
-            (true, false, ExpectMode::None) if !rust.has_default => {
-                // Pure rust Optional -> proto required suggests rust->proto unwrapping
-                trace.decision("rust_optional + proto_required + no_attributes", "UnwrapOptional");
-                Self::UnwrapOptional
-            },
-            (true, false, _) => {
-                trace.decision("rust_optional + proto_required + has_expect_or_default", "WrapInSome");
-                Self::WrapInSome
-            },
-            (true, true, ExpectMode::Panic) => {
-                trace.decision("both_optional + expect_panic", "UnwrapOptionalWithExpect");
-                Self::UnwrapOptionalWithExpect
-            },
-            (true, true, ExpectMode::Error) => {
-                trace.decision("both_optional + expect_error", "UnwrapOptionalWithError");
-                Self::UnwrapOptionalWithError
-            },
-            (true, true, ExpectMode::None) if rust.has_default => {
-                trace.decision("both_optional + no_expect + has_default", "MapOptionWithDefault");
-                Self::MapOptionWithDefault
-            },
-            (true, true, ExpectMode::None) => {
-                // -- Both optional with no expect - map through --
-                trace.decision("both_optional + no_expect", "MapOption");
-                Self::MapOption
-            },
-            (false, false, _) => {
-                // -- Both required - direct conversion --
-                trace.decision("both_required", "DirectWithInto");
-                Self::DirectWithInto
-            },
-        }
-    }
+    // fn determine_option_strategy(
+    //     _ctx: &FieldProcessingContext,
+    //     rust: &RustFieldInfo,
+    //     proto: &ProtoFieldInfo,
+    //     trace: &CallStackDebug,
+    // ) -> Self {
+    //     match (rust.is_option, proto.is_optional(), rust.expect_mode) {
+    //         (false, true, ExpectMode::Panic) => {
+    //             trace.decision("rust_required + proto_optional + expect_panic", "UnwrapOptionalWithExpect");
+    //             Self::UnwrapOptionalWithExpect
+    //         },
+    //         (false, true, ExpectMode::Error) => {
+    //             trace.decision("rust_required + proto_optional + expect_error", "UnwrapOptionalWithError");
+    //             Self::UnwrapOptionalWithError
+    //         },
+    //         (false, true, ExpectMode::None) if rust.has_default => {
+    //             trace.decision("rust_required + proto_optional + has_default", "UnwrapOptionalWithDefault");
+    //             Self::UnwrapOptionalWithDefault
+    //         },
+    //         (false, true, ExpectMode::None) => {
+    //             trace.decision("rust_required + proto_optional + no_expect + no_default", "UnwrapOptionalWithExpect");
+    //             Self::UnwrapOptionalWithExpect
+    //         },
+    //
+    //         (true, false, ExpectMode::None) if !rust.has_default => {
+    //             // Pure rust Optional -> proto required suggests rust->proto unwrapping
+    //             trace.decision("rust_optional + proto_required + no_attributes", "UnwrapOptional");
+    //             Self::UnwrapOptional
+    //         },
+    //         (true, false, _) => {
+    //             trace.decision("rust_optional + proto_required + has_expect_or_default", "WrapInSome");
+    //             Self::WrapInSome
+    //         },
+    //         (true, true, ExpectMode::Panic) => {
+    //             trace.decision("both_optional + expect_panic", "UnwrapOptionalWithExpect");
+    //             Self::UnwrapOptionalWithExpect
+    //         },
+    //         (true, true, ExpectMode::Error) => {
+    //             trace.decision("both_optional + expect_error", "UnwrapOptionalWithError");
+    //             Self::UnwrapOptionalWithError
+    //         },
+    //         (true, true, ExpectMode::None) if rust.has_default => {
+    //             trace.decision("both_optional + no_expect + has_default", "MapOptionWithDefault");
+    //             Self::MapOptionWithDefault
+    //         },
+    //         (true, true, ExpectMode::None) => {
+    //             // -- Both optional with no expect - map through --
+    //             trace.decision("both_optional + no_expect", "MapOption");
+    //             Self::MapOption
+    //         },
+    //         (false, false, _) => {
+    //             // -- Both required - direct conversion --
+    //             trace.decision("both_required", "DirectWithInto");
+    //             Self::DirectWithInto
+    //         },
+    //     }
+    // }
 
     fn determine_direct_strategy(
         ctx: &FieldProcessingContext,
@@ -656,9 +645,6 @@ impl ConversionStrategy {
     fn is_proto_type_conversion(ctx: &FieldProcessingContext, rust: &RustFieldInfo) -> bool {
         // Check if this is a conversion between proto module types
         type_analysis::is_proto_type(&rust.field_type, ctx.proto_module)
-        // syn::parse_str::<syn::Type>(&rust.type_name)
-        //     .map(|field_type_rep| type_analysis::is_proto_type(&field_type_rep, ctx.proto_module))
-        //     .unwrap_or(false)
     }
 
     fn validate_proto_optional_usage(

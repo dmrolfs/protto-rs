@@ -44,13 +44,12 @@ impl ExpectMode {
 
 pub fn has_expect_panic_syntax(field: &Field) -> bool {
     for attr in &field.attrs {
-        if attr.path().is_ident(constants::DEFAULT_PROTO_MODULE) {
-            if let Meta::List(meta_list) = &attr.meta {
+        if attr.path().is_ident(constants::DEFAULT_PROTO_MODULE) 
+            && let Meta::List(meta_list) = &attr.meta {
                 let tokens_str = meta_list.tokens.to_string();
                 if tokens_str.replace(" ", "").contains("expect(panic)") {
                     return true;
                 }
-            }
         }
     }
     false

@@ -45,7 +45,7 @@ pub struct ComplexState {
 pub struct CombinationStruct {
     #[proto(
         rename = "rename_with_default",
-        default = "default_renamed_field",
+        default_fn = default_renamed_field,
         proto_optional
     )]
     pub renamed_field_with_default: String,
@@ -53,7 +53,7 @@ pub struct CombinationStruct {
     #[proto(transparent, expect(panic), rename = "transparent_with_expect")]
     pub transparent_field_with_expect: TransparentWrapper,
 
-    #[proto(default = "default_status", proto_optional)]
+    #[proto(default_fn = default_status, proto_optional)]
     pub enum_with_default_and_optional: Status,
 
     #[proto(expect)]
@@ -103,7 +103,7 @@ pub struct ComprehensiveEnumStruct {
 #[proto(module = "proto", rename = "State")]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct CollectionWithDefault {
-    #[proto(default = "default_track_vec")]
+    #[proto(default_fn = "default_track_vec")]
     pub tracks: Vec<Track>,
 }
 
@@ -164,7 +164,7 @@ pub struct TransparentOptionalStruct {
     #[proto(transparent, expect, rename = "error_wrapper", proto_optional)]
     pub error_wrapper: TransparentWrapper,
 
-    #[proto(transparent, default = "default_transparent_wrapper", rename = "default_wrapper", proto_optional)]
+    #[proto(transparent, default_fn = default_transparent_wrapper, rename = "default_wrapper", proto_optional)]
     pub default_wrapper: TransparentWrapper,
 }
 
@@ -220,10 +220,10 @@ pub struct VecDirectAssignmentStruct {
 #[derive(ProtoConvert, PartialEq, Debug, Clone)]
 #[proto(module = "proto", rename = "VecErrorMessage", error_type = VecError)]
 pub struct VecWithErrorStruct {
-    #[proto(expect, default = "default_track_vec", error_fn = "VecError::empty_tracks")]
+    #[proto(expect, default_fn = default_track_vec, error_fn = VecError::empty_tracks)]
     pub tracks_with_error: Vec<Track>,
 
-    #[proto(expect, default = "default_string_vec", error_fn = "VecError::missing_tags")]
+    #[proto(expect, default_fn = default_string_vec, error_fn = VecError::missing_tags)]
     pub tags_with_error: Vec<String>,
 }
 
@@ -256,9 +256,6 @@ impl std::fmt::Display for VecError {
 
 impl std::error::Error for VecError {}
 
-pub fn default_track_vec() -> Vec<Track> {
-    vec![Track::default()]  // Assuming Track implements Default
-}
 
 pub fn default_string_vec() -> Vec<String> {
     vec!["default".to_string()]

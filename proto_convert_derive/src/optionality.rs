@@ -3,121 +3,6 @@ use crate::expect_analysis::ExpectMode;
 use crate::field_analysis::FieldProcessingContext;
 use crate::{attribute_parser, expect_analysis, type_analysis};
 use quote::{ToTokens, quote};
-use crate::field_info::RustFieldInfo;
-
-/// Main entry point for proto field optionality detection.
-///
-/// This function orchestrates multiple detection strategies in order of reliability:
-/// 1. explicit user annotation (`#[proto(optional = true)]`)
-/// 2. build-time metadata (this module)
-/// 3. type-based inference (Option<T> = optional)
-/// 4. usage pattern inference (expect/default = optional)
-pub fn determine_proto_field_optionality(
-    struct_name: &syn::Ident,
-    field: &syn::Field,
-    proto_name: &str,
-    _rust_field: &RustFieldInfo,
-    _ctx: &FieldProcessingContext
-) -> FieldOptionality {
-    let _trace = CallStackDebug::with_context(
-        "determine_proto_field_optionality",
-        struct_name,
-        field
-            .ident
-            .as_ref()
-            .map(|f| f.to_string())
-            .unwrap_or_default(),
-        &[("proto_name", proto_name)],
-    );
-
-    // 1. Explicit annotation takes absolute precedence
-    if let Ok(proto_meta) = attribute_parser::ProtoFieldMeta::from_field(field)
-        && proto_meta.has_explicit_optionality()
-    {
-        _trace.decision(
-            "explicit optional",
-            "Explicit annotation takes absolute precedence",
-        );
-        _trace.metadata_lookup(
-            proto_name,
-            &field.ident.as_ref().unwrap().to_string(),
-            Some(proto_meta.is_proto_optional()),
-            "explicit_user_annotation"
-        );
-        return if proto_meta.is_proto_optional() {
-            FieldOptionality::Optional
-        } else {
-            FieldOptionality::Required
-        };
-    }
-
-    // 2. Pattern-based inference from type structure
-    let field_type = &field.ty;
-    if type_analysis::is_option_type(field_type) {
-        _trace.decision(
-            "is_option_type",
-            "✓ PATTERN: Option<T> → optional proto field",
-        );
-        _trace.metadata_lookup(
-            proto_name,
-            &field.ident.as_ref().unwrap().to_string(),
-            Some(true),
-            "option_type_pattern"
-        );
-        return FieldOptionality::Optional;
-    }
-
-    if type_analysis::is_vec_type(field_type) {
-        _trace.decision(
-            "is_vec_type",
-            "✓ PATTERN: Vec<T> → required repeated proto field",
-        );
-        return FieldOptionality::Required;
-    }
-
-    // 3. Pattern-based inference from usage indicators
-    if let Ok(proto_meta) = attribute_parser::ProtoFieldMeta::from_field(field) {
-        _trace.checkpoint("Pattern-based inference from usage indicators");
-        // Has default function → likely optional proto field
-        if proto_meta.default_fn.is_some() {
-            let expect_mode = ExpectMode::from_field_meta(field, &proto_meta);
-            // If has default but also has expect mode, the expectation overrides
-            if matches!(expect_mode, ExpectMode::None) {
-                _trace.decision(
-                    "ExpectMode::None",
-                    "✓ PATTERN: default_fn (without expect) → optional proto field",
-                );
-                return FieldOptionality::Optional;
-            }
-        }
-
-        // Has expect attribute → indicates optional proto field
-        if proto_meta.expect {
-            _trace.decision(
-                "ExpectMode",
-                "✓ PATTERN: expect attribute → optional proto field",
-            );
-            return FieldOptionality::Optional;
-        }
-    }
-
-    // Check for expect panic syntax in field attributes
-    if expect_analysis::has_expect_panic_syntax(field) {
-        _trace.decision(
-            "ExpectMode::Panic",
-            "✓ PATTERN: expect() syntax → optional proto field",
-        );
-        return FieldOptionality::Optional;
-    }
-
-    // 4. No clear pattern found - emit helpful guidance
-    _trace.checkpoint("? AMBIGUOUS: Add #[proto(optional = true/false)] for clarity");
-    _trace.checkpoint("Suggestion: Most proto primitives without Option<T> are required");
-
-    // Default to Required for primitives/custom types without clear indicators
-    // This is the safest assumption and matches most proto field patterns
-    FieldOptionality::Required
-}
 
 /// Result of build-time metadata detection for field optionality
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
@@ -145,6 +30,7 @@ impl std::fmt::Display for FieldOptionality {
 }
 
 impl FieldOptionality {
+    #[allow(unused)]
     pub fn new(is_optional: bool) -> Self {
         if is_optional {
             Self::Optional
@@ -327,6 +213,7 @@ impl FieldOptionality {
 
 
     /// Check if field has usage patterns indicating optional proto field
+    #[allow(unused)]
     fn has_optional_usage_indicators(ctx: &FieldProcessingContext, field: &syn::Field) -> bool {
         // Check for expect() attribute or usage
         let has_expect = !matches!(ctx.expect_mode, ExpectMode::None)
@@ -362,6 +249,7 @@ impl FieldOptionality {
             .unwrap_or(false)
     }
 
+    #[allow(unused)]
     fn is_newtype_wrapper(field_type: &syn::Type) -> bool {
         // Detect single-segment path types that aren't primitives or known std types
         if let syn::Type::Path(type_path) = field_type {
@@ -374,6 +262,7 @@ impl FieldOptionality {
         }
     }
 
+    #[allow(unused)]
     fn get_newtype_inner_type(field_type: &syn::Type) -> Option<syn::Type> {
         if let syn::Type::Path(type_path) = field_type {
             // For tuple structs like TrackId(u64), we'd need to inspect the struct definition
@@ -405,7 +294,7 @@ impl FieldOptionality {
         Add explicit annotation: #[proto(proto_optional)] or #[proto(proto_required)]",
             ctx.struct_name,
             ctx.field_name,
-            quote!(ctx.field_type).to_string()
+            quote!(ctx.field_type)
         );
         // TODO: When proc_macro::Diagnostic is stable, emit proper compiler note
         // For now, this is a placeholder for future implementation

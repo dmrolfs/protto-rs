@@ -77,13 +77,13 @@ pub struct StatusResponse {
 pub struct DefaultStruct {
     pub id: u64,
 
-    #[proto(default_fn)]
+    #[proto(default)]
     pub name: String, // Uses String::default() = ""
 
     #[proto(default)]
     pub count: u32, // Uses u32::default() = 0
 
-    #[proto(default = "default_priority")]
+    #[proto(default_fn = "default_priority")]
     pub priority: u32, // Uses custom default function
 
     #[proto(default_fn = default_tags)]

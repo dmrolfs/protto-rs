@@ -147,6 +147,7 @@ pub fn default_renamed_field() -> String {
 
 #[allow(unused)]
 pub fn default_track_vec() -> Vec<Track> {
+    println!("default_track_vec() called!");
     vec![Track { id: TrackId(999) }]
 }
 

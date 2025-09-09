@@ -521,13 +521,23 @@ fn test_comprehensive_enum_required_explicit_missing() {
     assert!(false);
 }
 
+#[test]
+fn test_default_function() {
+    let default_tracks = crate::shared_types::default_track_vec();
+    println!("Default tracks: {:?}", default_tracks);
+    assert_eq!(default_tracks[0].id.as_ref(), &999);
+}
+
 // Test collection behaviors
 #[test]
 fn test_collection_default_vs_expect() {
     // Empty state should use default for default field, succeed for expect field
     let empty_proto_state = proto::State { tracks: vec![] };
+    println!("Proto state tracks length: {}", empty_proto_state.tracks.len());
+    println!("Proto state tracks is_empty: {}", empty_proto_state.tracks.is_empty());
 
     let default_result: CollectionWithDefault = empty_proto_state.clone().into();
+    println!("Result tracks: {:?}", default_result.tracks);
     assert_eq!(
         default_result.tracks,
         vec![Track {
