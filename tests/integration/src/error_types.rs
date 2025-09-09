@@ -4,73 +4,73 @@ use crate::shared_types::*;
 use protto::Protto;
 
 #[derive(Protto, PartialEq, Debug, Clone)]
-#[proto(module = "proto", rename = "HasOptional")]
+#[protto(module = "proto", proto_name = "HasOptional")]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct HasOptionalWithError {
-    #[proto(expect)]
+    #[protto(expect)]
     pub track: Option<Track>,
 }
 
 #[derive(Protto, PartialEq, Debug, Clone)]
-#[proto(module = "proto", rename = "HasOptional", error_type = CustomError)]
+#[protto(module = "proto", proto_name = "HasOptional", error_type = CustomError)]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct HasOptionalWithCustomError {
-    #[proto(expect, error_fn = "create_missing_track_error", optional = true)]
+    #[protto(expect, error_fn = "create_missing_track_error")]
     pub track: Option<Track>,
 }
 
 // Test error function with different error fns
 #[derive(Protto, PartialEq, Debug, Clone)]
-#[proto(module = "proto", rename = "ComplexExpectMessage", error_type = ValidationError)]
+#[protto(module = "proto", proto_name = "ComplexExpectMessage", error_type = ValidationError)]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct ComplexExpectStruct {
-    #[proto(expect(panic), optional = true)]
+    #[protto(expect(panic))]
     pub field_with_panic: String,
 
-    #[proto(expect, optional = true, error_fn = "ValidationError::missing_field")]
+    #[protto(expect, error_fn = "ValidationError::missing_field")]
     pub field_with_error: String,
 
-    #[proto(expect, optional = true, error_fn = "ValidationError::invalid_value")]
+    #[protto(expect, error_fn = "ValidationError::invalid_value")]
     pub field_with_custom_error: String,
 
-    #[proto(default = "default_number", optional = true)]
+    #[protto(default = "default_number")]
     pub number_with_default: u64,
 
-    #[proto(expect(panic))]
+    #[protto(expect(panic))]
     pub enum_with_panic: Status,
 
-    #[proto(expect, error_fn = "ValidationError::conversion_failed")]
+    #[protto(expect, error_fn = "ValidationError::conversion_failed")]
     pub enum_with_error: Status,
 
-    #[proto(expect, error_fn = "ValidationError::missing_field")]
+    #[protto(expect, error_fn = "ValidationError::missing_field")]
     pub tracks_with_expect: Vec<Track>,
 }
 
 #[derive(Protto, PartialEq, Debug, Clone)]
-#[proto(
+#[protto(
     module = "proto",
-    rename = "SimpleMessage",
+    proto_name = "SimpleMessage",
     error_type = DetailedValidationError
 )]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct MultipleErrorFnsStruct {
-    #[proto(
+    #[protto(
         expect,
-        rename = "required_field",
+        proto_name = "required_field",
         error_fn = "DetailedValidationError::missing_required"
     )]
     pub field_with_detailed_error: String,
 
-    #[proto(
+    #[protto(
         expect,
-        rename = "optional_field",
+        proto_name = "optional_field",
         error_fn = "DetailedValidationError::invalid_format"
     )]
     pub field_with_basic_error: String,
 
-    #[proto(
+    #[protto(
         expect,
-        rename = "required_number",
+        proto_name = "required_number",
         error_fn = "DetailedValidationError::out_of_range"
     )]
     pub field_with_generated_error: u64,

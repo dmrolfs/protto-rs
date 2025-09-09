@@ -16,9 +16,9 @@
 //! - **Primitive Type Support:** Direct mapping for Rust primitive types (`u32`, `i64`, `String`, etc.).
 //! - **Option and Collections:** Supports optional fields (`Option<T>`) and collections (`Vec<T>`).
 //! - **Newtype Wrappers:** Transparent conversions for single-field tuple structs.
-//! - **Field Renaming:** Customize mapping between Rust and Protobuf field names using `#[proto(rename = "...")]`.
-//! - **Custom Conversion Functions:** Handle complex scenarios with user-defined functions via `#[proto(derive_from_with = "...")]` and `#[proto(derive_into_with = "...")]`.
-//! - **Ignored Fields:** Exclude fields from conversion using `#[proto(ignore)]`.
+//! - **Field Renaming:** Customize mapping between Rust and Protobuf field names using `#[protto(proto_name = "...")]`.
+//! - **Custom Conversion Functions:** Handle complex scenarios with user-defined functions via `#[protto(proto_to_rust_fn = "...")]` and `#[protto(rust_to_proto_fn = "...")]`.
+//! - **Ignored Fields:** Exclude fields from conversion using `#[protto(ignore)]`.
 //! - **Advanced Error Handling:** Support for custom error types and functions.
 //! - **Smart Optionality Detection:** Automatic inference with manual override capabilities.
 //! - **Configurable Protobuf Module:** Defaults to searching for types in a `proto` module, customizable per struct or globally.
@@ -50,9 +50,9 @@
 //! }
 //!
 //! #[derive(Protto)]
-//! #[proto(module = "proto")]
+//! #[protto(module = "proto")]
 //! pub struct Track {
-//!     #[proto(transparent, rename = "track_id")]
+//!     #[protto(transparent, proto_name = "track_id")]
 //!     pub id: TrackId,
 //! }
 //!
@@ -69,126 +69,126 @@
 //!
 //! ### Struct-Level Attributes
 //!
-//! #### `#[proto(module = "path")]`
+//! #### `#[protto(module = "path")]`
 //! Specifies the module path where protobuf types are located.
 //! ```rust,ignore
 //! #[derive(Protto)]
-//! #[proto(module = "my_proto")]  // looks for types in my_proto::*
+//! #[protto(module = "my_proto")]  // looks for types in my_proto::*
 //! struct MyStruct { ... }
 //! ```
 //!
-//! #### `#[proto(rename = "ProtoName")]`
+//! #### `#[protto(proto_name = "ProtoName")]`
 //! Maps the struct to a different protobuf type name.
 //! ```rust,ignore
 //! #[derive(Protto)]
-//! #[proto(rename = "StateMessage")]  // maps to proto::StateMessage
+//! #[protto(proto_name = "StateMessage")]  // maps to proto::StateMessage
 //! struct State { ... }
 //! ```
 //!
-//! #### `#[proto(error_type = ErrorType)]`
+//! #### `#[protto(error_type = ErrorType)]`
 //! Sets the error type for conversions that can fail.
 //! ```rust,ignore
 //! #[derive(Protto)]
-//! #[proto(error_type = MyError)]
+//! #[protto(error_type = MyError)]
 //! struct MyStruct { ... }
 //! ```
 //!
-//! #### `#[proto(error_fn = "function_name")]`
+//! #### `#[protto(error_fn = "function_name")]`
 //! Specifies a function to handle conversion errors at the struct level.
 //!
 //! ### Field-Level Attributes
 //!
-//! #### `#[proto(transparent)]`
+//! #### `#[protto(transparent)]`
 //! For newtype wrappers - directly converts the inner value.
 //! ```rust,ignore
 //! #[derive(Protto)]
-//! struct UserId(#[proto(transparent)] u64);
+//! struct UserId(#[protto(transparent)] u64);
 //! ```
 //!
-//! #### `#[proto(rename = "proto_field_name")]`
+//! #### `#[protto(proto_name = "proto_field_name")]`
 //! Maps the field to a different name in the protobuf.
 //! ```rust,ignore
-//! #[proto(rename = "user_id")]
+//! #[protto(proto_name = "user_id")]
 //! pub id: u64,  // maps to proto.user_id
 //! ```
 //!
-//! #### `#[proto(ignore)]`
+//! #### `#[protto(ignore)]`
 //! Excludes the field from proto conversion (uses Default::default).
 //! ```rust,ignore
-//! #[proto(ignore)]
+//! #[protto(ignore)]
 //! pub runtime_data: HashMap<String, String>,
 //! ```
 //!
 //! #### Custom Conversion Functions
 //!
-//! ##### `#[proto(derive_from_with = "function")]`
+//! ##### `#[protto(proto_to_rust_fn = "function")]`
 //! Uses a custom function for proto → rust conversion.
 //! ```rust,ignore
-//! #[proto(derive_from_with = "parse_timestamp")]
+//! #[protto(proto_to_rust_fn = "parse_timestamp")]
 //! pub created_at: DateTime<Utc>,
 //! ```
 //!
-//! ##### `#[proto(derive_into_with = "function")]`
+//! ##### `#[protto(rust_to_proto_fn = "function")]`
 //! Uses a custom function for rust → proto conversion.
 //! ```rust,ignore
-//! #[proto(derive_into_with = "format_timestamp")]
+//! #[protto(rust_to_proto_fn = "format_timestamp")]
 //! pub created_at: DateTime<Utc>,
 //! ```
 //!
 //! Both can be combined for bidirectional custom conversion:
 //! ```rust,ignore
-//! #[proto(derive_from_with = "from_proto_map", derive_into_with = "to_proto_map")]
+//! #[protto(proto_to_rust_fn = "from_proto_map", rust_to_proto_fn = "to_proto_map")]
 //! pub metadata: HashMap<String, Value>,
 //! ```
 //!
 //! #### Optionality Control
 //!
-//! ##### `#[proto(proto_optional)]`
+//! ##### `#[protto(proto_optional)]`
 //! Explicitly treats the proto field as optional.
 //! ```rust,ignore
-//! #[proto(proto_optional)]
+//! #[protto(proto_optional)]
 //! pub field: String,  // proto field is Option<String>, gets unwrapped
 //! ```
 //!
-//! ##### `#[proto(proto_required)]`
+//! ##### `#[protto(proto_required)]`
 //! Explicitly treats the proto field as required.
 //! ```rust,ignore
-//! #[proto(proto_required)]
+//! #[protto(proto_required)]
 //! pub field: Option<String>,  // proto field is String, gets wrapped
 //! ```
 //!
 //! #### Error Handling
 //!
-//! ##### `#[proto(expect)]`
+//! ##### `#[protto(expect)]`
 //! Uses `.expect()` with panic on missing optional fields.
 //! ```rust,ignore
-//! #[proto(expect)]
+//! #[protto(expect)]
 //! pub required_field: String,  // panics if proto field is None
 //! ```
 //!
-//! ##### `#[proto(error_type = ErrorType)]`
+//! ##### `#[protto(error_type = ErrorType)]`
 //! Field-level error type override.
 //!
-//! ##### `#[proto(error_fn = "function")]`
+//! ##### `#[protto(error_fn = "function")]`
 //! Custom error handling function for this field.
 //! ```rust,ignore
-//! #[proto(error_fn = "handle_missing_field")]
+//! #[protto(error_fn = "handle_missing_field")]
 //! pub critical_field: String,
 //! ```
 //!
 //! #### Default Values
 //!
-//! ##### `#[proto(default)]`
+//! ##### `#[protto(default)]`
 //! Uses `Default::default()` for missing/empty fields.
 //! ```rust,ignore
-//! #[proto(default)]
+//! #[protto(default)]
 //! pub optional_field: String,  // empty string if proto field is None
 //! ```
 //!
-//! ##### `#[proto(default_fn = "function")]`
+//! ##### `#[protto(default_fn = "function")]`
 //! Uses a custom function for default values.
 //! ```rust,ignore
-//! #[proto(default_fn = "default_username")]
+//! #[protto(default_fn = "default_username")]
 //! pub username: String,
 //!
 //! fn default_username() -> String {
@@ -204,9 +204,9 @@
 //! use std::collections::HashMap;
 //!
 //! #[derive(Protto)]
-//! #[proto(rename = "State")]
+//! #[protto(proto_name = "State")]
 //! pub struct StateMap {
-//!     #[proto(derive_from_with = "into_map", derive_into_with = "from_map")]
+//!     #[protto(proto_to_rust_fn = "into_map", rust_to_proto_fn = "from_map")]
 //!     pub tracks: HashMap<TrackId, Track>,
 //! }
 //!
@@ -225,12 +225,12 @@
 //! use std::sync::atomic::AtomicU64;
 //!
 //! #[derive(Protto)]
-//! #[proto(rename = "State")]
+//! #[protto(proto_name = "State")]
 //! pub struct ComplexState {
 //!     pub tracks: Vec<Track>,
-//!     #[proto(ignore)]
+//!     #[protto(ignore)]
 //!     pub counter: AtomicU64,
-//!     #[proto(ignore, default = "default_cache")]
+//!     #[protto(ignore, default = "default_cache")]
 //!     pub cache: HashMap<String, String>,
 //! }
 //!
@@ -276,22 +276,22 @@
 //!
 //! ```rust,ignore
 //! #[derive(Protto)]
-//! #[proto(error_type = ConversionError)]
+//! #[protto(error_type = ConversionError)]
 //! pub struct User {
 //!     // Panic on missing field
-//!     #[proto(expect)]
+//!     #[protto(expect)]
 //!     pub id: UserId,
 //!
 //!     // Use default value
-//!     #[proto(default)]
+//!     #[protto(default)]
 //!     pub name: String,
 //!
 //!     // Custom error handling
-//!     #[proto(error_fn = handle_email_error)]
+//!     #[protto(error_fn = handle_email_error)]
 //!     pub email: String,
 //!
 //!     // Custom default function
-//!     #[proto(default_fn = default_role)]
+//!     #[protto(default_fn = default_role)]
 //!     pub role: UserRole,
 //! }
 //!
@@ -312,7 +312,7 @@
 //! |------------|-----------|----------|
 //! | `string field = 1;` | `String` | Direct assignment |
 //! | `optional string field = 1;` | `Option<String>` | Direct assignment |
-//! | `optional string field = 1;` | `String` | Use `#[proto(expect)]` or `#[proto(default)]` |
+//! | `optional string field = 1;` | `String` | Use `#[protto(expect)]` or `#[protto(default)]` |
 //! | `string field = 1;` | `Option<String>` | Wrapped in `Some()` |
 //! | `repeated string items = 1;` | `Vec<String>` | Direct conversion |
 //! | `repeated string items = 1;` | `Option<Vec<String>>` | `None` for empty, `Some(vec)` otherwise |
@@ -325,7 +325,7 @@
 //! ### Collections
 //! - `Vec<T>` ↔ `repeated T`
 //! - `Option<Vec<T>>` ↔ `repeated T` (with empty handling)
-//! - Custom collections via `derive_from_with`/`derive_into_with`
+//! - Custom collections via `proto_to_rust_fn`/`rust_to_proto_fn`
 //!
 //! ### Optional Types
 //! - `Option<T>` ↔ `optional T`
@@ -333,7 +333,7 @@
 //!
 //! ### Custom Types
 //! - Any type implementing `From`/`Into` traits
-//! - Newtype wrappers with `#[proto(transparent)]`
+//! - Newtype wrappers with `#[protto(transparent)]`
 //! - Custom conversion functions
 //!
 //! ### Enums
@@ -344,9 +344,9 @@
 //!
 //! The macro supports multiple error handling strategies:
 //!
-//! 1. **Panic**: Use `#[proto(expect)]` - panics with descriptive messages
-//! 2. **Default Values**: Use `#[proto(default)]` - provides sensible defaults
-//! 3. **Custom Errors**: Use `#[proto(expect, error_type = T, error_fn = "f")]` - custom error handling
+//! 1. **Panic**: Use `#[protto(expect)]` - panics with descriptive messages
+//! 2. **Default Values**: Use `#[protto(default)]` - provides sensible defaults
+//! 3. **Custom Errors**: Use `#[protto(expect, error_type = T, error_fn = "f")]` - custom error handling
 //! 4. **Result Types**: Generated `TryFrom` implementations for fallible conversions
 //!
 //! ## Limitations
@@ -359,7 +359,7 @@
 //! ## Best Practices
 //!
 //! 1. **Let the macro infer**: Start without attributes and add them only when needed.
-//! 2. **Use transparent for newtypes**: `#[proto(transparent)]` for simple wrapper types.
+//! 2. **Use transparent for newtypes**: `#[protto(transparent)]` for simple wrapper types.
 //! 3. **Handle errors appropriately**: Choose between panic, default, or custom error strategies.
 //! 4. **Test edge cases**: Verify behavior with None/empty values and boundary conditions.
 //! 5. **Document custom functions**: Make conversion logic clear for maintenance.

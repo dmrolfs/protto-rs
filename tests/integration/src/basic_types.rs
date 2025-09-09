@@ -6,7 +6,7 @@ use protto::Protto;
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct Request {
     // Here we take the prost Header type instead
-    #[proto(proto_optional)]
+    #[protto(proto_optional)]
     pub header: proto::Header,
     pub payload: String,
 }
@@ -18,7 +18,7 @@ pub struct State {
 }
 
 #[derive(Protto, PartialEq, Debug, Clone)]
-#[proto(rename = "State")]
+#[protto(proto_name = "State")]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct ProtoState {
     pub tracks: Vec<proto::Track>, // we support collections as well!
@@ -27,7 +27,7 @@ pub struct ProtoState {
 #[derive(Protto, PartialEq, Debug, Clone)]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct HasStraight {
-    #[proto(expect(panic))]
+    #[protto(expect(panic))]
     pub track: Track,
 }
 
@@ -72,21 +72,21 @@ pub struct StatusResponse {
 
 // DefaultStruct for testing default behaviors
 #[derive(Protto, PartialEq, Debug, Clone)]
-#[proto(module = "proto", rename = "OptionalMessage")]
+#[protto(module = "proto", proto_name = "OptionalMessage")]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct DefaultStruct {
     pub id: u64,
 
-    #[proto(default)]
+    #[protto(default)]
     pub name: String, // Uses String::default() = ""
 
-    #[proto(default)]
+    #[protto(default)]
     pub count: u32, // Uses u32::default() = 0
 
-    #[proto(default_fn = "default_priority")]
+    #[protto(default_fn = "default_priority")]
     pub priority: u32, // Uses custom default function
 
-    #[proto(default_fn = default_tags)]
+    #[protto(default_fn = default_tags)]
     pub tags: Vec<String>, // Uses custom default function
 }
 
@@ -102,67 +102,65 @@ pub fn default_tags() -> Vec<String> {
 
 // ExpectPanicStruct for testing expect(panic) behavior
 #[derive(Protto, PartialEq, Debug, Clone)]
-#[proto(module = "proto", rename = "SimpleMessage")]
+#[protto(module = "proto", proto_name = "SimpleMessage")]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct ExpectPanicStruct {
-    #[proto(expect(panic), rename = "required_field")]
+    #[protto(expect(panic), proto_name = "required_field")]
     pub required_field: String,
 
-    #[proto(expect(panic), rename = "required_number")]
+    #[protto(expect(panic), proto_name = "required_number")]
     pub required_number: u64,
 
-    #[proto(rename = "optional_field")]
+    #[protto(proto_name = "optional_field")]
     pub optional_field: Option<String>,
 }
 
 // ExpectErrorStruct for testing expect with generated errors
 #[derive(Protto, PartialEq, Debug, Clone)]
-#[proto(module = "proto", rename = "SimpleMessage")]
+#[protto(module = "proto", proto_name = "SimpleMessage")]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct ExpectErrorStruct {
-    #[proto(expect, rename = "required_field", optional = true)]
+    #[protto(expect, proto_name = "required_field")]
     pub required_field: String,
 
-    #[proto(expect, rename = "required_number", optional = true)]
+    #[protto(expect, proto_name = "required_number")]
     pub required_number: u64,
 
-    #[proto(rename = "optional_field")]
+    #[protto(proto_name = "optional_field")]
     pub optional_field: Option<String>,
 }
 
 // ExpectCustomErrorStruct for testing expect with custom error types
 // use crate::error_types::ValidationError;
 #[derive(Protto, PartialEq, Debug, Clone)]
-#[proto(
+#[protto(
     module = "proto",
-    rename = "SimpleMessage",
+    proto_name = "SimpleMessage",
     error_type = crate::error_types::ValidationError
 )]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct ExpectCustomErrorStruct {
-    #[proto(
+    #[protto(
         expect,
-        rename = "required_field",
-        optional = true,
+        proto_name = "required_field",
         error_fn = "crate::error_types::ValidationError::missing_field"
     )]
     pub required_field: String,
 
-    #[proto(
+    #[protto(
         expect,
-        rename = "required_number",
-        optional = true,
+        proto_name = "required_number",
         error_fn = "crate::error_types::ValidationError::invalid_value"
     )]
     pub required_number: u64,
 
-    #[proto(rename = "optional_field")]
+    #[protto(proto_name = "optional_field")]
     pub optional_field: Option<String>,
 }
 
 // This struct will trigger generate_custom_type_field for the track field
 #[derive(Protto, PartialEq, Debug, Clone)]
-#[proto(module = "proto", rename = "CustomTypeMessage")]
+#[protto(module = "proto", proto_name = "CustomTypeMessage")]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct CustomTypeStruct {
     // This field should trigger generate_custom_type_field()
@@ -177,6 +175,6 @@ pub struct CustomTypeStruct {
     pub track_id: TrackId,
 
     // Test with transparent wrapper too
-    // #[proto(transparent, expect(panic))]
+    // #[protto(transparent, expect(panic))]
     pub wrapper: TransparentWrapper,
 }

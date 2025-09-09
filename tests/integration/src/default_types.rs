@@ -4,50 +4,51 @@ use protto::Protto;
 
 // Test struct with default handling for optional fields
 #[derive(Protto, PartialEq, Debug, Clone)]
-#[proto(module = "proto", rename = "TrackWithOptionals")]
+#[protto(module = "proto", proto_name = "TrackWithOptionals")]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct TrackWithDefault {
-    #[proto(transparent, rename = "track_id")]
+    #[protto(transparent, proto_name = "track_id")]
     pub id: TrackId,
 
     // This field would use Default::default() if the proto field is None
-    #[proto(default, optional = true)]
+    // proto_optional not needed due to default
+    #[protto(default)]
     pub name: String, // Would get String::default() = ""
 
-    #[proto(default, optional = true)]
+    #[protto(default)]
     pub duration: u32, // Would get u32::default() = 0
 }
 
 // Test struct with custom default function
 #[derive(Protto, PartialEq, Debug, Clone)]
-#[proto(module = "proto", rename = "TrackWithOptionals")]
+#[protto(module = "proto", proto_name = "TrackWithOptionals")]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct TrackWithCustomDefault {
-    #[proto(transparent, rename = "track_id")]
+    #[protto(transparent, proto_name = "track_id")]
     pub id: TrackId,
 
     // Custom default function
-    #[proto(default = "default_track_name", optional = true)]
+    #[protto(default = "default_track_name")]
     pub name: String,
 
-    #[proto(default = "default_duration", optional = true)]
+    #[protto(default = "default_duration")]
     pub duration: u32,
 }
 
 // Test edge cases with empty vs None values
 #[derive(Protto, PartialEq, Debug, Clone)]
-#[proto(module = "proto", rename = "EdgeCaseMessage")]
+#[protto(module = "proto", proto_name = "EdgeCaseMessage")]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct EdgeCaseStruct {
-    #[proto(default)]
+    #[protto(default)]
     pub empty_vs_none: String,
 
-    #[proto(default = "default_non_empty_vec")]
+    #[protto(default = "default_non_empty_vec")]
     pub empty_vs_missing_vec: Vec<String>,
 
-    #[proto(default)]
+    #[protto(default)]
     pub zero_vs_none: u64,
 
-    #[proto(default)]
+    #[protto(default)]
     pub false_vs_none: bool,
 }

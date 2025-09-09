@@ -8,6 +8,8 @@ pub struct ProtoFieldMeta {
     pub error_type: Option<String>,
     pub default_fn: Option<String>,
     pub optionality: Option<FieldOptionality>,
+    pub proto_to_rust_fn: Option<String>,
+    pub rust_to_proto_fn: Option<String>,
 }
 
 impl ProtoFieldMeta {
@@ -16,7 +18,7 @@ impl ProtoFieldMeta {
         let field_name = field.ident.as_ref().map(|i| i.to_string()).unwrap_or_else(|| "unknown".to_string());
 
         for attr in &field.attrs {
-            if attr.path().is_ident("proto")
+            if attr.path().is_ident(constants::PROTTO_ATTRIBUTE)
                 && let Meta::List(meta_list) = &attr.meta {
                     let nested_metas: Result<Punctuated<Meta, Comma>, _> =
                         Punctuated::parse_terminated.parse2(meta_list.tokens.clone());
@@ -52,9 +54,9 @@ impl ProtoFieldMeta {
                                         }
                                     }
                                     Meta::NameValue(nv) if nv.path.is_ident("error_fn") => {
-                                        if let Expr::Lit(expr_lit) = &nv.value
-                                            && let Lit::Str(lit_str) = &expr_lit.lit {
-                                                meta.error_fn = Some(lit_str.value());
+                                        match parse_function_value(&nv.value, "error_fn", &field_name) {
+                                            Ok(fn_name) => meta.error_fn = Some(fn_name),
+                                            Err(err_msg) => return Err(err_msg),
                                         }
                                     }
 
@@ -133,6 +135,21 @@ impl ProtoFieldMeta {
                                             field_name
                                         ));
                                     }
+
+                                    Meta::NameValue(nv) if nv.path.is_ident("proto_to_rust_fn") => {
+                                        match parse_function_value(&nv.value, "proto_to_rust_fn", &field_name) {
+                                            Ok(fn_name) => meta.proto_to_rust_fn = Some(fn_name),
+                                            Err(err_msg) => return Err(err_msg),
+                                        }
+                                    },
+
+                                    Meta::NameValue(nv) if nv.path.is_ident("rust_to_proto_fn") => {
+                                        match parse_function_value(&nv.value, "rust_to_proto_fn", &field_name) {
+                                            Ok(fn_name) => meta.rust_to_proto_fn = Some(fn_name),
+                                            Err(err_msg) => return Err(err_msg),
+                                        }
+                                    }
+
                                     _ => {
                                         // ignore other attributes for now
                                     }
@@ -140,7 +157,7 @@ impl ProtoFieldMeta {
                             }
                         }
                         Err(e) => {
-                            return Err(format!("Failed to parse proto attribute: {e}"));
+                            return Err(format!("Failed to parse {} attribute: {e}", constants::PROTTO_ATTRIBUTE));
                         }
                     }
             }
@@ -171,15 +188,37 @@ impl ProtoFieldMeta {
     pub fn has_explicit_optionality(&self) -> bool {
         self.optionality.is_some()
     }
+
+    /// Get the proto-to-rust conversion function if specified
+    pub fn get_proto_to_rust_fn(&self) -> Option<&str> {
+        self.proto_to_rust_fn.as_deref()
+    }
+
+    /// Get the rust-to-proto conversion function if specified
+    pub fn get_rust_to_proto_fn(&self) -> Option<&str> {
+        self.rust_to_proto_fn.as_deref()
+    }
+
+    /// Check if bidirectional custom conversion is specified
+    #[allow(unused)]
+    pub fn has_bidirectional_conversion(&self) -> bool {
+        self.proto_to_rust_fn.is_some() && self.rust_to_proto_fn.is_some()
+    }
+
+    /// Check if any custom conversion function is specified
+    #[allow(unused)]
+    pub fn has_custom_conversion(&self) -> bool {
+        self.proto_to_rust_fn.is_some() || self.rust_to_proto_fn.is_some()
+    }
 }
 
 pub fn get_proto_struct_error_type(attrs: &[Attribute]) -> Option<syn::Type> {
     for attr in attrs {
-        if attr.path().is_ident(constants::DEFAULT_PROTO_MODULE)
+        if attr.path().is_ident(constants::PROTTO_ATTRIBUTE)
             && let Meta::List(meta_list) = &attr.meta {
                 let nested_metas: Punctuated<Meta, Comma> = Punctuated::parse_terminated
                     .parse2(meta_list.tokens.clone())
-                    .unwrap_or_else(|e| panic!("Failed to parse proto attribute: {}", e));
+                    .unwrap_or_else(|e| panic!("Failed to parse {} attribute: {}", constants::PROTTO_ATTRIBUTE, e));
                 for meta in nested_metas {
                     if let Meta::NameValue(meta_nv) = meta
                         && meta_nv.path.is_ident("error_type") {
@@ -190,7 +229,8 @@ pub fn get_proto_struct_error_type(attrs: &[Attribute]) -> Option<syn::Type> {
                                 }));
                             }
                             panic!(
-                                "error_type value must be a type path; e.g., #[proto(error_type = MyError)]"
+                                "error_type value must be a type path; e.g., #[{}(error_type = MyError)]",
+                                constants::PROTTO_ATTRIBUTE
                             );
                     }
                 }
@@ -201,12 +241,12 @@ pub fn get_proto_struct_error_type(attrs: &[Attribute]) -> Option<syn::Type> {
 
 pub fn get_struct_level_error_fn(attrs: &[Attribute]) -> Option<String> {
     for attr in attrs {
-        if attr.path().is_ident(constants::DEFAULT_PROTO_MODULE)
+        if attr.path().is_ident(constants::PROTTO_ATTRIBUTE)
             && let Meta::List(meta_list) = &attr.meta
         {
             let nested_metas: Punctuated<Meta, Comma> = Punctuated::parse_terminated
                 .parse2(meta_list.tokens.clone())
-                .unwrap_or_else(|e| panic!("Failed to parse proto attribute: {e}"));
+                .unwrap_or_else(|e| panic!("Failed to parse {} attribute: {e}", constants::PROTTO_ATTRIBUTE));
             for meta in nested_metas {
                 if let Meta::NameValue(meta_nv) = meta
                     && meta_nv.path.is_ident("error_fn") {
@@ -224,11 +264,11 @@ pub fn get_struct_level_error_fn(attrs: &[Attribute]) -> Option<String> {
 
 pub fn get_proto_module(attrs: &[Attribute]) -> Option<String> {
     for attr in attrs {
-        if attr.path().is_ident(constants::DEFAULT_PROTO_MODULE)
+        if attr.path().is_ident(constants::PROTTO_ATTRIBUTE)
             && let Meta::List(meta_list) = &attr.meta {
                 let nested_metas: Punctuated<Meta, Comma> = Punctuated::parse_terminated
                     .parse2(meta_list.tokens.clone())
-                    .unwrap_or_else(|e| panic!("Failed to parse proto attribute: {}", e));
+                    .unwrap_or_else(|e| panic!("Failed to parse {} attribute: {e}", constants::PROTTO_ATTRIBUTE));
                 for meta in nested_metas {
                     if let Meta::NameValue(meta_nv) = meta
                         && meta_nv.path.is_ident("module") {
@@ -237,7 +277,8 @@ pub fn get_proto_module(attrs: &[Attribute]) -> Option<String> {
                                     return Some(lit_str.value());
                             }
                             panic!(
-                                "module value must be a string literal, e.g., #[proto(module = \"path\")]"
+                                "module value must be a string literal, e.g., #[{}(module = \"path\")]",
+                                constants::PROTTO_ATTRIBUTE
                             );
                     }
                 }
@@ -246,22 +287,23 @@ pub fn get_proto_module(attrs: &[Attribute]) -> Option<String> {
     None
 }
 
-pub fn get_proto_struct_rename(attrs: &[Attribute]) -> Option<String> {
+pub fn get_proto_struct_name(attrs: &[Attribute]) -> Option<String> {
     for attr in attrs {
-        if attr.path().is_ident(constants::DEFAULT_PROTO_MODULE)
+        if attr.path().is_ident(constants::PROTTO_ATTRIBUTE)
             && let Meta::List(meta_list) = &attr.meta {
                 let nested_metas: Punctuated<Meta, Comma> = Punctuated::parse_terminated
                     .parse2(meta_list.tokens.clone())
-                    .unwrap_or_else(|e| panic!("Failed to parse proto attribute: {}", e));
+                    .unwrap_or_else(|e| panic!("Failed to parse {} attribute: {e}", constants::PROTTO_ATTRIBUTE));
                 for meta in nested_metas {
                     if let Meta::NameValue(meta_nv) = meta
-                        && meta_nv.path.is_ident("rename") {
+                        && meta_nv.path.is_ident("proto_name") {
                             if let Expr::Lit(expr_lit) = meta_nv.value
                                 && let Lit::Str(lit_str) = expr_lit.lit {
                                     return Some(lit_str.value());
                             }
                             panic!(
-                                "rename value must be a string literal, e.g., #[proto(rename = \"...\")]"
+                                "proto_name value must be a string literal, e.g., #[{}(proto_name = \"...\")]",
+                                constants::PROTTO_ATTRIBUTE
                             );
                     }
                 }
@@ -272,7 +314,7 @@ pub fn get_proto_struct_rename(attrs: &[Attribute]) -> Option<String> {
 
 pub fn has_transparent_attr(field: &Field) -> bool {
     for attr in &field.attrs {
-        if attr.path().is_ident(constants::DEFAULT_PROTO_MODULE)
+        if attr.path().is_ident(constants::PROTTO_ATTRIBUTE)
             && let Meta::List(meta_list) = &attr.meta {
                 let tokens = &meta_list.tokens;
                 let token_str = quote!(#tokens).to_string();
@@ -284,21 +326,21 @@ pub fn has_transparent_attr(field: &Field) -> bool {
     false
 }
 
-pub fn get_proto_rename(field: &Field) -> Option<String> {
+pub fn get_proto_field_name(field: &Field) -> Option<String> {
     for attr in &field.attrs {
-        if attr.path().is_ident(constants::DEFAULT_PROTO_MODULE)
+        if attr.path().is_ident(constants::PROTTO_ATTRIBUTE)
             && let Meta::List(meta_list) = &attr.meta {
                 let nested_metas: Punctuated<Meta, Comma> = Punctuated::parse_terminated
                     .parse2(meta_list.tokens.clone())
-                    .unwrap_or_else(|e| panic!("Failed to parse proto attribute: {}", e));
+                    .unwrap_or_else(|e| panic!("Failed to parse {} attribute: {e}", constants::PROTTO_ATTRIBUTE));
                 for meta in nested_metas {
                     if let Meta::NameValue(meta_nv) = meta
-                        && meta_nv.path.is_ident("rename") {
+                        && meta_nv.path.is_ident("proto_name") {
                             if let Expr::Lit(expr_lit) = &meta_nv.value
                                 && let Lit::Str(lit_str) = &expr_lit.lit {
                                     return Some(lit_str.value());
                             }
-                            panic!("rename value must be a string literal, e.g., rename = \"xyz\"");
+                            panic!("proto_name value must be a string literal, e.g., proto_name = \"field_name\"");
                     }
                 }
         }
@@ -306,23 +348,24 @@ pub fn get_proto_rename(field: &Field) -> Option<String> {
     None
 }
 
-pub fn get_proto_derive_from_with(field: &Field) -> Option<String> {
+pub fn get_proto_to_rust_fn(field: &Field) -> Option<String> {
+    let field_name = field.ident.as_ref().map(|i| i.to_string()).unwrap_or_else(|| "unknown".to_string());
+
     for attr in &field.attrs {
-        if attr.path().is_ident(constants::DEFAULT_PROTO_MODULE)
+        if attr.path().is_ident(constants::PROTTO_ATTRIBUTE)
             && let Meta::List(meta_list) = &attr.meta {
                 let nested_metas: Punctuated<Meta, Comma> = Punctuated::parse_terminated
                     .parse2(meta_list.tokens.clone())
-                    .unwrap_or_else(|e| panic!("Failed to parse proto attribute: {}", e));
+                    .unwrap_or_else(|e| panic!("Failed to parse {} attribute: {e}", constants::PROTTO_ATTRIBUTE));
+
+                const ATTR_NAME: &str = "proto_to_rust_fn";
                 for meta in nested_metas {
                     if let Meta::NameValue(meta_nv) = meta
-                        && meta_nv.path.is_ident("derive_from_with") {
-                            if let Expr::Lit(expr_lit) = &meta_nv.value
-                                && let Lit::Str(lit_str) = &expr_lit.lit {
-                                    return Some(lit_str.value());
-                            }
-                            panic!(
-                                "derive_from_with value must be a string literal, e.g., derive_from_with = \"path::to::function\""
-                            );
+                    && meta_nv.path.is_ident(ATTR_NAME) {
+                        match parse_function_value(&meta_nv.value, ATTR_NAME, &field_name) {
+                            Ok(fn_name) => return Some(fn_name),
+                            Err(err_msg) => panic!("{}", err_msg),
+                        }
                     }
                 }
         }
@@ -330,23 +373,24 @@ pub fn get_proto_derive_from_with(field: &Field) -> Option<String> {
     None
 }
 
-pub fn get_proto_derive_into_with(field: &Field) -> Option<String> {
+pub fn get_rust_to_proto_fn(field: &Field) -> Option<String> {
+    let field_name = field.ident.as_ref().map(|i| i.to_string()).unwrap_or_else(|| "unknown".to_string());
+
     for attr in &field.attrs {
-        if attr.path().is_ident(constants::DEFAULT_PROTO_MODULE)
+        if attr.path().is_ident(constants::PROTTO_ATTRIBUTE)
             && let Meta::List(meta_list) = &attr.meta {
                 let nested_metas: Punctuated<Meta, Comma> = Punctuated::parse_terminated
                     .parse2(meta_list.tokens.clone())
-                    .unwrap_or_else(|e| panic!("Failed to parse proto attribute: {}", e));
+                    .unwrap_or_else(|e| panic!("Failed to parse {} attribute: {e}", constants::PROTTO_ATTRIBUTE));
+
+                const ATTR_NAME: &str = "rust_to_proto_fn";
                 for meta in nested_metas {
                     if let Meta::NameValue(meta_nv) = meta
-                        && meta_nv.path.is_ident("derive_into_with") {
-                            if let Expr::Lit(expr_lit) = &meta_nv.value
-                                && let Lit::Str(lit_str) = &expr_lit.lit {
-                                    return Some(lit_str.value());
-                            }
-                            panic!(
-                                "derive_into_with value must be a string literal, e.g., derive_into_with = \"path::to::function\""
-                            );
+                    && meta_nv.path.is_ident(ATTR_NAME) {
+                        match parse_function_value(&meta_nv.value, ATTR_NAME, &field_name) {
+                            Ok(fn_name) => return Some(fn_name),
+                            Err(err_msg) => panic!("{}", err_msg),
+                        }
                     }
                 }
         }
@@ -356,11 +400,11 @@ pub fn get_proto_derive_into_with(field: &Field) -> Option<String> {
 
 pub fn has_proto_ignore(field: &Field) -> bool {
     for attr in &field.attrs {
-        if attr.path().is_ident(constants::DEFAULT_PROTO_MODULE)
+        if attr.path().is_ident(constants::PROTTO_ATTRIBUTE)
             && let Meta::List(meta_list) = &attr.meta {
                 let nested_metas: Punctuated<Meta, Comma> = Punctuated::parse_terminated
                     .parse2(meta_list.tokens.clone())
-                    .unwrap_or_else(|e| panic!("Failed to parse proto attribute: {}", e));
+                    .unwrap_or_else(|e| panic!("Failed to parse {} attribute: {e}", constants::PROTTO_ATTRIBUTE));
                 for meta in nested_metas {
                     if let Meta::Path(path) = meta
                         && path.is_ident("ignore") {
@@ -370,4 +414,30 @@ pub fn has_proto_ignore(field: &Field) -> bool {
         }
     }
     false
+}
+
+fn parse_function_value(value: &Expr, attr_name: &str, field_name: &str) -> Result<String, String> {
+    match value {
+        Expr::Lit(expr_lit) => {
+            if let Lit::Str(lit_str) = &expr_lit.lit {
+                Ok(lit_str.value())
+            } else {
+                Err(format!(
+                    "Field '{}': {} value must be a string literal or path. \
+                    Examples: {} = \"my_function\" or {} = my_function",
+                    field_name, attr_name, attr_name, attr_name
+                ))
+            }
+        }
+        Expr::Path(expr_path) => {
+            Ok(quote!(#expr_path).to_string())
+        }
+        _ => {
+            Err(format!(
+                "Field '{}': {} value must be a string literal or path. \
+                Examples: {} = \"my_function\" or {} = my_function",
+                field_name, attr_name, attr_name, attr_name
+            ))
+        }
+    }
 }

@@ -105,7 +105,7 @@ impl FieldAnalysis {
                 // Use from_with for proto->rust conversion
                 _trace.decision("DeriveBidirectional_proto_to_rust", &format!("path: {}", from_with_path));
                 let from_with_path: syn::Path = syn::parse_str(from_with_path)
-                    .expect("Failed to parse derive_from_with path");
+                    .expect("Failed to parse proto_to_rust_fn path");
 
                 if self.rust_field.is_option && self.proto_field.is_optional() {
                     // Custom function handles Option<T> -> Option<U> transformation
@@ -117,11 +117,11 @@ impl FieldAnalysis {
                     quote! { #field_name: #from_with_path(proto_struct.#proto_field_ident) }
                 }
             },
-            ConversionStrategy::DeriveFromWith(from_with_path) => {
+            ConversionStrategy::DeriveProtoToRust(from_with_path) => {
                 // Handle standalone DeriveFromWith in rust->proto (fallback to from_with
-                _trace.decision("DeriveFromWith", &format!("path: {}", from_with_path));
+                _trace.decision("DeriveProtoToRust", &format!("path: {}", from_with_path));
                 let from_with_path: syn::Path = syn::parse_str(from_with_path)
-                    .expect("Failed to parse derive_from_with path");
+                    .expect("Failed to parse proto_to_rust_fn path");
 
                 if self.rust_field.is_option && self.proto_field.is_optional() {
                     // custom function handles Option<T> -> Option<U> transformation
@@ -141,9 +141,9 @@ impl FieldAnalysis {
                     quote! { #field_name: #from_with_path(proto_struct.#proto_field_ident) }
                 }
             },
-            ConversionStrategy::DeriveIntoWith(_) => {
+            ConversionStrategy::DeriveRustToProto(_) => {
                 // Handle standalone DeriveIntoWith in proto->rust (fallback to .into())
-                _trace.decision("DeriveIntoWith_in_proto_to_rust", "fallback to DirectWithInto");
+                _trace.decision("DeriveRustToProto", "fallback to DirectWithInto");
                 if self.proto_field.is_optional() {
                     quote! {
                         #field_name: proto_struct.#proto_field_ident
@@ -421,7 +421,7 @@ impl FieldAnalysis {
                 // Use into_with for rust->proto conversion
                 _trace.decision("DeriveBidirectional_rust_to_proto", &format!("path: {}", into_with_path));
                 let into_with_path: syn::Path = syn::parse_str(into_with_path)
-                    .expect("Failed to parse derive_into_with path");
+                    .expect("Failed to parse rust_to_proto_fn path");
 
                 if self.rust_field.is_option && self.proto_field.is_optional() {
                     quote! { #proto_field_ident: #into_with_path(my_struct.#field_name) }
@@ -431,9 +431,9 @@ impl FieldAnalysis {
                     quote! { #proto_field_ident: #into_with_path(my_struct.#field_name) }
                 }
             },
-            ConversionStrategy::DeriveFromWith(_) => {
+            ConversionStrategy::DeriveProtoToRust(_) => {
                 // Handle standalone DeriveFromWith in rust->proto (fallback to .into())
-                _trace.decision("DeriveFromWith_in_rust_to_proto", "fallback to DirectWithInto");
+                _trace.decision("DeriveProtoToRust", "fallback to DirectWithInto");
                 if self.rust_field.is_option && self.proto_field.is_optional() {
                     quote! { #proto_field_ident: my_struct.#field_name }
                 } else if self.proto_field.is_optional() {
@@ -442,10 +442,10 @@ impl FieldAnalysis {
                     quote! { #proto_field_ident: my_struct.#field_name.into() }
                 }
             },
-            ConversionStrategy::DeriveIntoWith(into_with_path) => {
-                _trace.decision("DeriveIntoWith", &format!("path: {}", into_with_path));
+            ConversionStrategy::DeriveRustToProto(into_with_path) => {
+                _trace.decision("DeriveRustToProto", &format!("path: {}", into_with_path));
                 let into_with_path: syn::Path = syn::parse_str(into_with_path)
-                    .expect("Failed to parse derive_into_with path");
+                    .expect("Failed to parse rust_to_proto_fn path");
 
                 if self.rust_field.is_option && self.proto_field.is_optional() {
                     quote! { #proto_field_ident: #into_with_path(my_struct.#field_name) }
@@ -710,8 +710,8 @@ impl<'a> FieldProcessingContext<'a> {
         let has_default = proto_meta.default_fn.is_some();
         let default_fn = proto_meta.default_fn.clone();
 
-        let proto_field_ident = attribute_parser::get_proto_rename(field)
-            .map(|rename| syn::Ident::new(&rename, proc_macro2::Span::call_site()))
+        let proto_field_ident = attribute_parser::get_proto_field_name(field)
+            .map(|proto_name| syn::Ident::new(&proto_name, proc_macro2::Span::call_site()))
             .unwrap_or_else(|| field_name.clone());
 
         Self {

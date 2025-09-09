@@ -12,9 +12,9 @@ pub enum ConversionStrategy {
     ProtoIgnore,
 
     // Custom derive functions
-    DeriveFromWith(String),
-    DeriveIntoWith(String),
-    DeriveBidirectional(String, String),    // (from_with_path, into_with_path)
+    DeriveProtoToRust(String),
+    DeriveRustToProto(String),
+    DeriveBidirectional(String, String),    // (proto_to_rust_fn, rust_to_proto_fn)
 
     // Transparent field handling
     TransparentRequired,                    // proto field is required
@@ -62,8 +62,8 @@ impl ConversionStrategy {
     pub fn debug_info(&self) -> &'static str {
         match self {
             Self::ProtoIgnore => "field ignored - not in proto",
-            Self::DeriveFromWith(_) => "custom from function",
-            Self::DeriveIntoWith(_) => "custom into function",
+            Self::DeriveProtoToRust(_) => "custom from proto function",
+            Self::DeriveRustToProto(_) => "custom into proto function",
             Self::DeriveBidirectional(_, _) => "custom from and into functions",
             Self::TransparentRequired => "transparent field, proto required",
             Self::TransparentOptionalWithExpect => "transparent field, proto optional -> expect",
@@ -92,7 +92,7 @@ impl ConversionStrategy {
         match self {
             Self::ProtoIgnore => "ignore",
 
-            Self::DeriveFromWith(_) | Self::DeriveIntoWith(_) | Self::DeriveBidirectional(_, _) => "custom_derive",
+            Self::DeriveProtoToRust(_) | Self::DeriveRustToProto(_) | Self::DeriveBidirectional(_, _) => "custom_derive",
 
             Self::TransparentRequired | Self::TransparentOptionalWithExpect |
             Self::TransparentOptionalWithError | Self::TransparentOptionalWithDefault => "transparent",
@@ -191,7 +191,7 @@ impl ConversionStrategy {
             },
 
             // -- Validate derive strategies have paths --
-            Self::DeriveFromWith(path) | Self::DeriveIntoWith(path) => {
+            Self::DeriveProtoToRust(path) | Self::DeriveRustToProto(path) => {
                 if path.is_empty() {
                     return Err("Derive strategy requires non-empty function path".to_string());
                 }
@@ -286,15 +286,15 @@ impl ConversionStrategy {
         let result = if rust.has_proto_ignore {
             _trace.decision("has_proto_ignore", "ProtoIgnore");
             Self::ProtoIgnore
-        } else if let (Some(from_with_path), Some(into_with_path)) = (&rust.derive_from_with, &rust.derive_into_with) {
+        } else if let (Some(from_with_path), Some(into_with_path)) = (&rust.proto_to_rust_fn, &rust.rust_to_proto_fn) {
             _trace.decision("has_both_derive_functions", "DeriveBidirectional");
             Self::DeriveBidirectional(from_with_path.clone(), into_with_path.clone())
-        } else if let Some(from_with_path) = &rust.derive_from_with {
-            _trace.decision("has_derive_from_with", "DeriveFromWith");
-            Self::DeriveFromWith(from_with_path.clone())
-        } else if let Some(into_with_path) = &rust.derive_into_with {
-            _trace.decision("has_derive_into_with", "DeriveIntoWith");
-            Self::DeriveIntoWith(into_with_path.clone())
+        } else if let Some(from_with_path) = &rust.proto_to_rust_fn {
+            _trace.decision("has_proto_to_rust_fn", "DeriveFromWith");
+            Self::DeriveProtoToRust(from_with_path.clone())
+        } else if let Some(into_with_path) = &rust.rust_to_proto_fn {
+            _trace.decision("has_rust_to_proto_fn", "DeriveIntoWith");
+            Self::DeriveRustToProto(into_with_path.clone())
         } else if rust.has_transparent && rust.is_option {
             _trace.decision("transparent_option_detected", "MapOption for transparent option");
             Self::MapOption

@@ -9,6 +9,8 @@ mod constants {
     pub const PRIMITIVE_TYPES: &[&str] =
         &["i32", "u32", "i64", "u64", "f32", "f64", "bool", "String"];
     pub const DEFAULT_PROTO_MODULE: &str = "proto";
+
+    pub const PROTTO_ATTRIBUTE: &str = "protto";
     pub const DEFAULT_CONVERSION_ERROR_SUFFIX: &str = "ConversionError";
     pub const USE_DEFAULT_IMPL: &str = "__USE_DEFAULT_IMPL__";
 }
@@ -124,7 +126,7 @@ mod validation {
     impl std::error::Error for ValidationError {}
 }
 
-#[proc_macro_derive(Protto, attributes(proto))]
+#[proc_macro_derive(Protto, attributes(protto))]
 pub fn proto_convert_derive(input: TokenStream) -> TokenStream {
     let ast: DeriveInput = syn::parse(input).unwrap();
     let parsed_input = macro_input::parse_derive_input(ast.clone());

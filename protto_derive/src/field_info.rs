@@ -18,8 +18,8 @@ pub struct RustFieldInfo {
     pub has_default: bool,
     pub expect_mode: ExpectMode,
     pub has_proto_ignore: bool,
-    pub derive_from_with: Option<String>,
-    pub derive_into_with: Option<String>,
+    pub proto_to_rust_fn: Option<String>,
+    pub rust_to_proto_fn: Option<String>,
 }
 
 impl std::fmt::Debug for RustFieldInfo {
@@ -35,8 +35,8 @@ impl std::fmt::Debug for RustFieldInfo {
         .field("has_default", &self.has_default)
         .field("expect_mode", &self.expect_mode)
         .field("has_proto_ignore", &self.has_proto_ignore)
-        .field("derive_from_with", &self.derive_from_with)
-        .field("derive_into_with", &self.derive_into_with)
+        .field("proto_to_rust_fn", &self.proto_to_rust_fn)
+        .field("rust_to_proto_fn", &self.rust_to_proto_fn)
         .finish()
     }
 }
@@ -61,8 +61,8 @@ impl RustFieldInfo {
             has_default: ctx.has_default,
             expect_mode: ctx.expect_mode,
             has_proto_ignore: attribute_parser::has_proto_ignore(field),
-            derive_from_with: attribute_parser::get_proto_derive_from_with(field),
-            derive_into_with: attribute_parser::get_proto_derive_into_with(field),
+            proto_to_rust_fn: ctx.proto_meta.get_proto_to_rust_fn().map(|s| s.to_string()),
+            rust_to_proto_fn: ctx.proto_meta.get_rust_to_proto_fn().map(|s| s.to_string()),
         }
     }
 
@@ -160,7 +160,7 @@ impl ProtoFieldInfo {
 
         let type_name = Self::infer_proto_type_name(ctx, rust_field);
 
-        if rust_field.derive_from_with.is_some() || rust_field.derive_into_with.is_some() {
+        if rust_field.proto_to_rust_fn.is_some() || rust_field.rust_to_proto_fn.is_some() {
             // Priority 1 - Handle custom derive scenarios first
             Self::infer_for_custom_derive(ctx, field, rust_field, type_name, &_trace)
         } else if Self::is_any_collection_type(ctx.field_type) {

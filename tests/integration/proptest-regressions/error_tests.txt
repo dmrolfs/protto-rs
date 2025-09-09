@@ -1,9 +1,0 @@
-# Seeds for failure cases proptest has generated in the past. It is
-# automatically read and these particular cases re-run before any
-# novel cases are generated.
-#
-# It is recommended to check this file in to source control so that
-# everyone who runs the test benefits from these saved cases.
-cc 54a6f81d72e9cbcebc2aad023a69180ced6f9b02c93b8747ecd1dbdd1800c1de # shrinks to renamed_value = None, transparent_value = "", enum_value = None, tracks = []
-cc acb42aa85fb1cb4399cd53b4eda4bd1724b840f962a39c7562fb5f3efb71f48b # shrinks to renamed_value = None, transparent_value = "", enum_value = None, tracks = []
-cc 9c5313f2fd1d8b539641fc1f92604203202455b87b7c5bd533e368739bf0d779 # shrinks to panic_field = "", error_field = "", custom_error_field = "", number = None, status_panic = MovedPermanently, status_error = MovedPermanently, track_count = 0

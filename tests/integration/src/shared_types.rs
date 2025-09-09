@@ -48,10 +48,10 @@ impl AsRef<u64> for TrackId {
 }
 
 #[derive(Protto, Default, PartialEq, Debug, Clone)]
-#[proto(module = "proto")]
+#[protto(module = "proto")]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct Track {
-    #[proto(transparent, rename = "track_id")]
+    #[protto(transparent, proto_name = "track_id")]
     pub id: TrackId,
 }
 
