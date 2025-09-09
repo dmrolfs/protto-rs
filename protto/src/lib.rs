@@ -1,4 +1,4 @@
-//! # proto_convert
+//! # protto
 //!
 //! Automatically derive conversions between Rust structs and Protocol Buffer messages.
 //!
@@ -7,22 +7,22 @@
 //! Add to your `Cargo.toml`:
 //! ```toml
 //! [dependencies]
-//! proto_convert = "0.2"
+//! protto = "0.2"
 //! ```
 //!
 //!
 //! In your code:
 //! ```rust,ignore
-//! use proto_convert::ProtoConvert;
+//! use protto::Protto;
 //!
-//! #[derive(ProtoConvert)]
+//! #[derive(Protto)]
 //! struct User {
 //!     name: String,           // Required in proto
 //!     email: Option<String>,  // Optional in proto - automatically detected
 //! }
 //! ```
 
-#![doc(html_root_url = "https://docs.rs/proto_convert/0.2.0")]
+#![doc(html_root_url = "https://docs.rs/protto/0.2.0")]
 
 // re-export the derive macro
-pub use proto_convert_derive::*;
+pub use protto_derive::*;

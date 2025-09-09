@@ -87,7 +87,7 @@ fn matches_debug_pattern(pattern: &str, name: &str) -> bool {
 /// Print available debug configuration options
 #[allow(unused)]
 pub fn print_debug_help() {
-    eprintln!("ProtoConvert Debug Options:");
+    eprintln!("Protto Debug Options:");
     eprintln!("  Environment variable PROTO_CONVERT_DEBUG supports:");
     eprintln!("    all                    # Debug all structs");
     eprintln!("    Request                # Debug exact struct name");

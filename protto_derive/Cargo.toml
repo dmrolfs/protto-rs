@@ -1,12 +1,12 @@
 [package]
-name = "proto_convert_derive"
+name = "protto_derive"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
 description = "Automatically derive Protobuf and Rust conversions."
 repository.workspace = true
 license.workspace = true
-documentation = "https://docs.rs/proto_convert_derive"
+documentation = "https://docs.rs/protto_derive"
 keywords = ["protobuf", "protocol", "derive"]
 categories = ["development-tools"]
 

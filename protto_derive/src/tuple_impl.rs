@@ -6,7 +6,7 @@ pub fn generate_tuple_implementations(
 ) -> proc_macro2::TokenStream {
     if fields_unnamed.unnamed.len() != 1 {
         panic!(
-            "ProtoConvert only supports tuple structs with exactly one field, found {}",
+            "Protto only supports tuple structs with exactly one field, found {}",
             fields_unnamed.unnamed.len()
         );
     }

@@ -1,5 +1,5 @@
 [package]
-name = "proto_convert"
+name = "protto"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
@@ -8,10 +8,10 @@ repository.workspace = true
 license.workspace = true
 keywords = ["protobuf", "protocol", "derive", "macro", "conversion"]
 categories = ["development-tools", "encoding"]
-documentation = "https://docs.rs/proto_convert"
+documentation = "https://docs.rs/protto"
 
 [dependencies]
-proto_convert_derive = { workspace = true }
+protto_derive = { workspace = true }
 
 [features]
 default = []

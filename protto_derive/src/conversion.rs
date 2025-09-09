@@ -438,7 +438,7 @@ impl ConversionStrategy {
         };
 
         if let Err(validation_error) = Self::validate_proto_optional_attribute(ctx, rust, &result) {
-            panic!("ProtoConvert validation error: {}", validation_error);
+            panic!("Protto validation error: {}", validation_error);
         }
 
         result

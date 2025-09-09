@@ -1,6 +1,6 @@
 use crate::proto;
 use proptest::prelude::*;
-use proto_convert::ProtoConvert;
+use protto::Protto;
 use std::sync::atomic::AtomicU64;
 
 // Helper to create proto tracks with optional fields
@@ -15,7 +15,7 @@ pub fn arb_proto_track_with_optionals() -> impl Strategy<Value = proto::TrackWit
     )
 }
 
-#[derive(ProtoConvert, PartialEq, Debug, Clone, Hash, Eq)]
+#[derive(Protto, PartialEq, Debug, Clone, Hash, Eq)]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct TrackId(u64);
 
@@ -47,7 +47,7 @@ impl AsRef<u64> for TrackId {
     }
 }
 
-#[derive(ProtoConvert, Default, PartialEq, Debug, Clone)]
+#[derive(Protto, Default, PartialEq, Debug, Clone)]
 #[proto(module = "proto")]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct Track {
@@ -55,7 +55,7 @@ pub struct Track {
     pub id: TrackId,
 }
 
-#[derive(ProtoConvert, PartialEq, Debug, Clone)]
+#[derive(Protto, PartialEq, Debug, Clone)]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct TransparentWrapper(String);
 

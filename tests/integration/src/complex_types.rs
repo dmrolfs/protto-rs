@@ -1,11 +1,11 @@
 use crate::basic_types::*;
 use crate::proto;
 use crate::shared_types::*;
-use proto_convert::ProtoConvert;
+use protto::Protto;
 use std::collections::HashMap;
 use std::sync::atomic::AtomicU64;
 
-#[derive(ProtoConvert, PartialEq, Debug, Clone)]
+#[derive(Protto, PartialEq, Debug, Clone)]
 #[proto(rename = "State")]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct MapState {
@@ -28,7 +28,7 @@ pub fn from_map(tracks: HashMap<TrackId, Track>) -> Vec<proto::Track> {
     tracks.into_values().map(|track| track.into()).collect()
 }
 
-#[derive(ProtoConvert, Debug)]
+#[derive(Protto, Debug)]
 #[proto(rename = "State")]
 pub struct ComplexState {
     pub tracks: Vec<Track>,
@@ -39,7 +39,7 @@ pub struct ComplexState {
 }
 
 // Test attribute combinations
-#[derive(ProtoConvert, PartialEq, Debug, Clone)]
+#[derive(Protto, PartialEq, Debug, Clone)]
 #[proto(module = "proto", rename = "CombinationMessage")]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct CombinationStruct {
@@ -61,7 +61,7 @@ pub struct CombinationStruct {
 }
 
 // Test mixed optional behaviors with explicit control
-#[derive(ProtoConvert, PartialEq, Debug, Clone)]
+#[derive(Protto, PartialEq, Debug, Clone)]
 #[proto(module = "proto", rename = "OptionalMessage")]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct MixedOptionalStruct {
@@ -81,7 +81,7 @@ pub struct MixedOptionalStruct {
 }
 
 // Test enum with all possible attribute combinations
-#[derive(ProtoConvert, PartialEq, Debug, Clone)]
+#[derive(Protto, PartialEq, Debug, Clone)]
 #[proto(module = "proto", rename = "EnumMessage")]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct ComprehensiveEnumStruct {
@@ -99,7 +99,7 @@ pub struct ComprehensiveEnumStruct {
 }
 
 // Test collections with different behaviors
-#[derive(ProtoConvert, PartialEq, Debug, Clone)]
+#[derive(Protto, PartialEq, Debug, Clone)]
 #[proto(module = "proto", rename = "State")]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct CollectionWithDefault {
@@ -107,7 +107,7 @@ pub struct CollectionWithDefault {
     pub tracks: Vec<Track>,
 }
 
-#[derive(ProtoConvert, PartialEq, Debug, Clone)]
+#[derive(Protto, PartialEq, Debug, Clone)]
 #[proto(module = "proto", rename = "State")]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct CollectionWithExpect {
@@ -116,7 +116,7 @@ pub struct CollectionWithExpect {
 }
 
 // Test DeriveBidirectional - both from_with and into_with
-#[derive(ProtoConvert, PartialEq, Debug, Clone)]
+#[derive(Protto, PartialEq, Debug, Clone)]
 #[proto(module = "proto", rename = "BidirectionalMessage")]
 pub struct BidirectionalConversionStruct {
     #[proto(
@@ -147,7 +147,7 @@ pub fn custom_into_conversion(rust_val: CustomComplexType) -> proto::ComplexType
 }
 
 // Test TransparentRequired - transparent field to required proto
-#[derive(ProtoConvert, PartialEq, Debug, Clone)]
+#[derive(Protto, PartialEq, Debug, Clone)]
 #[proto(module = "proto", rename = "TransparentMessage")]
 pub struct TransparentRequiredStruct {
     #[proto(transparent, rename = "wrapper_id")]
@@ -155,7 +155,7 @@ pub struct TransparentRequiredStruct {
 }
 
 // Test TransparentOptionalWith* variants
-#[derive(ProtoConvert, PartialEq, Debug, Clone)]
+#[derive(Protto, PartialEq, Debug, Clone)]
 #[proto(module = "proto", rename = "TransparentOptionalMessage")]
 pub struct TransparentOptionalStruct {
     #[proto(transparent, expect(panic), rename = "panic_wrapper", proto_optional)]
@@ -173,7 +173,7 @@ pub fn default_transparent_wrapper() -> TransparentWrapper {
 }
 
 // Test WrapInSome - rust required → proto optional
-#[derive(ProtoConvert, PartialEq, Debug, Clone)]
+#[derive(Protto, PartialEq, Debug, Clone)]
 #[proto(module = "proto", rename = "WrapInSomeMessage")]
 pub struct WrapInSomeStruct {
     #[proto(proto_optional, rename = "wrapped_field")]
@@ -184,7 +184,7 @@ pub struct WrapInSomeStruct {
 }
 
 // Test MapOption - both sides optional, no expect/default
-#[derive(ProtoConvert, PartialEq, Debug, Clone)]
+#[derive(Protto, PartialEq, Debug, Clone)]
 #[proto(module = "proto", rename = "MapOptionMessage")]
 pub struct MapOptionStruct {
     #[proto(proto_optional, rename = "simple_option")]
@@ -195,7 +195,7 @@ pub struct MapOptionStruct {
 }
 
 // Test MapVecInOption - completely missing from current tests
-#[derive(ProtoConvert, PartialEq, Debug, Clone)]
+#[derive(Protto, PartialEq, Debug, Clone)]
 #[proto(module = "proto", rename = "VecOptionMessage")]
 pub struct VecOptionStruct {
     #[proto(proto_optional, rename = "optional_tracks")]
@@ -209,7 +209,7 @@ pub struct VecOptionStruct {
 }
 
 // Test VecDirectAssignment - Vec<proto::Type> scenarios
-#[derive(ProtoConvert, PartialEq, Debug, Clone)]
+#[derive(Protto, PartialEq, Debug, Clone)]
 #[proto(module = "proto", rename = "DirectVecMessage")]
 pub struct VecDirectAssignmentStruct {
     pub proto_tracks: Vec<proto::Track>,  // Vec<proto::Track> → Vec<proto::Track> (no conversion)
@@ -217,7 +217,7 @@ pub struct VecDirectAssignmentStruct {
 }
 
 // Test CollectVecWithError - Vec with expect
-#[derive(ProtoConvert, PartialEq, Debug, Clone)]
+#[derive(Protto, PartialEq, Debug, Clone)]
 #[proto(module = "proto", rename = "VecErrorMessage", error_type = VecError)]
 pub struct VecWithErrorStruct {
     #[proto(expect, default_fn = default_track_vec, error_fn = VecError::empty_tracks)]
@@ -262,7 +262,7 @@ pub fn default_string_vec() -> Vec<String> {
 }
 
 // Test DirectWithInto - clear custom type → proto type conversion
-#[derive(ProtoConvert, PartialEq, Debug, Clone)]
+#[derive(Protto, PartialEq, Debug, Clone)]
 #[proto(module = "proto", rename = "DirectConversionMessage")]
 pub struct DirectWithIntoStruct {
     pub status_field: Status,  // Status → i32 via Into
@@ -272,7 +272,7 @@ pub struct DirectWithIntoStruct {
 }
 
 // Test edge case combinations
-#[derive(ProtoConvert, PartialEq, Debug, Clone)]
+#[derive(Protto, PartialEq, Debug, Clone)]
 #[proto(module = "proto", rename = "EdgeCaseCombinationMessage")]
 pub struct EdgeCaseCombinationsStruct {
     // Option with custom derive - rare but possible
@@ -314,7 +314,7 @@ pub fn vec_custom_into(rust_vec: Vec<CustomTypeInner>) -> Vec<proto::CustomType>
 }
 
 // Test rust->proto specific strategies (UnwrapOptional, TransparentToOptional, etc.)
-#[derive(ProtoConvert, PartialEq, Debug, Clone)]
+#[derive(Protto, PartialEq, Debug, Clone)]
 #[proto(module = "proto", rename = "RustToProtoMessage")]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct RustToProtoStruct {

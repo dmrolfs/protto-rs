@@ -1,9 +1,9 @@
 use crate::basic_types::*;
 use crate::proto;
 use crate::shared_types::*;
-use proto_convert::ProtoConvert;
+use protto::Protto;
 
-#[derive(ProtoConvert, PartialEq, Debug, Clone)]
+#[derive(Protto, PartialEq, Debug, Clone)]
 #[proto(module = "proto", rename = "HasOptional")]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct HasOptionalWithError {
@@ -11,7 +11,7 @@ pub struct HasOptionalWithError {
     pub track: Option<Track>,
 }
 
-#[derive(ProtoConvert, PartialEq, Debug, Clone)]
+#[derive(Protto, PartialEq, Debug, Clone)]
 #[proto(module = "proto", rename = "HasOptional", error_type = CustomError)]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct HasOptionalWithCustomError {
@@ -20,7 +20,7 @@ pub struct HasOptionalWithCustomError {
 }
 
 // Test error function with different error fns
-#[derive(ProtoConvert, PartialEq, Debug, Clone)]
+#[derive(Protto, PartialEq, Debug, Clone)]
 #[proto(module = "proto", rename = "ComplexExpectMessage", error_type = ValidationError)]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct ComplexExpectStruct {
@@ -46,7 +46,7 @@ pub struct ComplexExpectStruct {
     pub tracks_with_expect: Vec<Track>,
 }
 
-#[derive(ProtoConvert, PartialEq, Debug, Clone)]
+#[derive(Protto, PartialEq, Debug, Clone)]
 #[proto(
     module = "proto",
     rename = "SimpleMessage",

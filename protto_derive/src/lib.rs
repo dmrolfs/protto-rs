@@ -105,7 +105,7 @@ mod validation {
 
         pub fn detailed_message(&self) -> String {
             format!(
-                "ProtoConvert validation failed for field '{}':\n\n{}\n\nField details:\n• Rust type: {}\n• Proto type: {}\n• Strategy: {}",
+                "Protto validation failed for field '{}':\n\n{}\n\nField details:\n• Rust type: {}\n• Proto type: {}\n• Strategy: {}",
                 self.field_path,
                 self.message,
                 self.rust_type,
@@ -124,7 +124,7 @@ mod validation {
     impl std::error::Error for ValidationError {}
 }
 
-#[proc_macro_derive(ProtoConvert, attributes(proto))]
+#[proc_macro_derive(Protto, attributes(proto))]
 pub fn proto_convert_derive(input: TokenStream) -> TokenStream {
     let ast: DeriveInput = syn::parse(input).unwrap();
     let parsed_input = macro_input::parse_derive_input(ast.clone());
@@ -156,7 +156,7 @@ pub fn proto_convert_derive(input: TokenStream) -> TokenStream {
                 tuple_impl::generate_tuple_implementations(&name, fields_unnamed).into()
             }
             syn::Fields::Unit => {
-                panic!("ProtoConvert does not support unit structs");
+                panic!("Protto does not support unit structs");
             }
         },
         syn::Data::Enum(data_enum) => {
@@ -164,6 +164,6 @@ pub fn proto_convert_derive(input: TokenStream) -> TokenStream {
             enum_processor::generate_enum_conversions(&name, variants, &parsed_input.proto_module)
                 .into()
         }
-        _ => panic!("ProtoConvert only supports structs and enums, not unions"),
+        _ => panic!("Protto only supports structs and enums, not unions"),
     }
 }

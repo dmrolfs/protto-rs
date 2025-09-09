@@ -1,8 +1,8 @@
 use crate::proto;
 use crate::shared_types::*;
-use proto_convert::ProtoConvert;
+use protto::Protto;
 
-#[derive(ProtoConvert, PartialEq, Debug, Clone)]
+#[derive(Protto, PartialEq, Debug, Clone)]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct Request {
     // Here we take the prost Header type instead
@@ -11,33 +11,33 @@ pub struct Request {
     pub payload: String,
 }
 
-#[derive(ProtoConvert, PartialEq, Debug, Clone)]
+#[derive(Protto, PartialEq, Debug, Clone)]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct State {
     pub tracks: Vec<Track>, // we support collections as well!
 }
 
-#[derive(ProtoConvert, PartialEq, Debug, Clone)]
+#[derive(Protto, PartialEq, Debug, Clone)]
 #[proto(rename = "State")]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct ProtoState {
     pub tracks: Vec<proto::Track>, // we support collections as well!
 }
 
-#[derive(ProtoConvert, PartialEq, Debug, Clone)]
+#[derive(Protto, PartialEq, Debug, Clone)]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct HasStraight {
     #[proto(expect(panic))]
     pub track: Track,
 }
 
-#[derive(ProtoConvert, PartialEq, Debug, Clone)]
+#[derive(Protto, PartialEq, Debug, Clone)]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct HasOptional {
     pub track: Option<Track>,
 }
 
-#[derive(ProtoConvert, PartialEq, Debug, Clone)]
+#[derive(Protto, PartialEq, Debug, Clone)]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub enum Status {
     MovedPermanently,
@@ -54,7 +54,7 @@ pub fn default_status_optional() -> Option<Status> {
     Some(default_status())
 }
 
-#[derive(ProtoConvert, PartialEq, Debug, Clone)]
+#[derive(Protto, PartialEq, Debug, Clone)]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub enum AnotherStatus {
     Ok,
@@ -63,7 +63,7 @@ pub enum AnotherStatus {
     NotFound,
 }
 
-#[derive(ProtoConvert, PartialEq, Debug, Clone)]
+#[derive(Protto, PartialEq, Debug, Clone)]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct StatusResponse {
     pub status: Status,
@@ -71,7 +71,7 @@ pub struct StatusResponse {
 }
 
 // DefaultStruct for testing default behaviors
-#[derive(ProtoConvert, PartialEq, Debug, Clone)]
+#[derive(Protto, PartialEq, Debug, Clone)]
 #[proto(module = "proto", rename = "OptionalMessage")]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct DefaultStruct {
@@ -101,7 +101,7 @@ pub fn default_tags() -> Vec<String> {
 }
 
 // ExpectPanicStruct for testing expect(panic) behavior
-#[derive(ProtoConvert, PartialEq, Debug, Clone)]
+#[derive(Protto, PartialEq, Debug, Clone)]
 #[proto(module = "proto", rename = "SimpleMessage")]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct ExpectPanicStruct {
@@ -116,7 +116,7 @@ pub struct ExpectPanicStruct {
 }
 
 // ExpectErrorStruct for testing expect with generated errors
-#[derive(ProtoConvert, PartialEq, Debug, Clone)]
+#[derive(Protto, PartialEq, Debug, Clone)]
 #[proto(module = "proto", rename = "SimpleMessage")]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct ExpectErrorStruct {
@@ -132,7 +132,7 @@ pub struct ExpectErrorStruct {
 
 // ExpectCustomErrorStruct for testing expect with custom error types
 // use crate::error_types::ValidationError;
-#[derive(ProtoConvert, PartialEq, Debug, Clone)]
+#[derive(Protto, PartialEq, Debug, Clone)]
 #[proto(
     module = "proto",
     rename = "SimpleMessage",
@@ -161,7 +161,7 @@ pub struct ExpectCustomErrorStruct {
 }
 
 // This struct will trigger generate_custom_type_field for the track field
-#[derive(ProtoConvert, PartialEq, Debug, Clone)]
+#[derive(Protto, PartialEq, Debug, Clone)]
 #[proto(module = "proto", rename = "CustomTypeMessage")]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct CustomTypeStruct {

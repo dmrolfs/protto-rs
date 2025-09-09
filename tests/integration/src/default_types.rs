@@ -1,9 +1,9 @@
 use crate::proto;
 use crate::shared_types::*;
-use proto_convert::ProtoConvert;
+use protto::Protto;
 
 // Test struct with default handling for optional fields
-#[derive(ProtoConvert, PartialEq, Debug, Clone)]
+#[derive(Protto, PartialEq, Debug, Clone)]
 #[proto(module = "proto", rename = "TrackWithOptionals")]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct TrackWithDefault {
@@ -19,7 +19,7 @@ pub struct TrackWithDefault {
 }
 
 // Test struct with custom default function
-#[derive(ProtoConvert, PartialEq, Debug, Clone)]
+#[derive(Protto, PartialEq, Debug, Clone)]
 #[proto(module = "proto", rename = "TrackWithOptionals")]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct TrackWithCustomDefault {
@@ -35,7 +35,7 @@ pub struct TrackWithCustomDefault {
 }
 
 // Test edge cases with empty vs None values
-#[derive(ProtoConvert, PartialEq, Debug, Clone)]
+#[derive(Protto, PartialEq, Debug, Clone)]
 #[proto(module = "proto", rename = "EdgeCaseMessage")]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct EdgeCaseStruct {
