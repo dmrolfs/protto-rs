@@ -5,8 +5,6 @@
 
 `protto` is a procedural macro for deriving **bidirectional conversions** between `prost`-generated Protobuf types and Rust structs. It dramatically reduces boilerplate when working with Protobufs in Rust.
 
-This crate is derived from [`proto_convert_derive`](https://github.com/protortyp/proto_convert_derive) by **Christian Engel <cascade.nab0p@icloud.com>**.
-
 ---
 
 ## Features
