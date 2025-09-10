@@ -1,3 +1,270 @@
+//! # Debug Module
+//!
+//! Advanced debugging and introspection capabilities for the `protto_derive` procedural macro.
+//!
+//! ## Overview
+//!
+//! The debug module provides comprehensive debugging tools to help understand and troubleshoot
+//! the code generation process during macro expansion. It offers structured logging, call stack
+//! tracking, and detailed insights into type analysis and conversion strategy selection.
+//!
+//! ## Features
+//!
+//! - **Environment-Controlled Debugging**: Enable/disable debugging via `PROTTO_DEBUG` environment variable
+//! - **Selective Debugging**: Target specific structs using pattern matching
+//! - **Call Stack Tracking**: Automatic function entry/exit logging with proper indentation
+//! - **Code Generation Visualization**: Pretty-printed generated Rust code with syntax highlighting
+//! - **Type Analysis Logging**: Detailed insights into type resolution and conversion decisions
+//! - **Performance Tracking**: Minimal overhead when debugging is disabled
+//!
+//! ## Quick Start
+//!
+//! **⚠️ Critical**: Always run `cargo clean` before enabling debug output. Since debug output
+//! occurs during macro expansion at compile time, if your code is already compiled, no debug
+//! information will be shown even with the environment variable set.
+//!
+//! Enable debugging for all structs during compilation:
+//! ```bash
+//! cargo clean  # Essential: clean first to force recompilation
+//! PROTTO_DEBUG=all cargo build
+//! ```
+//!
+//! Debug specific structs:
+//!
+//! ```bash
+//! PROTTO_DEBUG=Request,Response cargo test
+//! ```
+//!
+//! Debug with pattern matching:
+//!
+//! ```bash
+//! PROTTO_DEBUG="Track*,*Request" cargo build
+//! ```
+//!
+//! ## Configuration
+//!
+//! The `PROTTO_DEBUG` environment variable supports various patterns:
+//!
+//! | Pattern | Description | Example |
+//! |---------|-------------|---------|
+//! | `all` | Debug all structs | `PROTTO_DEBUG=all` |
+//! | `StructName` | Exact struct name | `PROTTO_DEBUG=Request` |
+//! | `Pattern*` | Prefix match | `PROTTO_DEBUG=Track*` |
+//! | `*Pattern` | Suffix match | `PROTTO_DEBUG=*Request` |
+//! | `*Pattern*` | Contains match | `PROTTO_DEBUG=*User*` |
+//! | `A,B,C` | Multiple patterns | `PROTTO_DEBUG=Request,Track*,*Response` |
+//! | `0\|false\|none` | Disable debugging | `PROTTO_DEBUG=false` |
+//!
+//! ## Debug Output Structure
+//!
+//! The debug output uses a hierarchical tree structure with Unicode box-drawing characters:
+//!
+//! ```text
+//! ┌─ ENTER: generate_field_conversions [Request.header]
+//! │  📊 strategy: TransparentOptionalWithExpect
+//! │  📊 debug_info: proto optional -> rust required + expect
+//! │  ✓ field_analysis
+//! │    category: TransparentConversion
+//! │    debug_info: proto optional -> rust required + expect
+//! │  🔀 IF TransparentOptionalWithExpected THEN expect with panic message
+//! │  🛠️ Generated code:
+//!     1 | header: proto::Header::from(
+//!     2 |     proto_struct.header
+//!     3 |         .expect(&format!("Proto field header is required"))
+//!     4 | )
+//! └─ EXIT:  generate_field_conversions [Request.header]
+//! ```
+//!
+//! ## Programming Interface
+//!
+//! ### CallStackDebug
+//!
+//! The main debugging utility that automatically tracks function calls:
+//!
+//! ```rust,ignore
+//! use crate::debug::CallStackDebug;
+//!
+//! fn my_function(ctx: &Context) -> TokenStream {
+//!     let _trace = CallStackDebug::new(
+//!         "my_function",
+//!         ctx.struct_name,
+//!         ctx.field_name
+//!     );
+//!
+//!     _trace.checkpoint("Starting analysis");
+//!
+//!     // Your logic here
+//!
+//!     _trace.decision("has_custom_conversion", "use custom function");
+//!
+//!     let result = quote! { /* generated code */ };
+//!
+//!     _trace.generated_code(&result, ctx.struct_name, ctx.field_name, "conversion", &[
+//!         ("strategy", "CustomFunction"),
+//!         ("direction", "proto_to_rust"),
+//!     ]);
+//!
+//!     result
+//! } // Automatically logs EXIT when _trace is dropped
+//! ```
+//!
+//! ### Debugging Methods
+//!
+//! #### Basic Logging
+//! - `checkpoint(message)` - Log a progress checkpoint
+//! - `checkpoint_data(message, data)` - Checkpoint with key-value data
+//! - `decision(condition, choice)` - Log decision points in code generation
+//! - `error(message)` - Log errors or warnings
+//!
+//! #### Specialized Logging
+//! - `generated_code()` - Pretty-print generated Rust code
+//! - `type_analysis()` - Log type resolution analysis
+//! - `type_mismatch()` - Debug type compatibility issues
+//! - `metadata_lookup()` - Track proto metadata queries
+//!
+//! ### Constructor Variants
+//!
+//! ```rust,ignore
+//! // Basic constructor
+//! let trace = CallStackDebug::new("function_name", struct_name, field_name);
+//!
+//! // With additional context
+//! let trace = CallStackDebug::with_context("function_name", struct_name, field_name, &[
+//!     ("strategy", "DirectConversion"),
+//!     ("optionality", "Required"),
+//! ]);
+//!
+//! // With syn::Field
+//! let trace = CallStackDebug::with_struct_field("function_name", struct_name, &field);
+//! ```
+//!
+//! ## Code Generation Debugging
+//!
+//! The debug system provides detailed insights into the code generation process:
+//!
+//! ### Field Analysis
+//! ```text
+//! │  🎯 TYPE ANALYSIS
+//! │    🦀 Rust: Option<String>
+//! │    📦 Proto field: name
+//! │    📦 Proto type: Option<String>
+//! │    📦 Proto mapping: Optional
+//! ```
+//!
+//! ### Decision Trees
+//! ```text
+//! │  🔀 IF proto_field.is_optional() THEN UnwrapOptionalWithExpect
+//! │  🔀 IF rust_field.is_option THEN MapOption
+//! │  🔀 IF has_custom_conversion THEN DeriveBidirectional
+//! ```
+//!
+//! ### Generated Code
+//! The debug output includes formatted Rust code with line numbers:
+//! ```text
+//! │  🛠️ Generated code: Request.header - proto_to_rust
+//! │    📌 strategy: TransparentOptionalWithExpect
+//! │    📌 direction: proto_to_rust
+//!     1 | header: proto::Header::from(
+//!     2 |     proto_struct.header
+//!     3 |         .expect(&format!(
+//!     4 |             "Proto field header is required for transparent conversion"
+//!     5 |         ))
+//!     6 | )
+//! ```
+//!
+//! ## Performance Considerations
+//!
+//! - **Zero Runtime Cost**: All debugging is compile-time only
+//! - **Lazy Evaluation**: Debug checks are performed only once per compilation
+//! - **Minimal Overhead**: When debugging is disabled, most operations are no-ops
+//! - **Structured Output**: Efficient string formatting with minimal allocations
+//!
+//! ## Common Use Cases
+//!
+//! ### Debugging Conversion Issues
+//! ```bash
+//! # Debug a specific problematic struct
+//! PROTTO_DEBUG=MyStruct cargo build 2>&1 | less
+//! ```
+//!
+//! ### Understanding Type Resolution
+//! ```bash
+//! # Debug all structures with "User" in the name
+//! PROTTO_DEBUG="*User*" cargo test
+//! ```
+//!
+//! ### Investigating Generated Code
+//! ```bash
+//! # Debug multiple related structs
+//! PROTTO_DEBUG="Request,Response,*Header" cargo build --verbose
+//! ```
+//!
+//! ### Performance Analysis
+//! ```bash
+//! # Debug all structs to see the full conversion process
+//! PROTTO_DEBUG=all cargo build --release 2>&1 | grep "GENERATED CODE"
+//! ```
+//!
+//! ## Output Interpretation
+//!
+//! ### Symbols and Their Meanings
+//! - `┌─` / `└─` - Function entry/exit
+//! - `│` - Call stack depth indicator
+//! - `📊` - Context information
+//! - `✓` - Successful checkpoint
+//! - `🔀` - Decision point
+//! - `🎯` - Type analysis
+//! - `🛠️` - Generated code
+//! - `⚠️` - Warning or error
+//! - `💡` - Suggestion or fix
+//!
+//! ### Reading the Call Stack
+//! The indentation level indicates function call depth:
+//! ```text
+//! ┌─ ENTER: analyze_struct [MyStruct.]
+//! │  ┌─ ENTER: analyze_field [MyStruct.field1]
+//! │  │  ✓ Field analysis complete
+//! │  └─ EXIT:  analyze_field [MyStruct.field1]
+//! │  ┌─ ENTER: analyze_field [MyStruct.field2]
+//! │  │  ✓ Field analysis complete
+//! │  └─ EXIT:  analyze_field [MyStruct.field2]
+//! └─ EXIT:  analyze_struct [MyStruct.]
+//! ```
+//!
+//! ## Environment Variables
+//!
+//! - `PROTTO_DEBUG` - Main debug control (see Configuration section)
+//! - Standard Rust logging variables (`RUST_LOG`) work alongside this system
+//!
+//! ## Integration with IDEs
+//!
+//! The debug output is designed to be readable in:
+//! - Terminal output with color support
+//! - IDE build output panels
+//! - Log files (maintains structure without colors)
+//! - Error parsing tools (clear file/line information when relevant)
+//!
+//! ## Troubleshooting
+//!
+//! ### Debug Not Working
+//! 1. Ensure the environment variable is set correctly
+//! 2. Verify the pattern matches your struct names
+//! 3. Check that macro expansion is actually occurring
+//!
+//! ### Too Much Output
+//! 1. Use more specific patterns instead of `all`
+//! 2. Pipe output through `grep` to filter specific sections
+//! 3. Use `less` or similar pagers for navigation
+//!
+//! ### Performance Impact
+//! Debug mode only affects compilation time, not runtime performance.
+//! However, very verbose debugging can slow down compilation significantly.
+//!
+//! ## Examples
+//!
+//! See the integration tests and examples directory for complete usage examples
+//! demonstrating various debugging scenarios and patterns.
+
 use proc_macro2::TokenStream;
 use std::fmt::Display;
 use std::sync::OnceLock;
@@ -17,9 +284,9 @@ fn get_debug_mode() -> &'static DebugMode {
     DEBUG_MODE.get_or_init(parse_debug_env)
 }
 
-// Parse PROTO_CONVERT_DEBUG environment variable
+// Parse PROTTO_DEBUG environment variable
 fn parse_debug_env() -> DebugMode {
-    match std::env::var("PROTO_CONVERT_DEBUG") {
+    match std::env::var("PROTTO_DEBUG") {
         Ok(env_debug) => match env_debug.as_str() {
             "1" | "true" | "all" => DebugMode::All,
             "0" | "false" | "none" | "" => DebugMode::Disabled,
@@ -88,7 +355,7 @@ fn matches_debug_pattern(pattern: &str, name: &str) -> bool {
 #[allow(unused)]
 pub fn print_debug_help() {
     eprintln!("Protto Debug Options:");
-    eprintln!("  Environment variable PROTO_CONVERT_DEBUG supports:");
+    eprintln!("  Environment variable PROTTO_DEBUG supports:");
     eprintln!("    all                    # Debug all structs");
     eprintln!("    Request                # Debug exact struct name");
     eprintln!("    Request,Response       # Debug multiple structs (comma-separated)");
@@ -99,8 +366,8 @@ pub fn print_debug_help() {
     eprintln!("    0 | false | none       # Disable all debug");
     eprintln!();
     eprintln!("  Usage during proc macro expansion:");
-    eprintln!("    PROTO_CONVERT_DEBUG=Request cargo build");
-    eprintln!("    PROTO_CONVERT_DEBUG=Track* cargo test");
+    eprintln!("    PROTTO_DEBUG=Request cargo build");
+    eprintln!("    PROTTO_DEBUG=Track* cargo test");
 }
 
 // Global call depth counter for indentation
@@ -268,7 +535,7 @@ impl CallStackDebug {
     }
 
     /// Log a decision point
-    pub fn decision(&self, condition: &str, choice: &str) -> &Self{
+    pub fn decision(&self, condition: &str, choice: &str) -> &Self {
         if self.enabled {
             let indent = "  ".repeat(self.depth);
             eprintln!("{}│  🔀 IF {} THEN {}", indent, condition, choice);
@@ -353,7 +620,10 @@ impl CallStackDebug {
         if self.enabled {
             let indent = "  ".repeat(self.depth);
             eprintln!("{}│  📋 METADATA LOOKUP", indent);
-            eprintln!("{}│    🏷️  Proto: {}.{}", indent, proto_message, proto_field);
+            eprintln!(
+                "{}│    🏷️  Proto: {}.{}",
+                indent, proto_message, proto_field
+            );
             eprintln!("{}│    ✅ Result: {:?}", indent, metadata_result);
             eprintln!("{}│    🚩 Strategy: {}", indent, strategy);
         }
@@ -362,7 +632,12 @@ impl CallStackDebug {
 
     /// Debug error condition (replaces debug_error_condition)
     #[allow(unused)]
-    pub fn error_condition(&self, error_type: &str, details: &str, suggested_fix: Option<&str>) -> &Self {
+    pub fn error_condition(
+        &self,
+        error_type: &str,
+        details: &str,
+        suggested_fix: Option<&str>,
+    ) -> &Self {
         if self.enabled {
             let indent = "  ".repeat(self.depth);
             eprintln!("{}│  ❌ ERROR: {}", indent, error_type);
@@ -423,9 +698,15 @@ pub fn debug_struct_conversion_generation(
     }
 
     // Only show structure, not full implementation
-    eprintln!("  FROM_PROTO: {}", format_rust_code(from_proto_impl.to_string()));
-    eprintln!( "  FROM_MY: {}", format_rust_code(from_my_impl.to_string()));
-    eprintln!( "  FINAL_IMPL:\n{}", format_rust_code(final_impl.to_string()));
+    eprintln!(
+        "  FROM_PROTO: {}",
+        format_rust_code(from_proto_impl.to_string())
+    );
+    eprintln!("  FROM_MY: {}", format_rust_code(from_my_impl.to_string()));
+    eprintln!(
+        "  FINAL_IMPL:\n{}",
+        format_rust_code(final_impl.to_string())
+    );
 
     eprintln!("=== END STRUCT ===\n");
 }
@@ -499,19 +780,20 @@ fn format_rust_code(code: impl AsRef<str>) -> String {
             '.' => {
                 current_line.push(ch);
                 // Look ahead to see if this starts a new method call
-                if let Some(next_ch) = chars.peek() 
-                    && next_ch.is_alphabetic() {
-                        // This is a method call, check if we should break the line
-                        if current_line.trim().len() > 60 {
-                            // Break long method chains
-                            result.push_str(&format!(
-                                "{}{}\n",
-                                "    ".repeat(indent_level),
-                                current_line.trim()
-                            ));
-                            current_line.clear();
-                            current_line.push_str(&format!("{}.", "    ".repeat(indent_level + 1)));
-                        }
+                if let Some(next_ch) = chars.peek()
+                    && next_ch.is_alphabetic()
+                {
+                    // This is a method call, check if we should break the line
+                    if current_line.trim().len() > 60 {
+                        // Break long method chains
+                        result.push_str(&format!(
+                            "{}{}\n",
+                            "    ".repeat(indent_level),
+                            current_line.trim()
+                        ));
+                        current_line.clear();
+                        current_line.push_str(&format!("{}.", "    ".repeat(indent_level + 1)));
+                    }
                 }
             }
 
