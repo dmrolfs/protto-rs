@@ -1,11 +1,11 @@
-use quote::quote;
+use crate::debug::CallStackDebug;
 use crate::expect_analysis::ExpectMode;
 use crate::field_analysis::{CollectionType, FieldProcessingContext};
-use crate::{attribute_parser, type_analysis};
-use crate::debug::CallStackDebug;
 use crate::optionality::FieldOptionality;
+use crate::{attribute_parser, type_analysis};
+use quote::quote;
 
-#[derive(Clone,)]
+#[derive(Clone)]
 pub struct RustFieldInfo {
     pub field_type: syn::Type,
     // pub type_name: String,
@@ -25,19 +25,19 @@ pub struct RustFieldInfo {
 impl std::fmt::Debug for RustFieldInfo {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("RustFieldInfo")
-        .field("field_type", &quote!(self.field_type).to_string())
-        .field("is_option", &self.is_option)
-        .field("is_vec", &self.is_vec)
-        .field("is_primitive", &self.is_primitive)
-        .field("is_custom", &self.is_custom)
-        .field("is_enum", &self.is_enum)
-        .field("has_transparent", &self.has_transparent)
-        .field("has_default", &self.has_default)
-        .field("expect_mode", &self.expect_mode)
-        .field("has_proto_ignore", &self.has_proto_ignore)
-        .field("proto_to_rust_fn", &self.proto_to_rust_fn)
-        .field("rust_to_proto_fn", &self.rust_to_proto_fn)
-        .finish()
+            .field("field_type", &quote!(self.field_type).to_string())
+            .field("is_option", &self.is_option)
+            .field("is_vec", &self.is_vec)
+            .field("is_primitive", &self.is_primitive)
+            .field("is_custom", &self.is_custom)
+            .field("is_enum", &self.is_enum)
+            .field("has_transparent", &self.has_transparent)
+            .field("has_default", &self.has_default)
+            .field("expect_mode", &self.expect_mode)
+            .field("has_proto_ignore", &self.has_proto_ignore)
+            .field("proto_to_rust_fn", &self.proto_to_rust_fn)
+            .field("rust_to_proto_fn", &self.rust_to_proto_fn)
+            .finish()
     }
 }
 
@@ -84,11 +84,11 @@ impl RustFieldInfo {
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum ProtoMapping {
-    Scalar,           // proto scalar field
-    Optional,         // proto optional field
-    Repeated,         // proto repeated field
-    Message,          // proto message field
-    CustomDerived,    // handled by custom derive functions
+    Scalar,        // proto scalar field
+    Optional,      // proto optional field
+    Repeated,      // proto repeated field
+    Message,       // proto message field
+    CustomDerived, // handled by custom derive functions
 }
 
 impl ProtoMapping {
@@ -131,7 +131,8 @@ pub struct ProtoFieldInfo {
 impl ProtoFieldInfo {
     #[inline]
     pub fn is_optional(&self) -> bool {
-        !self.mapping.is_repeated() && (self.optionality.is_optional() || self.mapping.is_optional())
+        !self.mapping.is_repeated()
+            && (self.optionality.is_optional() || self.mapping.is_optional())
     }
 
     #[inline]
@@ -144,7 +145,7 @@ impl ProtoFieldInfo {
     pub fn infer_from(
         ctx: &FieldProcessingContext,
         field: &syn::Field,
-        rust_field: &RustFieldInfo
+        rust_field: &RustFieldInfo,
     ) -> Self {
         let _trace = CallStackDebug::with_context(
             "ProtoFieldInfo::infer_from",
@@ -155,7 +156,7 @@ impl ProtoFieldInfo {
                 ("is_rust_primitive", &rust_field.is_primitive.to_string()),
                 ("is_rust_custom", &rust_field.is_custom.to_string()),
                 ("is_rust_enum", &rust_field.is_enum.to_string()),
-            ]
+            ],
         );
 
         let type_name = Self::infer_proto_type_name(ctx, rust_field);
@@ -203,11 +204,17 @@ impl ProtoFieldInfo {
         // For custom derives, determine proto mapping from transformation pattern
         let mapping = if Self::is_any_collection_type(ctx.field_type) {
             // Collection with custom derive -> proto repeated field
-            trace.decision("custom_derive_collection", "Collection + custom derive -> repeated proto field");
+            trace.decision(
+                "custom_derive_collection",
+                "Collection + custom derive -> repeated proto field",
+            );
             ProtoMapping::Repeated
         } else if rust_field.is_primitive {
             // Primitive with custom derive -> proto scalar/optional
-            trace.decision("custom_derive_primitive", "Primitive + custom derive -> scalar/optional proto field");
+            trace.decision(
+                "custom_derive_primitive",
+                "Primitive + custom derive -> scalar/optional proto field",
+            );
             if Self::has_optional_indicators(ctx, field) {
                 ProtoMapping::Optional
             } else {
@@ -215,16 +222,20 @@ impl ProtoFieldInfo {
             }
         } else {
             // Complex custom derive transformation
-            trace.decision("custom_derive_complex", "Complex custom derive -> CustomDerived mapping");
+            trace.decision(
+                "custom_derive_complex",
+                "Complex custom derive -> CustomDerived mapping",
+            );
             ProtoMapping::CustomDerived
         };
 
-        let optionality = ctx.proto_meta
+        let optionality = ctx
+            .proto_meta
             .get_proto_optionality()
             .copied()
             .unwrap_or_else(|| {
                 if mapping.is_repeated() {
-                    FieldOptionality::Required  // repeated fields are never optional
+                    FieldOptionality::Required // repeated fields are never optional
                 } else {
                     Self::determine_optionality_from_context(ctx, field, trace)
                 }
@@ -244,9 +255,13 @@ impl ProtoFieldInfo {
         type_name: String,
         trace: &CallStackDebug,
     ) -> Self {
-        trace.decision("collection_type_detected", "Collection type -> repeated proto field");
+        trace.decision(
+            "collection_type_detected",
+            "Collection type -> repeated proto field",
+        );
 
-        let optionality = ctx.proto_meta
+        let optionality = ctx
+            .proto_meta
             .get_proto_optionality()
             .copied()
             .unwrap_or(FieldOptionality::Required); // Collections are typically required
@@ -267,13 +282,18 @@ impl ProtoFieldInfo {
     ) -> Self {
         if let Some(user_specified) = Self::get_explicit_user_optionality(ctx, rust_field, trace) {
             // Check for explicit user annotations
-            let mapping = Self::determine_mapping_from_optionality_and_type(user_specified, rust_field, trace);
+            let mapping = Self::determine_mapping_from_optionality_and_type(
+                user_specified,
+                rust_field,
+                trace,
+            );
             Self::create_field_info(type_name, mapping, user_specified, trace)
         } else if let Some(info) = Self::infer_from_context_patterns(ctx, rust_field, trace) {
             info
         } else {
             // Infer from actual proto schema generation patterns
-            let (mapping, optionality) = Self::infer_from_proto_schema_patterns(ctx, field, rust_field, trace);
+            let (mapping, optionality) =
+                Self::infer_from_proto_schema_patterns(ctx, field, rust_field, trace);
             Self::create_field_info(type_name, mapping, optionality, trace)
         }
     }
@@ -285,11 +305,13 @@ impl ProtoFieldInfo {
     ) -> Option<Self> {
         if Self::has_proto_optionality_indicators(ctx, rust_field, trace) {
             // Pattern - Use existing attribute analysis to detect proto optionality
-            trace.decision("context_proto_optionality_detected",
-                           "Field context indicates proto optional field");
+            trace.decision(
+                "context_proto_optionality_detected",
+                "Field context indicates proto optional field",
+            );
 
             let mapping = if rust_field.is_enum {
-                ProtoMapping::Scalar  // Enums become i32 in proto
+                ProtoMapping::Scalar // Enums become i32 in proto
             } else if Self::is_likely_message_type(ctx, rust_field) {
                 ProtoMapping::Message
             } else {
@@ -306,8 +328,10 @@ impl ProtoFieldInfo {
             Some(inferred)
         } else if rust_field.has_transparent {
             // Pattern - Use existing transparent field detection
-            trace.decision("context_transparent_detected",
-                           "Transparent attribute indicates unwrap to inner type");
+            trace.decision(
+                "context_transparent_detected",
+                "Transparent attribute indicates unwrap to inner type",
+            );
             Some(Self {
                 type_name: Self::infer_proto_type_name(ctx, rust_field),
                 mapping: ProtoMapping::Scalar,
@@ -331,11 +355,14 @@ impl ProtoFieldInfo {
         let result = has_default_indicators || has_expect_indicators || has_explicit_optional;
 
         if result {
-            trace.checkpoint_data("proto_optionality_indicators_found", &[
-                ("has_default", &has_default_indicators.to_string()),
-                ("has_expect", &has_expect_indicators.to_string()),
-                ("has_explicit", &has_explicit_optional.to_string()),
-            ]);
+            trace.checkpoint_data(
+                "proto_optionality_indicators_found",
+                &[
+                    ("has_default", &has_default_indicators.to_string()),
+                    ("has_expect", &has_expect_indicators.to_string()),
+                    ("has_explicit", &has_explicit_optional.to_string()),
+                ],
+            );
         }
 
         result
@@ -353,18 +380,23 @@ impl ProtoFieldInfo {
                 // Prost generates these as: #[prost(message, optional, tag = "N")] pub field: Option<MessageType>
                 // But user struct expects: pub field: proto::MessageType
 
-                trace.decision("proto_message_type_with_prost_optional_pattern",
-                               "Proto message type: prost generates as Option<T>, user expects T");
+                trace.decision(
+                    "proto_message_type_with_prost_optional_pattern",
+                    "Proto message type: prost generates as Option<T>, user expects T",
+                );
 
                 // The actual prost field is Option<MessageType>, needs unwrapping
                 Some(Self {
                     type_name: Self::infer_proto_type_name(ctx, rust_field),
-                    mapping: ProtoMapping::Optional,  // prost field is Option<T>
-                    optionality: FieldOptionality::Optional,  // prost generates as optional
+                    mapping: ProtoMapping::Optional, // prost field is Option<T>
+                    optionality: FieldOptionality::Optional, // prost generates as optional
                 })
             } else {
                 // Non-message proto types (enums, primitives) follow different patterns
-                trace.decision("proto_non_message_type", "Proto non-message type -> required");
+                trace.decision(
+                    "proto_non_message_type",
+                    "Proto non-message type -> required",
+                );
                 Some(Self {
                     type_name: Self::infer_proto_type_name(ctx, rust_field),
                     mapping: ProtoMapping::Message,
@@ -373,8 +405,10 @@ impl ProtoFieldInfo {
             }
         } else if Self::is_any_collection_type(ctx.field_type) {
             // Use existing collection analysis
-            trace.decision("struct_context_collection_detected",
-                           "Collection type indicates repeated proto field");
+            trace.decision(
+                "struct_context_collection_detected",
+                "Collection type indicates repeated proto field",
+            );
             Some(Self {
                 type_name: Self::infer_proto_type_name(ctx, rust_field),
                 mapping: ProtoMapping::Repeated,
@@ -388,7 +422,8 @@ impl ProtoFieldInfo {
     fn is_likely_message_type(ctx: &FieldProcessingContext, rust_field: &RustFieldInfo) -> bool {
         // Use existing type analysis rather than hardcoded patterns
         let is_enum = rust_field.is_enum;
-        let is_proto_module_type = type_analysis::is_proto_type(&rust_field.field_type, ctx.proto_module);
+        let is_proto_module_type =
+            type_analysis::is_proto_type(&rust_field.field_type, ctx.proto_module);
 
         // Enums typically become scalar fields (i32), proto module types become messages
         !is_enum && (is_proto_module_type || (!rust_field.is_primitive && rust_field.is_custom))
@@ -400,19 +435,25 @@ impl ProtoFieldInfo {
         trace: &CallStackDebug,
     ) -> Option<FieldOptionality> {
         if ctx.proto_meta.is_proto_optional() {
-            trace.decision("explicit_proto_optional_attribute", "proto(optional = true) found");
+            trace.decision(
+                "explicit_proto_optional_attribute",
+                "proto(optional = true) found",
+            );
             Some(FieldOptionality::Optional)
         } else if let Some(explicit_optionality) = ctx.proto_meta.get_proto_optionality() {
             match explicit_optionality {
                 FieldOptionality::Optional => {
                     trace.decision("explicit_proto_optionality", "User specified: Optional");
                     Some(FieldOptionality::Optional)
-                },
+                }
                 FieldOptionality::Required => {
                     // proto_required is for validation semantics, not field type detection
                     // Let the actual proto schema detection determine field optionality
-                    trace.decision("proto_required_attribute", "proto_required affects validation only, not field type detection");
-                    None  // Fall back to schema-based detection
+                    trace.decision(
+                        "proto_required_attribute",
+                        "proto_required affects validation only, not field type detection",
+                    );
+                    None // Fall back to schema-based detection
                 }
             }
         } else {
@@ -452,10 +493,16 @@ impl ProtoFieldInfo {
     ) -> (ProtoMapping, FieldOptionality) {
         // Check if user has optional indicators despite enum type
         if Self::has_optional_usage_indicators(ctx) {
-            trace.decision("enum_with_optional_indicators", "Enum + expect/default -> optional i32");
+            trace.decision(
+                "enum_with_optional_indicators",
+                "Enum + expect/default -> optional i32",
+            );
             (ProtoMapping::Optional, FieldOptionality::Optional)
         } else {
-            trace.decision("enum_standard_pattern", "Enum -> prost(enumeration) -> required i32 scalar");
+            trace.decision(
+                "enum_standard_pattern",
+                "Enum -> prost(enumeration) -> required i32 scalar",
+            );
             (ProtoMapping::Scalar, FieldOptionality::Required)
         }
     }
@@ -466,12 +513,16 @@ impl ProtoFieldInfo {
         trace: &CallStackDebug,
     ) -> (ProtoMapping, FieldOptionality) {
         if Self::has_optional_usage_indicators(ctx) {
-            trace.decision("transparent_with_optional_usage",
-                           "Transparent + optional indicators -> optional scalar/message");
+            trace.decision(
+                "transparent_with_optional_usage",
+                "Transparent + optional indicators -> optional scalar/message",
+            );
             (ProtoMapping::Optional, FieldOptionality::Optional)
         } else {
-            trace.decision("transparent_unwrap_to_inner",
-                           "Transparent -> prost(inner_type) -> required (unwraps to inner type)");
+            trace.decision(
+                "transparent_unwrap_to_inner",
+                "Transparent -> prost(inner_type) -> required (unwraps to inner type)",
+            );
             (ProtoMapping::Scalar, FieldOptionality::Required)
         }
     }
@@ -482,31 +533,39 @@ impl ProtoFieldInfo {
         trace: &CallStackDebug,
     ) -> (ProtoMapping, FieldOptionality) {
         // Option<T> always becomes optional in proto
-        let inner_mapping = if let Some(inner_type) = type_analysis::get_inner_type_from_option(ctx.field_type) {
-            if type_analysis::is_primitive_type(&inner_type) {
-                ProtoMapping::Scalar
+        let inner_mapping =
+            if let Some(inner_type) = type_analysis::get_inner_type_from_option(ctx.field_type) {
+                if type_analysis::is_primitive_type(&inner_type) {
+                    ProtoMapping::Scalar
+                } else {
+                    ProtoMapping::Message
+                }
             } else {
                 ProtoMapping::Message
-            }
-        } else {
-            ProtoMapping::Message
-        };
+            };
 
-        trace.decision("option_wrapper_pattern", "Option<T> -> prost(type, optional) -> Option<ProtoType>");
+        trace.decision(
+            "option_wrapper_pattern",
+            "Option<T> -> prost(type, optional) -> Option<ProtoType>",
+        );
         (inner_mapping, FieldOptionality::Optional)
     }
 
     fn handle_primitive_pattern(
         ctx: &FieldProcessingContext,
-        trace: &CallStackDebug
+        trace: &CallStackDebug,
     ) -> (ProtoMapping, FieldOptionality) {
         if Self::has_optional_usage_indicators(ctx) {
-            trace.decision("primitive_with_default_indicators",
-                           "Primitive + default -> prost(primitive_type, optional) -> Option<PrimitiveType>");
-            (ProtoMapping::Optional, FieldOptionality::Optional)  // Changed from Scalar/Required
+            trace.decision(
+                "primitive_with_default_indicators",
+                "Primitive + default -> prost(primitive_type, optional) -> Option<PrimitiveType>",
+            );
+            (ProtoMapping::Optional, FieldOptionality::Optional) // Changed from Scalar/Required
         } else {
-            trace.decision("primitive_standard_pattern",
-                           "Primitive -> prost(primitive_type) -> required scalar");
+            trace.decision(
+                "primitive_standard_pattern",
+                "Primitive -> prost(primitive_type) -> required scalar",
+            );
             (ProtoMapping::Scalar, FieldOptionality::Required)
         }
     }
@@ -519,29 +578,40 @@ impl ProtoFieldInfo {
         // not all custom types become optional proto messages!
 
         if rust_field.has_transparent {
-            trace.decision("transparent_custom_type",
-                           "Transparent custom type -> prost(inner_type) -> required field");
+            trace.decision(
+                "transparent_custom_type",
+                "Transparent custom type -> prost(inner_type) -> required field",
+            );
             (ProtoMapping::Scalar, FieldOptionality::Required)
         } else if type_analysis::is_proto_type(&rust_field.field_type, ctx.proto_module) {
             // This custom type is actually a proto type - should be required message
-            trace.decision("proto_module_custom_type",
-                           "Custom type from proto module -> required message field");
+            trace.decision(
+                "proto_module_custom_type",
+                "Custom type from proto module -> required message field",
+            );
             (ProtoMapping::Message, FieldOptionality::Required)
         } else if Self::has_optional_usage_indicators(ctx) {
-            trace.decision("custom_type_with_optional_indicators",
-                           "Custom type + expect/default -> prost(message, optional) -> Option<MessageType>");
+            trace.decision(
+                "custom_type_with_optional_indicators",
+                "Custom type + expect/default -> prost(message, optional) -> Option<MessageType>",
+            );
             (ProtoMapping::Optional, FieldOptionality::Optional)
         } else {
             // For all other custom types, default to optional
             // This matches the observed proto schema where custom types become Option<T>
-            trace.decision("custom_type_default_optional",
-                           "Custom type -> prost(type, optional) -> Option<Type> (default behavior)");
+            trace.decision(
+                "custom_type_default_optional",
+                "Custom type -> prost(type, optional) -> Option<Type> (default behavior)",
+            );
             (ProtoMapping::Optional, FieldOptionality::Optional)
         }
     }
 
     fn handle_fallback_pattern(trace: &CallStackDebug) -> (ProtoMapping, FieldOptionality) {
-        trace.decision("fallback_pattern", "Unknown pattern -> required scalar (conservative default)");
+        trace.decision(
+            "fallback_pattern",
+            "Unknown pattern -> required scalar (conservative default)",
+        );
         (ProtoMapping::Scalar, FieldOptionality::Required)
     }
 
@@ -559,15 +629,24 @@ impl ProtoFieldInfo {
     ) -> ProtoMapping {
         match optionality {
             FieldOptionality::Optional => {
-                trace.decision("user_specified_optional", "User specified optional -> Optional mapping");
+                trace.decision(
+                    "user_specified_optional",
+                    "User specified optional -> Optional mapping",
+                );
                 ProtoMapping::Optional
             }
             FieldOptionality::Required => {
                 if rust_field.is_enum || rust_field.is_primitive {
-                    trace.decision("user_specified_required_scalar", "User specified required scalar type");
+                    trace.decision(
+                        "user_specified_required_scalar",
+                        "User specified required scalar type",
+                    );
                     ProtoMapping::Scalar
                 } else {
-                    trace.decision("user_specified_required_message", "User specified required message type");
+                    trace.decision(
+                        "user_specified_required_message",
+                        "User specified required message type",
+                    );
                     ProtoMapping::Message
                 }
             }
@@ -580,11 +659,17 @@ impl ProtoFieldInfo {
         optionality: FieldOptionality,
         trace: &CallStackDebug,
     ) -> Self {
-        trace.checkpoint_data("standard_field_determined", &[
-            ("mapping", &format!("{:?}", mapping)),
-            ("optionality", &format!("{:?}", optionality)),
-            ("is_proto_optional", &(mapping.is_optional() || optionality.is_optional()).to_string()),
-        ]);
+        trace.checkpoint_data(
+            "standard_field_determined",
+            &[
+                ("mapping", &format!("{:?}", mapping)),
+                ("optionality", &format!("{:?}", optionality)),
+                (
+                    "is_proto_optional",
+                    &(mapping.is_optional() || optionality.is_optional()).to_string(),
+                ),
+            ],
+        );
 
         Self {
             type_name,
@@ -612,7 +697,10 @@ impl ProtoFieldInfo {
     ) -> FieldOptionality {
         // Priority 1 - Check for explicit user annotations
         if let Some(explicit_optionality) = ctx.proto_meta.get_proto_optionality() {
-            trace.decision("explicit_proto_optionality", &format!("User specified: {:?}", explicit_optionality));
+            trace.decision(
+                "explicit_proto_optionality",
+                &format!("User specified: {:?}", explicit_optionality),
+            );
             return *explicit_optionality;
         }
 
@@ -625,12 +713,20 @@ impl ProtoFieldInfo {
         // Key insight: Option<CustomType> in rust often maps to optional message in proto
         if type_analysis::is_option_type(ctx.field_type) {
             if let Some(inner_type) = type_analysis::get_inner_type_from_option(ctx.field_type) {
-                if type_analysis::is_custom_type(&inner_type) || type_analysis::is_enum_type(&inner_type) {
-                    trace.decision("option_custom_type", "Option<CustomType> -> likely optional proto message");
+                if type_analysis::is_custom_type(&inner_type)
+                    || type_analysis::is_enum_type(&inner_type)
+                {
+                    trace.decision(
+                        "option_custom_type",
+                        "Option<CustomType> -> likely optional proto message",
+                    );
                     return FieldOptionality::Optional;
                 }
                 if type_analysis::is_primitive_type(&inner_type) {
-                    trace.decision("option_primitive_type", "Option<PrimitiveType> -> likely optional proto scalar");
+                    trace.decision(
+                        "option_primitive_type",
+                        "Option<PrimitiveType> -> likely optional proto scalar",
+                    );
                     return FieldOptionality::Optional;
                 }
             }
@@ -643,7 +739,10 @@ impl ProtoFieldInfo {
         if type_analysis::is_enum_type(ctx.field_type) {
             // Enums map to i32 in proto, typically required unless explicitly marked optional
             if Self::has_optional_indicators(ctx, field) {
-                trace.decision("enum_with_indicators", "Enum + expect/default -> optional i32");
+                trace.decision(
+                    "enum_with_indicators",
+                    "Enum + expect/default -> optional i32",
+                );
                 return FieldOptionality::Optional;
             } else {
                 trace.decision("enum_without_indicators", "Enum -> required proto i32");
@@ -652,22 +751,33 @@ impl ProtoFieldInfo {
         }
 
         // Priority 5: Custom types (non-enum)
-        if type_analysis::is_custom_type(ctx.field_type) && !type_analysis::is_enum_type(ctx.field_type) {
+        if type_analysis::is_custom_type(ctx.field_type)
+            && !type_analysis::is_enum_type(ctx.field_type)
+        {
             // Check if it's a transparent field first
             if attribute_parser::has_transparent_attr(field) {
                 // Transparent fields map to their inner type - follow existing transparent logic
                 if Self::has_optional_indicators(ctx, field) {
-                    trace.decision("transparent_custom_with_indicators", "Transparent custom type + expect/default -> optional");
+                    trace.decision(
+                        "transparent_custom_with_indicators",
+                        "Transparent custom type + expect/default -> optional",
+                    );
                     return FieldOptionality::Optional;
                 } else {
-                    trace.decision("transparent_custom_without_indicators", "Transparent custom type -> required");
+                    trace.decision(
+                        "transparent_custom_without_indicators",
+                        "Transparent custom type -> required",
+                    );
                     return FieldOptionality::Required;
                 }
             }
 
             // Non-transparent, non-enum custom types - key insight from your prost output
             // Custom message types in proto are typically generated as Option<MessageType>
-            trace.decision("non_enum_custom_type_to_optional_proto", "Non-enum custom type -> likely optional proto message field");
+            trace.decision(
+                "non_enum_custom_type_to_optional_proto",
+                "Non-enum custom type -> likely optional proto message field",
+            );
             return FieldOptionality::Optional;
         }
 
@@ -684,7 +794,10 @@ impl ProtoFieldInfo {
     ) -> Option<FieldOptionality> {
         if Self::has_optional_indicators(ctx, field) {
             // Pattern 1: If Rust field has explicit optional usage indicators, proto is likely optional
-            trace.decision("optional_indicators_found", "proto field is likely optional");
+            trace.decision(
+                "optional_indicators_found",
+                "proto field is likely optional",
+            );
             Some(FieldOptionality::Optional)
         } else if type_analysis::is_primitive_type(ctx.field_type) {
             trace.decision("primitive_no_indicators", "proto field likely required");
@@ -716,18 +829,22 @@ impl ProtoFieldInfo {
     // further proto type detection to avoid double-prefixing and improve resilience
     fn is_likely_proto_type(ctx: &FieldProcessingContext, rust_field: &RustFieldInfo) -> bool {
         let type_name = rust_field.type_name();
-        
+
         if type_name.starts_with(&format!("{}::", ctx.proto_module))
-        || type_name.starts_with("proto::") {
+            || type_name.starts_with("proto::")
+        {
             // Check for explicit proto module prefixes
             true
         } else if let Ok(parsed_type) = syn::parse_str::<syn::Type>(&type_name)
-        && let syn::Type::Path(type_path) = parsed_type {
+            && let syn::Type::Path(type_path) = parsed_type
+        {
             // More resilient detection - parse as syn::Type and check path segments
             // Check if any segment matches the proto module
-            type_path.path.segments.iter().any(|segment| {
-                segment.ident == ctx.proto_module || segment.ident == "proto"
-            })
+            type_path
+                .path
+                .segments
+                .iter()
+                .any(|segment| segment.ident == ctx.proto_module || segment.ident == "proto")
         } else {
             false
         }

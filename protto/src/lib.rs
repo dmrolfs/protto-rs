@@ -172,7 +172,7 @@
 //! ##### `#[protto(error_fn = "function")]`
 //! Custom error handling function for this field.
 //! ```rust,ignore
-//! #[protto(error_fn = "handle_missing_field")]
+//! #[protto(expect, error_fn = "handle_missing_field")]
 //! pub critical_field: String,
 //! ```
 //!

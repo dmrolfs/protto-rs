@@ -119,7 +119,7 @@ impl FieldOptionality {
         if Self::is_custom_type_without_optional_indicators(ctx, field_type) {
             _trace.decision(
                 "custom_type_required",
-                "Custom type without optional indicators → required proto field"
+                "Custom type without optional indicators → required proto field",
             );
             return Some(Self::Required);
         }
@@ -147,30 +147,43 @@ impl FieldOptionality {
     }
 
     // only return true for EXPLICIT optional usage indicators
-    fn has_explicit_optional_usage_indicators(ctx: &FieldProcessingContext, field: &syn::Field) -> bool {
+    fn has_explicit_optional_usage_indicators(
+        ctx: &FieldProcessingContext,
+        field: &syn::Field,
+    ) -> bool {
         // Check for explicit expect() attribute or usage - not just context
-        let has_explicit_expect = expect_analysis::has_expect_panic_syntax(field) ||
-            (ctx.expect_mode != ExpectMode::None && Self::has_expect_attribute_on_field(field));
+        let has_explicit_expect = expect_analysis::has_expect_panic_syntax(field)
+            || (ctx.expect_mode != ExpectMode::None && Self::has_expect_attribute_on_field(field));
 
         // Check for explicit default() attribute on the field itself
-        let has_explicit_default = Self::has_default_fn_attribute(field) ||
-            Self::has_any_default_attribute(field);
+        let has_explicit_default =
+            Self::has_default_fn_attribute(field) || Self::has_any_default_attribute(field);
 
         let result = has_explicit_expect || has_explicit_default;
 
         if result {
-            CallStackDebug::new("has_explicit_optional_usage_indicators", ctx.struct_name, ctx.field_name)
-                .checkpoint_data("explicit_usage_found", &[
+            CallStackDebug::new(
+                "has_explicit_optional_usage_indicators",
+                ctx.struct_name,
+                ctx.field_name,
+            )
+            .checkpoint_data(
+                "explicit_usage_found",
+                &[
                     ("has_explicit_expect", &has_explicit_expect.to_string()),
                     ("has_explicit_default", &has_explicit_default.to_string()),
-                ]);
+                ],
+            );
         }
 
         result
     }
 
     // detect custom types that should be required by default
-    fn is_custom_type_without_optional_indicators(ctx: &FieldProcessingContext, field_type: &syn::Type) -> bool {
+    fn is_custom_type_without_optional_indicators(
+        ctx: &FieldProcessingContext,
+        field_type: &syn::Type,
+    ) -> bool {
         if let syn::Type::Path(type_path) = field_type {
             let segments = &type_path.path.segments;
 
@@ -184,13 +197,20 @@ impl FieldOptionality {
                 let is_custom = !is_primitive && !is_std_type && !is_proto_type;
 
                 if is_custom {
-                    CallStackDebug::new("is_custom_type_without_optional_indicators", ctx.struct_name, ctx.field_name)
-                        .checkpoint_data("custom_type_detected", &[
+                    CallStackDebug::new(
+                        "is_custom_type_without_optional_indicators",
+                        ctx.struct_name,
+                        ctx.field_name,
+                    )
+                    .checkpoint_data(
+                        "custom_type_detected",
+                        &[
                             ("type_name", &segments[0].ident.to_string()),
                             ("is_primitive", &is_primitive.to_string()),
                             ("is_std_type", &is_std_type.to_string()),
                             ("is_proto_type", &is_proto_type.to_string()),
-                        ]);
+                        ],
+                    );
                 }
 
                 is_custom
@@ -210,7 +230,6 @@ impl FieldOptionality {
             false
         }
     }
-
 
     /// Check if field has usage patterns indicating optional proto field
     #[allow(unused)]

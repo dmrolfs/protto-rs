@@ -579,7 +579,9 @@ fn test_all_strategies_compilation() {
 
     // MapVecInOption
     let _vec_option = VecOptionStruct {
-        optional_tracks: Some(vec![Track { id: TrackId::new(1) }]),
+        optional_tracks: Some(vec![Track {
+            id: TrackId::new(1),
+        }]),
         optional_strings: None,
         optional_proto_tracks: Some(vec![]),
     };
@@ -599,7 +601,9 @@ fn test_all_strategies_compilation() {
     // DirectWithInto
     let _direct_into = DirectWithIntoStruct {
         status_field: Status::Found,
-        track_field: Track { id: TrackId::new(99) },
+        track_field: Track {
+            id: TrackId::new(99),
+        },
         track_id: TrackId::new(456),
     };
 
@@ -629,21 +633,27 @@ fn test_error_handling_strategies() {
     // Test TransparentOptionalWithError - should fail when proto field is None
     let proto_with_none = proto::TransparentOptionalMessage {
         panic_wrapper: Some("10".to_string()),
-        error_wrapper: None,  // This should trigger error strategy
+        error_wrapper: None, // This should trigger error strategy
         default_wrapper: None,
     };
 
     let result: Result<TransparentOptionalStruct, _> = proto_with_none.try_into();
-    assert!(result.is_err(), "TransparentOptionalWithError should fail when proto field is None");
+    assert!(
+        result.is_err(),
+        "TransparentOptionalWithError should fail when proto field is None"
+    );
 
     // Test VecWithError - should succeed with default when empty
     let proto_empty_vecs = proto::VecErrorMessage {
-        tracks_with_error: vec![],  // Should use default
-        tags_with_error: vec![],    // Should use default
+        tracks_with_error: vec![], // Should use default
+        tags_with_error: vec![],   // Should use default
     };
 
     let result: Result<VecWithErrorStruct, _> = proto_empty_vecs.try_into();
-    assert!(result.is_ok(), "VecWithError should succeed with defaults when vectors are empty");
+    assert!(
+        result.is_ok(),
+        "VecWithError should succeed with defaults when vectors are empty"
+    );
 }
 
 #[test]
@@ -670,8 +680,8 @@ fn test_option_vec_empty_vs_none() {
 
     // Proto with empty repeated fields
     let proto_empty = proto::VecOptionMessage {
-        optional_tracks: vec![],     // Empty vec
-        optional_strings: vec![],    // Empty vec
+        optional_tracks: vec![],  // Empty vec
+        optional_strings: vec![], // Empty vec
         optional_proto_tracks: vec![],
     };
 
@@ -681,8 +691,8 @@ fn test_option_vec_empty_vs_none() {
     // Empty proto repeated fields might become None or Some(vec![])
     // Both are valid interpretations
     assert!(
-        rust_from_empty.optional_tracks.is_none() ||
-            rust_from_empty.optional_tracks == Some(vec![]),
+        rust_from_empty.optional_tracks.is_none()
+            || rust_from_empty.optional_tracks == Some(vec![]),
         "Empty proto repeated field should become None or Some(empty_vec)"
     );
 

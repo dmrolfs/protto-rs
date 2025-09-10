@@ -1,5 +1,5 @@
-use crate::optionality::FieldOptionality;
 use super::*;
+use crate::optionality::FieldOptionality;
 
 #[derive(Debug, Default, Clone)]
 pub struct ProtoFieldMeta {
@@ -15,151 +15,173 @@ pub struct ProtoFieldMeta {
 impl ProtoFieldMeta {
     pub fn from_field(field: &syn::Field) -> Result<Self, String> {
         let mut meta = ProtoFieldMeta::default();
-        let field_name = field.ident.as_ref().map(|i| i.to_string()).unwrap_or_else(|| "unknown".to_string());
+        let field_name = field
+            .ident
+            .as_ref()
+            .map(|i| i.to_string())
+            .unwrap_or_else(|| "unknown".to_string());
 
         for attr in &field.attrs {
             if attr.path().is_ident(constants::PROTTO_ATTRIBUTE)
-                && let Meta::List(meta_list) = &attr.meta {
-                    let nested_metas: Result<Punctuated<Meta, Comma>, _> =
-                        Punctuated::parse_terminated.parse2(meta_list.tokens.clone());
+                && let Meta::List(meta_list) = &attr.meta
+            {
+                let nested_metas: Result<Punctuated<Meta, Comma>, _> =
+                    Punctuated::parse_terminated.parse2(meta_list.tokens.clone());
 
-                    match nested_metas {
-                        Ok(metas) => {
-                            for nested_meta in metas {
-                                match nested_meta {
-                                    Meta::Path(path) if path.is_ident("expect") => {
-                                        meta.expect = true;
-                                    }
-                                    Meta::List(list) if list.path.is_ident("expect") => {
-                                        // handle `expect(panic)` syntax
-                                        meta.expect = true;
-                                    }
+                match nested_metas {
+                    Ok(metas) => {
+                        for nested_meta in metas {
+                            match nested_meta {
+                                Meta::Path(path) if path.is_ident("expect") => {
+                                    meta.expect = true;
+                                }
+                                Meta::List(list) if list.path.is_ident("expect") => {
+                                    // handle `expect(panic)` syntax
+                                    meta.expect = true;
+                                }
 
-                                    Meta::Path(path) if path.is_ident("proto_optional") => {
-                                        if meta.optionality.is_some() {
-                                            return Err("Cannot specify both proto_optional and proto_required".to_string());
-                                        }
-                                        meta.optionality = Some(FieldOptionality::Optional);
+                                Meta::Path(path) if path.is_ident("proto_optional") => {
+                                    if meta.optionality.is_some() {
+                                        return Err(
+                                            "Cannot specify both proto_optional and proto_required"
+                                                .to_string(),
+                                        );
                                     }
-                                    Meta::Path(path) if path.is_ident("proto_required") => {
-                                        if meta.optionality.is_some() {
-                                            return Err("Cannot specify both proto_optional and proto_required".to_string());
-                                        }
-                                        meta.optionality = Some(FieldOptionality::Required);
+                                    meta.optionality = Some(FieldOptionality::Optional);
+                                }
+                                Meta::Path(path) if path.is_ident("proto_required") => {
+                                    if meta.optionality.is_some() {
+                                        return Err(
+                                            "Cannot specify both proto_optional and proto_required"
+                                                .to_string(),
+                                        );
                                     }
+                                    meta.optionality = Some(FieldOptionality::Required);
+                                }
 
-                                    Meta::NameValue(nv) if nv.path.is_ident("error_type") => {
-                                        if let Expr::Path(expr_path) = &nv.value {
-                                            meta.error_type = Some(quote!(#expr_path).to_string());
-                                        }
+                                Meta::NameValue(nv) if nv.path.is_ident("error_type") => {
+                                    if let Expr::Path(expr_path) = &nv.value {
+                                        meta.error_type = Some(quote!(#expr_path).to_string());
                                     }
-                                    Meta::NameValue(nv) if nv.path.is_ident("error_fn") => {
-                                        match parse_function_value(&nv.value, "error_fn", &field_name) {
-                                            Ok(fn_name) => meta.error_fn = Some(fn_name),
-                                            Err(err_msg) => return Err(err_msg),
-                                        }
+                                }
+                                Meta::NameValue(nv) if nv.path.is_ident("error_fn") => {
+                                    match parse_function_value(&nv.value, "error_fn", &field_name) {
+                                        Ok(fn_name) => meta.error_fn = Some(fn_name),
+                                        Err(err_msg) => return Err(err_msg),
                                     }
+                                }
 
-                                    Meta::NameValue(nv) if nv.path.is_ident("default") => {
-                                        if meta.default_fn.is_some() {
-                                            return Err(format!(
-                                                "Field '{}': Cannot specify both 'default' and 'default_fn'. \
-                                                Use 'default = \"function_name\"' for custom default functions.",
-                                                field_name
-                                            ));
-                                        }
-                                        match &nv.value {
-                                            Expr::Lit(expr_lit) => {
-                                                if let Lit::Str(lit_str) = &expr_lit.lit {
-                                                    let fn_name = lit_str.value();
-                                                    meta.default_fn = Some(fn_name);
-                                                }
-                                            }
-                                            Expr::Path(expr_path) => {
-                                                let fn_name = quote!(#expr_path).to_string();
-                                                meta.default_fn = Some(fn_name);
-                                            }
-                                            _ => {
-                                                return Err(format!(
-                                                    "Field '{}': default value must be a string literal or path. \
-                                                    Examples: default = \"my_function\" or default = my_function",
-                                                    field_name
-                                                ));
-                                            }
-                                        }
-                                    }
-                                    Meta::NameValue(nv) if nv.path.is_ident("default_fn") => {
-                                        if meta.default_fn.is_some() {
-                                            return Err(format!(
-                                                "Field '{}': Cannot specify both 'default' and 'default_fn'. \
-                                                Use 'default = \"function_name\"' instead.",
-                                                field_name
-                                            ));
-                                        }
-                                        match &nv.value {
-                                            Expr::Lit(expr_lit) => {
-                                                if let Lit::Str(lit_str) = &expr_lit.lit {
-                                                    let fn_name = lit_str.value();
-                                                    meta.default_fn = Some(fn_name);
-                                                }
-                                            }
-                                            Expr::Path(expr_path) => {
-                                                let fn_name = quote!(#expr_path).to_string();
-                                                meta.default_fn = Some(fn_name);
-                                            }
-                                            _ => {
-                                                return Err(format!(
-                                                    "Field '{}': default_fn value must be a string literal or path. \
-                                                    Examples: default_fn = \"my_function\" or default_fn = my_function",
-                                                    field_name
-                                                ));
-                                            }
-                                        }
-                                    }
-                                    // Handle bare 'default' to use Default::default - add to separate field
-                                    Meta::Path(path) if path.is_ident("default") => {
-                                        if meta.default_fn.is_some() {
-                                            return Err(format!(
-                                                "Field '{}': Cannot specify both 'default' and 'default_fn'. \
-                                                Use 'default' for Default::default() or 'default_fn = \"function\"' for custom functions.",
-                                                field_name
-                                            ));
-                                        }
-                                        // Use a special marker to distinguish from custom default_fn
-                                        meta.default_fn = Some("__USE_DEFAULT_IMPL__".to_string());
-                                    }
-                                    Meta::Path(path) if path.is_ident("default_fn") => {
+                                Meta::NameValue(nv) if nv.path.is_ident("default") => {
+                                    if meta.default_fn.is_some() {
                                         return Err(format!(
-                                            "Field '{}': 'default_fn' requires a value. \
-                                            Use 'default_fn = \"function_name\"' or 'default = \"function_name\"'.",
+                                            "Field '{}': Cannot specify both 'default' and 'default_fn'. \
+                                                Use 'default = \"function_name\"' for custom default functions.",
                                             field_name
                                         ));
                                     }
-
-                                    Meta::NameValue(nv) if nv.path.is_ident("proto_to_rust_fn") => {
-                                        match parse_function_value(&nv.value, "proto_to_rust_fn", &field_name) {
-                                            Ok(fn_name) => meta.proto_to_rust_fn = Some(fn_name),
-                                            Err(err_msg) => return Err(err_msg),
+                                    match &nv.value {
+                                        Expr::Lit(expr_lit) => {
+                                            if let Lit::Str(lit_str) = &expr_lit.lit {
+                                                let fn_name = lit_str.value();
+                                                meta.default_fn = Some(fn_name);
+                                            }
                                         }
-                                    },
-
-                                    Meta::NameValue(nv) if nv.path.is_ident("rust_to_proto_fn") => {
-                                        match parse_function_value(&nv.value, "rust_to_proto_fn", &field_name) {
-                                            Ok(fn_name) => meta.rust_to_proto_fn = Some(fn_name),
-                                            Err(err_msg) => return Err(err_msg),
+                                        Expr::Path(expr_path) => {
+                                            let fn_name = quote!(#expr_path).to_string();
+                                            meta.default_fn = Some(fn_name);
+                                        }
+                                        _ => {
+                                            return Err(format!(
+                                                "Field '{}': default value must be a string literal or path. \
+                                                    Examples: default = \"my_function\" or default = my_function",
+                                                field_name
+                                            ));
                                         }
                                     }
-
-                                    _ => {
-                                        // ignore other attributes for now
+                                }
+                                Meta::NameValue(nv) if nv.path.is_ident("default_fn") => {
+                                    if meta.default_fn.is_some() {
+                                        return Err(format!(
+                                            "Field '{}': Cannot specify both 'default' and 'default_fn'. \
+                                                Use 'default = \"function_name\"' instead.",
+                                            field_name
+                                        ));
                                     }
+                                    match &nv.value {
+                                        Expr::Lit(expr_lit) => {
+                                            if let Lit::Str(lit_str) = &expr_lit.lit {
+                                                let fn_name = lit_str.value();
+                                                meta.default_fn = Some(fn_name);
+                                            }
+                                        }
+                                        Expr::Path(expr_path) => {
+                                            let fn_name = quote!(#expr_path).to_string();
+                                            meta.default_fn = Some(fn_name);
+                                        }
+                                        _ => {
+                                            return Err(format!(
+                                                "Field '{}': default_fn value must be a string literal or path. \
+                                                    Examples: default_fn = \"my_function\" or default_fn = my_function",
+                                                field_name
+                                            ));
+                                        }
+                                    }
+                                }
+                                // Handle bare 'default' to use Default::default - add to separate field
+                                Meta::Path(path) if path.is_ident("default") => {
+                                    if meta.default_fn.is_some() {
+                                        return Err(format!(
+                                            "Field '{}': Cannot specify both 'default' and 'default_fn'. \
+                                                Use 'default' for Default::default() or 'default_fn = \"function\"' for custom functions.",
+                                            field_name
+                                        ));
+                                    }
+                                    // Use a special marker to distinguish from custom default_fn
+                                    meta.default_fn = Some("__USE_DEFAULT_IMPL__".to_string());
+                                }
+                                Meta::Path(path) if path.is_ident("default_fn") => {
+                                    return Err(format!(
+                                        "Field '{}': 'default_fn' requires a value. \
+                                            Use 'default_fn = \"function_name\"' or 'default = \"function_name\"'.",
+                                        field_name
+                                    ));
+                                }
+
+                                Meta::NameValue(nv) if nv.path.is_ident("proto_to_rust_fn") => {
+                                    match parse_function_value(
+                                        &nv.value,
+                                        "proto_to_rust_fn",
+                                        &field_name,
+                                    ) {
+                                        Ok(fn_name) => meta.proto_to_rust_fn = Some(fn_name),
+                                        Err(err_msg) => return Err(err_msg),
+                                    }
+                                }
+
+                                Meta::NameValue(nv) if nv.path.is_ident("rust_to_proto_fn") => {
+                                    match parse_function_value(
+                                        &nv.value,
+                                        "rust_to_proto_fn",
+                                        &field_name,
+                                    ) {
+                                        Ok(fn_name) => meta.rust_to_proto_fn = Some(fn_name),
+                                        Err(err_msg) => return Err(err_msg),
+                                    }
+                                }
+
+                                _ => {
+                                    // ignore other attributes for now
                                 }
                             }
                         }
-                        Err(e) => {
-                            return Err(format!("Failed to parse {} attribute: {e}", constants::PROTTO_ATTRIBUTE));
-                        }
                     }
+                    Err(e) => {
+                        return Err(format!(
+                            "Failed to parse {} attribute: {e}",
+                            constants::PROTTO_ATTRIBUTE
+                        ));
+                    }
+                }
             }
         }
 
@@ -215,25 +237,33 @@ impl ProtoFieldMeta {
 pub fn get_proto_struct_error_type(attrs: &[Attribute]) -> Option<syn::Type> {
     for attr in attrs {
         if attr.path().is_ident(constants::PROTTO_ATTRIBUTE)
-            && let Meta::List(meta_list) = &attr.meta {
-                let nested_metas: Punctuated<Meta, Comma> = Punctuated::parse_terminated
-                    .parse2(meta_list.tokens.clone())
-                    .unwrap_or_else(|e| panic!("Failed to parse {} attribute: {}", constants::PROTTO_ATTRIBUTE, e));
-                for meta in nested_metas {
-                    if let Meta::NameValue(meta_nv) = meta
-                        && meta_nv.path.is_ident("error_type") {
-                            if let Expr::Path(expr_path) = &meta_nv.value {
-                                return Some(syn::Type::Path(syn::TypePath {
-                                    qself: None,
-                                    path: expr_path.path.clone(),
-                                }));
-                            }
-                            panic!(
-                                "error_type value must be a type path; e.g., #[{}(error_type = MyError)]",
-                                constants::PROTTO_ATTRIBUTE
-                            );
+            && let Meta::List(meta_list) = &attr.meta
+        {
+            let nested_metas: Punctuated<Meta, Comma> = Punctuated::parse_terminated
+                .parse2(meta_list.tokens.clone())
+                .unwrap_or_else(|e| {
+                    panic!(
+                        "Failed to parse {} attribute: {}",
+                        constants::PROTTO_ATTRIBUTE,
+                        e
+                    )
+                });
+            for meta in nested_metas {
+                if let Meta::NameValue(meta_nv) = meta
+                    && meta_nv.path.is_ident("error_type")
+                {
+                    if let Expr::Path(expr_path) = &meta_nv.value {
+                        return Some(syn::Type::Path(syn::TypePath {
+                            qself: None,
+                            path: expr_path.path.clone(),
+                        }));
                     }
+                    panic!(
+                        "error_type value must be a type path; e.g., #[{}(error_type = MyError)]",
+                        constants::PROTTO_ATTRIBUTE
+                    );
                 }
+            }
         }
     }
     None
@@ -246,15 +276,22 @@ pub fn get_struct_level_error_fn(attrs: &[Attribute]) -> Option<String> {
         {
             let nested_metas: Punctuated<Meta, Comma> = Punctuated::parse_terminated
                 .parse2(meta_list.tokens.clone())
-                .unwrap_or_else(|e| panic!("Failed to parse {} attribute: {e}", constants::PROTTO_ATTRIBUTE));
+                .unwrap_or_else(|e| {
+                    panic!(
+                        "Failed to parse {} attribute: {e}",
+                        constants::PROTTO_ATTRIBUTE
+                    )
+                });
             for meta in nested_metas {
                 if let Meta::NameValue(meta_nv) = meta
-                    && meta_nv.path.is_ident("error_fn") {
-                        if let Expr::Lit(expr_lit) = &meta_nv.value
-                            && let Lit::Str(lit_str) = &expr_lit.lit {
-                                return Some(lit_str.value());
-                        }
-                        panic!("error_fn value must be a string literal");
+                    && meta_nv.path.is_ident("error_fn")
+                {
+                    if let Expr::Lit(expr_lit) = &meta_nv.value
+                        && let Lit::Str(lit_str) = &expr_lit.lit
+                    {
+                        return Some(lit_str.value());
+                    }
+                    panic!("error_fn value must be a string literal");
                 }
             }
         }
@@ -265,23 +302,31 @@ pub fn get_struct_level_error_fn(attrs: &[Attribute]) -> Option<String> {
 pub fn get_proto_module(attrs: &[Attribute]) -> Option<String> {
     for attr in attrs {
         if attr.path().is_ident(constants::PROTTO_ATTRIBUTE)
-            && let Meta::List(meta_list) = &attr.meta {
-                let nested_metas: Punctuated<Meta, Comma> = Punctuated::parse_terminated
-                    .parse2(meta_list.tokens.clone())
-                    .unwrap_or_else(|e| panic!("Failed to parse {} attribute: {e}", constants::PROTTO_ATTRIBUTE));
-                for meta in nested_metas {
-                    if let Meta::NameValue(meta_nv) = meta
-                        && meta_nv.path.is_ident("module") {
-                            if let Expr::Lit(expr_lit) = meta_nv.value
-                                && let Lit::Str(lit_str) = expr_lit.lit {
-                                    return Some(lit_str.value());
-                            }
-                            panic!(
-                                "module value must be a string literal, e.g., #[{}(module = \"path\")]",
-                                constants::PROTTO_ATTRIBUTE
-                            );
+            && let Meta::List(meta_list) = &attr.meta
+        {
+            let nested_metas: Punctuated<Meta, Comma> = Punctuated::parse_terminated
+                .parse2(meta_list.tokens.clone())
+                .unwrap_or_else(|e| {
+                    panic!(
+                        "Failed to parse {} attribute: {e}",
+                        constants::PROTTO_ATTRIBUTE
+                    )
+                });
+            for meta in nested_metas {
+                if let Meta::NameValue(meta_nv) = meta
+                    && meta_nv.path.is_ident("module")
+                {
+                    if let Expr::Lit(expr_lit) = meta_nv.value
+                        && let Lit::Str(lit_str) = expr_lit.lit
+                    {
+                        return Some(lit_str.value());
                     }
+                    panic!(
+                        "module value must be a string literal, e.g., #[{}(module = \"path\")]",
+                        constants::PROTTO_ATTRIBUTE
+                    );
                 }
+            }
         }
     }
     None
@@ -290,23 +335,31 @@ pub fn get_proto_module(attrs: &[Attribute]) -> Option<String> {
 pub fn get_proto_struct_name(attrs: &[Attribute]) -> Option<String> {
     for attr in attrs {
         if attr.path().is_ident(constants::PROTTO_ATTRIBUTE)
-            && let Meta::List(meta_list) = &attr.meta {
-                let nested_metas: Punctuated<Meta, Comma> = Punctuated::parse_terminated
-                    .parse2(meta_list.tokens.clone())
-                    .unwrap_or_else(|e| panic!("Failed to parse {} attribute: {e}", constants::PROTTO_ATTRIBUTE));
-                for meta in nested_metas {
-                    if let Meta::NameValue(meta_nv) = meta
-                        && meta_nv.path.is_ident("proto_name") {
-                            if let Expr::Lit(expr_lit) = meta_nv.value
-                                && let Lit::Str(lit_str) = expr_lit.lit {
-                                    return Some(lit_str.value());
-                            }
-                            panic!(
-                                "proto_name value must be a string literal, e.g., #[{}(proto_name = \"...\")]",
-                                constants::PROTTO_ATTRIBUTE
-                            );
+            && let Meta::List(meta_list) = &attr.meta
+        {
+            let nested_metas: Punctuated<Meta, Comma> = Punctuated::parse_terminated
+                .parse2(meta_list.tokens.clone())
+                .unwrap_or_else(|e| {
+                    panic!(
+                        "Failed to parse {} attribute: {e}",
+                        constants::PROTTO_ATTRIBUTE
+                    )
+                });
+            for meta in nested_metas {
+                if let Meta::NameValue(meta_nv) = meta
+                    && meta_nv.path.is_ident("proto_name")
+                {
+                    if let Expr::Lit(expr_lit) = meta_nv.value
+                        && let Lit::Str(lit_str) = expr_lit.lit
+                    {
+                        return Some(lit_str.value());
                     }
+                    panic!(
+                        "proto_name value must be a string literal, e.g., #[{}(proto_name = \"...\")]",
+                        constants::PROTTO_ATTRIBUTE
+                    );
                 }
+            }
         }
     }
     None
@@ -315,12 +368,13 @@ pub fn get_proto_struct_name(attrs: &[Attribute]) -> Option<String> {
 pub fn has_transparent_attr(field: &Field) -> bool {
     for attr in &field.attrs {
         if attr.path().is_ident(constants::PROTTO_ATTRIBUTE)
-            && let Meta::List(meta_list) = &attr.meta {
-                let tokens = &meta_list.tokens;
-                let token_str = quote!(#tokens).to_string();
-                if token_str.contains("transparent") {
-                    return true;
-                }
+            && let Meta::List(meta_list) = &attr.meta
+        {
+            let tokens = &meta_list.tokens;
+            let token_str = quote!(#tokens).to_string();
+            if token_str.contains("transparent") {
+                return true;
+            }
         }
     }
     false
@@ -329,70 +383,102 @@ pub fn has_transparent_attr(field: &Field) -> bool {
 pub fn get_proto_field_name(field: &Field) -> Option<String> {
     for attr in &field.attrs {
         if attr.path().is_ident(constants::PROTTO_ATTRIBUTE)
-            && let Meta::List(meta_list) = &attr.meta {
-                let nested_metas: Punctuated<Meta, Comma> = Punctuated::parse_terminated
-                    .parse2(meta_list.tokens.clone())
-                    .unwrap_or_else(|e| panic!("Failed to parse {} attribute: {e}", constants::PROTTO_ATTRIBUTE));
-                for meta in nested_metas {
-                    if let Meta::NameValue(meta_nv) = meta
-                        && meta_nv.path.is_ident("proto_name") {
-                            if let Expr::Lit(expr_lit) = &meta_nv.value
-                                && let Lit::Str(lit_str) = &expr_lit.lit {
-                                    return Some(lit_str.value());
-                            }
-                            panic!("proto_name value must be a string literal, e.g., proto_name = \"field_name\"");
+            && let Meta::List(meta_list) = &attr.meta
+        {
+            let nested_metas: Punctuated<Meta, Comma> = Punctuated::parse_terminated
+                .parse2(meta_list.tokens.clone())
+                .unwrap_or_else(|e| {
+                    panic!(
+                        "Failed to parse {} attribute: {e}",
+                        constants::PROTTO_ATTRIBUTE
+                    )
+                });
+            for meta in nested_metas {
+                if let Meta::NameValue(meta_nv) = meta
+                    && meta_nv.path.is_ident("proto_name")
+                {
+                    if let Expr::Lit(expr_lit) = &meta_nv.value
+                        && let Lit::Str(lit_str) = &expr_lit.lit
+                    {
+                        return Some(lit_str.value());
                     }
+                    panic!(
+                        "proto_name value must be a string literal, e.g., proto_name = \"field_name\""
+                    );
                 }
+            }
         }
     }
     None
 }
 
 pub fn get_proto_to_rust_fn(field: &Field) -> Option<String> {
-    let field_name = field.ident.as_ref().map(|i| i.to_string()).unwrap_or_else(|| "unknown".to_string());
+    let field_name = field
+        .ident
+        .as_ref()
+        .map(|i| i.to_string())
+        .unwrap_or_else(|| "unknown".to_string());
 
     for attr in &field.attrs {
         if attr.path().is_ident(constants::PROTTO_ATTRIBUTE)
-            && let Meta::List(meta_list) = &attr.meta {
-                let nested_metas: Punctuated<Meta, Comma> = Punctuated::parse_terminated
-                    .parse2(meta_list.tokens.clone())
-                    .unwrap_or_else(|e| panic!("Failed to parse {} attribute: {e}", constants::PROTTO_ATTRIBUTE));
+            && let Meta::List(meta_list) = &attr.meta
+        {
+            let nested_metas: Punctuated<Meta, Comma> = Punctuated::parse_terminated
+                .parse2(meta_list.tokens.clone())
+                .unwrap_or_else(|e| {
+                    panic!(
+                        "Failed to parse {} attribute: {e}",
+                        constants::PROTTO_ATTRIBUTE
+                    )
+                });
 
-                const ATTR_NAME: &str = "proto_to_rust_fn";
-                for meta in nested_metas {
-                    if let Meta::NameValue(meta_nv) = meta
-                    && meta_nv.path.is_ident(ATTR_NAME) {
-                        match parse_function_value(&meta_nv.value, ATTR_NAME, &field_name) {
-                            Ok(fn_name) => return Some(fn_name),
-                            Err(err_msg) => panic!("{}", err_msg),
-                        }
+            const ATTR_NAME: &str = "proto_to_rust_fn";
+            for meta in nested_metas {
+                if let Meta::NameValue(meta_nv) = meta
+                    && meta_nv.path.is_ident(ATTR_NAME)
+                {
+                    match parse_function_value(&meta_nv.value, ATTR_NAME, &field_name) {
+                        Ok(fn_name) => return Some(fn_name),
+                        Err(err_msg) => panic!("{}", err_msg),
                     }
                 }
+            }
         }
     }
     None
 }
 
 pub fn get_rust_to_proto_fn(field: &Field) -> Option<String> {
-    let field_name = field.ident.as_ref().map(|i| i.to_string()).unwrap_or_else(|| "unknown".to_string());
+    let field_name = field
+        .ident
+        .as_ref()
+        .map(|i| i.to_string())
+        .unwrap_or_else(|| "unknown".to_string());
 
     for attr in &field.attrs {
         if attr.path().is_ident(constants::PROTTO_ATTRIBUTE)
-            && let Meta::List(meta_list) = &attr.meta {
-                let nested_metas: Punctuated<Meta, Comma> = Punctuated::parse_terminated
-                    .parse2(meta_list.tokens.clone())
-                    .unwrap_or_else(|e| panic!("Failed to parse {} attribute: {e}", constants::PROTTO_ATTRIBUTE));
+            && let Meta::List(meta_list) = &attr.meta
+        {
+            let nested_metas: Punctuated<Meta, Comma> = Punctuated::parse_terminated
+                .parse2(meta_list.tokens.clone())
+                .unwrap_or_else(|e| {
+                    panic!(
+                        "Failed to parse {} attribute: {e}",
+                        constants::PROTTO_ATTRIBUTE
+                    )
+                });
 
-                const ATTR_NAME: &str = "rust_to_proto_fn";
-                for meta in nested_metas {
-                    if let Meta::NameValue(meta_nv) = meta
-                    && meta_nv.path.is_ident(ATTR_NAME) {
-                        match parse_function_value(&meta_nv.value, ATTR_NAME, &field_name) {
-                            Ok(fn_name) => return Some(fn_name),
-                            Err(err_msg) => panic!("{}", err_msg),
-                        }
+            const ATTR_NAME: &str = "rust_to_proto_fn";
+            for meta in nested_metas {
+                if let Meta::NameValue(meta_nv) = meta
+                    && meta_nv.path.is_ident(ATTR_NAME)
+                {
+                    match parse_function_value(&meta_nv.value, ATTR_NAME, &field_name) {
+                        Ok(fn_name) => return Some(fn_name),
+                        Err(err_msg) => panic!("{}", err_msg),
                     }
                 }
+            }
         }
     }
     None
@@ -401,16 +487,23 @@ pub fn get_rust_to_proto_fn(field: &Field) -> Option<String> {
 pub fn has_proto_ignore(field: &Field) -> bool {
     for attr in &field.attrs {
         if attr.path().is_ident(constants::PROTTO_ATTRIBUTE)
-            && let Meta::List(meta_list) = &attr.meta {
-                let nested_metas: Punctuated<Meta, Comma> = Punctuated::parse_terminated
-                    .parse2(meta_list.tokens.clone())
-                    .unwrap_or_else(|e| panic!("Failed to parse {} attribute: {e}", constants::PROTTO_ATTRIBUTE));
-                for meta in nested_metas {
-                    if let Meta::Path(path) = meta
-                        && path.is_ident("ignore") {
-                            return true;
-                    }
+            && let Meta::List(meta_list) = &attr.meta
+        {
+            let nested_metas: Punctuated<Meta, Comma> = Punctuated::parse_terminated
+                .parse2(meta_list.tokens.clone())
+                .unwrap_or_else(|e| {
+                    panic!(
+                        "Failed to parse {} attribute: {e}",
+                        constants::PROTTO_ATTRIBUTE
+                    )
+                });
+            for meta in nested_metas {
+                if let Meta::Path(path) = meta
+                    && path.is_ident("ignore")
+                {
+                    return true;
                 }
+            }
         }
     }
     false
@@ -429,15 +522,11 @@ fn parse_function_value(value: &Expr, attr_name: &str, field_name: &str) -> Resu
                 ))
             }
         }
-        Expr::Path(expr_path) => {
-            Ok(quote!(#expr_path).to_string())
-        }
-        _ => {
-            Err(format!(
-                "Field '{}': {} value must be a string literal or path. \
+        Expr::Path(expr_path) => Ok(quote!(#expr_path).to_string()),
+        _ => Err(format!(
+            "Field '{}': {} value must be a string literal or path. \
                 Examples: {} = \"my_function\" or {} = my_function",
-                field_name, attr_name, attr_name, attr_name
-            ))
-        }
+            field_name, attr_name, attr_name, attr_name
+        )),
     }
 }

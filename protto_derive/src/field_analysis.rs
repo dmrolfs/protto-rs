@@ -1,6 +1,6 @@
+use super::*;
 use crate::conversion::ConversionStrategy;
 use crate::debug::CallStackDebug;
-use super::*;
 use crate::expect_analysis::ExpectMode;
 use crate::field_info::{ProtoFieldInfo, ProtoMapping, RustFieldInfo};
 use crate::field_processor::generate_default_value;
@@ -8,7 +8,7 @@ use crate::validation::ValidationError;
 
 pub fn generate_field_conversions(
     field: &syn::Field,
-    ctx: &FieldProcessingContext
+    ctx: &FieldProcessingContext,
 ) -> Result<(proc_macro2::TokenStream, proc_macro2::TokenStream), ValidationError> {
     let _trace = CallStackDebug::with_context(
         "generate_field_conversions",
@@ -24,14 +24,14 @@ pub fn generate_field_conversions(
         &[
             ("category", analysis.conversion_strategy.category()),
             ("debug_info", analysis.conversion_strategy.debug_info()),
-        ]
+        ],
     );
     let proto_to_rust = analysis.generate_proto_to_rust_conversion(ctx);
     let rust_to_proto = analysis.generate_rust_to_proto_conversion(ctx);
     Ok((proto_to_rust, rust_to_proto))
 }
 
-#[derive(Debug, Clone,)]
+#[derive(Debug, Clone)]
 pub struct FieldAnalysis {
     pub rust_field: RustFieldInfo,
     pub proto_field: ProtoFieldInfo,
@@ -39,19 +39,20 @@ pub struct FieldAnalysis {
 }
 
 impl FieldAnalysis {
-    pub fn analyze(ctx: &FieldProcessingContext, field: &syn::Field) -> Result<Self, ValidationError> {
+    pub fn analyze(
+        ctx: &FieldProcessingContext,
+        field: &syn::Field,
+    ) -> Result<Self, ValidationError> {
         let _trace = CallStackDebug::new("FieldAnalysis", ctx.struct_name, ctx.field_name);
 
         let rust_field = RustFieldInfo::analyze(ctx, field);
         let proto_field = ProtoFieldInfo::infer_from(ctx, field, &rust_field);
-        let conversion_strategy = ConversionStrategy::from_field_info(
-            ctx,
-            field,
-            &rust_field,
-            &proto_field
-        );
+        let conversion_strategy =
+            ConversionStrategy::from_field_info(ctx, field, &rust_field, &proto_field);
 
-        if let Err(validation_message) = conversion_strategy.validate_for_context(ctx, &rust_field, &proto_field) {
+        if let Err(validation_message) =
+            conversion_strategy.validate_for_context(ctx, &rust_field, &proto_field)
+        {
             _trace.error(&format!(
                 "Invalid conversion strategy for field `{}.{}`: {}",
                 ctx.struct_name, ctx.field_name, validation_message,
@@ -61,7 +62,7 @@ impl FieldAnalysis {
                 &rust_field,
                 &proto_field,
                 &conversion_strategy,
-                validation_message
+                validation_message,
             ));
         }
 
@@ -74,7 +75,7 @@ impl FieldAnalysis {
 
     pub fn generate_proto_to_rust_conversion(
         &self,
-        ctx: &FieldProcessingContext
+        ctx: &FieldProcessingContext,
     ) -> proc_macro2::TokenStream {
         let _trace = CallStackDebug::with_context(
             "generate_proto_to_rust_conversion",
@@ -98,14 +99,17 @@ impl FieldAnalysis {
                     _trace.decision("ProtoIgnore + no default_fn", "use Default::default");
                     quote! { #field_name: Default::default() }
                 }
-            },
+            }
 
             // -- Custom derive functions --
             ConversionStrategy::DeriveBidirectional(from_with_path, _) => {
                 // Use from_with for proto->rust conversion
-                _trace.decision("DeriveBidirectional_proto_to_rust", &format!("path: {}", from_with_path));
-                let from_with_path: syn::Path = syn::parse_str(from_with_path)
-                    .expect("Failed to parse proto_to_rust_fn path");
+                _trace.decision(
+                    "DeriveBidirectional_proto_to_rust",
+                    &format!("path: {}", from_with_path),
+                );
+                let from_with_path: syn::Path =
+                    syn::parse_str(from_with_path).expect("Failed to parse proto_to_rust_fn path");
 
                 if self.rust_field.is_option && self.proto_field.is_optional() {
                     // Custom function handles Option<T> -> Option<U> transformation
@@ -116,12 +120,12 @@ impl FieldAnalysis {
                 } else {
                     quote! { #field_name: #from_with_path(proto_struct.#proto_field_ident) }
                 }
-            },
+            }
             ConversionStrategy::DeriveProtoToRust(from_with_path) => {
                 // Handle standalone DeriveFromWith in rust->proto (fallback to from_with
                 _trace.decision("DeriveProtoToRust", &format!("path: {}", from_with_path));
-                let from_with_path: syn::Path = syn::parse_str(from_with_path)
-                    .expect("Failed to parse proto_to_rust_fn path");
+                let from_with_path: syn::Path =
+                    syn::parse_str(from_with_path).expect("Failed to parse proto_to_rust_fn path");
 
                 if self.rust_field.is_option && self.proto_field.is_optional() {
                     // custom function handles Option<T> -> Option<U> transformation
@@ -140,7 +144,7 @@ impl FieldAnalysis {
                 } else {
                     quote! { #field_name: #from_with_path(proto_struct.#proto_field_ident) }
                 }
-            },
+            }
             ConversionStrategy::DeriveRustToProto(_) => {
                 // Handle standalone DeriveIntoWith in proto->rust (fallback to .into())
                 _trace.decision("DeriveRustToProto", "fallback to DirectWithInto");
@@ -153,10 +157,13 @@ impl FieldAnalysis {
                 } else {
                     quote! { #field_name: proto_struct.#proto_field_ident.into() }
                 }
-            },
+            }
 
             ConversionStrategy::TransparentRequired => {
-                _trace.decision("TransparentRequired", "transparent conversion with option handling");
+                _trace.decision(
+                    "TransparentRequired",
+                    "transparent conversion with option handling",
+                );
 
                 let field_type = ctx.field_type;
 
@@ -174,7 +181,7 @@ impl FieldAnalysis {
                         #field_name: #field_type::from(proto_struct.#proto_field_ident)
                     }
                 }
-            },
+            }
             ConversionStrategy::TransparentOptionalWithExpect => {
                 _trace.decision("TransparentOptionalWithExpect", "expect with panic message");
                 let field_type = ctx.field_type;
@@ -184,9 +191,12 @@ impl FieldAnalysis {
                             .expect(&format!("Proto field {} is required", stringify!(#proto_field_ident)))
                     )
                 }
-            },
+            }
             ConversionStrategy::TransparentOptionalWithError => {
-                _trace.decision("TransparentOptionalWithError", "generate error handling with strategy context");
+                _trace.decision(
+                    "TransparentOptionalWithError",
+                    "generate error handling with strategy context",
+                );
                 error_handler::generate_error_handling(
                     &self.conversion_strategy,
                     field_name,
@@ -197,9 +207,12 @@ impl FieldAnalysis {
                     ctx.struct_level_error_type,
                     ctx.struct_level_error_fn,
                 )
-            },
+            }
             ConversionStrategy::TransparentOptionalWithDefault => {
-                _trace.decision("TransparentOptionalWithDefault", "unwrap_or_else with default");
+                _trace.decision(
+                    "TransparentOptionalWithDefault",
+                    "unwrap_or_else with default",
+                );
                 let field_type = ctx.field_type;
                 let default_expr = generate_default_value(field_type, ctx.default_fn.as_deref());
                 quote! {
@@ -211,23 +224,23 @@ impl FieldAnalysis {
                         })
                     )
                 }
-            },
+            }
 
             // -- Direct conversions --
             ConversionStrategy::DirectAssignment => {
                 _trace.decision("DirectAssignment", "direct assignment");
                 quote! { #field_name: proto_struct.#proto_field_ident }
-            },
+            }
             ConversionStrategy::DirectWithInto => {
                 _trace.decision("DirectWithInto", "direct with into");
                 quote! { #field_name: proto_struct.#proto_field_ident.into() }
-            },
+            }
 
             // -- Option handling --
             ConversionStrategy::WrapInSome => {
                 _trace.decision("WrapInSome", "wrap proto value in Some");
                 quote! { #field_name: Some(proto_struct.#proto_field_ident.into()) }
-            },
+            }
             ConversionStrategy::UnwrapOptionalWithExpect => {
                 _trace.decision("UnwrapOptionalWithExpect", "expect with panic message");
                 quote! {
@@ -235,9 +248,12 @@ impl FieldAnalysis {
                         .expect(&format!("Proto field {} is required", stringify!(#proto_field_ident)))
                         .into()
                 }
-            },
+            }
             ConversionStrategy::UnwrapOptionalWithError => {
-                _trace.decision("UnwrapOptionalWithError", "generate error handling with strategy context");
+                _trace.decision(
+                    "UnwrapOptionalWithError",
+                    "generate error handling with strategy context",
+                );
                 error_handler::generate_error_handling(
                     &self.conversion_strategy,
                     field_name,
@@ -248,16 +264,17 @@ impl FieldAnalysis {
                     ctx.struct_level_error_type,
                     ctx.struct_level_error_fn,
                 )
-            },
+            }
             ConversionStrategy::UnwrapOptionalWithDefault => {
                 _trace.decision("UnwrapOptionalWithDefault", "unwrap_or_else with default");
-                let default_expr = generate_default_value(ctx.field_type, ctx.default_fn.as_deref());
+                let default_expr =
+                    generate_default_value(ctx.field_type, ctx.default_fn.as_deref());
                 quote! {
                     #field_name: proto_struct.#proto_field_ident
                         .map(|v| v.into())
                         .unwrap_or_else(|| #default_expr)
                 }
-            },
+            }
             ConversionStrategy::MapOption => {
                 _trace.decision("MapOption", "map option with transparent handling");
 
@@ -276,16 +293,17 @@ impl FieldAnalysis {
                     // Normal option mapping
                     quote! { #field_name: proto_struct.#proto_field_ident.map(|v| v.into()) }
                 }
-            },
+            }
             ConversionStrategy::MapOptionWithDefault => {
                 _trace.decision("MapOptionWithDefault", "map option with default fallback");
-                let default_expr = generate_default_value(ctx.field_type, ctx.default_fn.as_deref());
+                let default_expr =
+                    generate_default_value(ctx.field_type, ctx.default_fn.as_deref());
                 quote! {
                     #field_name: proto_struct.#proto_field_ident
                         .map(|v| v.into())
                         .or_else(|| #default_expr)
                 }
-            },
+            }
 
             // -- Collection handling --
             ConversionStrategy::CollectVec => {
@@ -305,10 +323,14 @@ impl FieldAnalysis {
                         #field_name: proto_struct.#proto_field_ident.into_iter().map(Into::into).collect()
                     }
                 }
-            },
+            }
             ConversionStrategy::CollectVecWithDefault => {
-                _trace.decision("CollectVecWithDefault", "check empty then collect or default");
-                let default_expr = generate_default_value(ctx.field_type, ctx.default_fn.as_deref());
+                _trace.decision(
+                    "CollectVecWithDefault",
+                    "check empty then collect or default",
+                );
+                let default_expr =
+                    generate_default_value(ctx.field_type, ctx.default_fn.as_deref());
                 quote! {
                     #field_name: {
                         if proto_struct.#proto_field_ident.is_empty() {
@@ -318,10 +340,14 @@ impl FieldAnalysis {
                         }
                     }
                 }
-            },
+            }
             ConversionStrategy::CollectVecWithError if ctx.default_fn.is_some() => {
-                _trace.decision("CollectVecWithError + has_default", "use default when empty, error on conversion failures");
-                let default_expr = generate_default_value(ctx.field_type, ctx.default_fn.as_deref());
+                _trace.decision(
+                    "CollectVecWithError + has_default",
+                    "use default when empty, error on conversion failures",
+                );
+                let default_expr =
+                    generate_default_value(ctx.field_type, ctx.default_fn.as_deref());
                 quote! {
                     #field_name: if proto_struct.#proto_field_ident.is_empty() {
                         #default_expr
@@ -329,9 +355,12 @@ impl FieldAnalysis {
                         proto_struct.#proto_field_ident.into_iter().map(Into::into).collect()
                     }
                 }
-            },
+            }
             ConversionStrategy::CollectVecWithError => {
-                _trace.decision("CollectVecWithError + no_default", "generate error handling for vec with strategy context");
+                _trace.decision(
+                    "CollectVecWithError + no_default",
+                    "generate error handling for vec with strategy context",
+                );
                 error_handler::generate_error_handling(
                     &self.conversion_strategy,
                     field_name,
@@ -342,11 +371,14 @@ impl FieldAnalysis {
                     ctx.struct_level_error_type,
                     ctx.struct_level_error_fn,
                 )
-            },
+            }
             ConversionStrategy::VecDirectAssignment => {
-                _trace.decision("VecDirectAssignment", "direct assignment for proto vec types");
+                _trace.decision(
+                    "VecDirectAssignment",
+                    "direct assignment for proto vec types",
+                );
                 quote! { #field_name: proto_struct.#proto_field_ident }
-            },
+            }
             ConversionStrategy::MapVecInOption => {
                 _trace.decision("MapVecInOption", "map option vec with collect");
                 let inner_type = type_analysis::get_inner_type_from_option(ctx.field_type)
@@ -369,18 +401,21 @@ impl FieldAnalysis {
                             .map(|vec| vec.into_iter().map(Into::into).collect())
                     }
                 }
-            },
+            }
 
             // -- Rust-to-proto specific strategies (handled in other direction) --
             ConversionStrategy::UnwrapOptional => {
                 _trace.decision("UnwrapOptional_fallback", "falling back to DirectWithInto");
                 quote! { #field_name: proto_struct.#proto_field_ident.into() }
-            },
+            }
 
             // -- Fallback for complex cases --
             ConversionStrategy::RequiresCustomLogic => {
                 _trace.error("RequiresCustomLogic strategy should not reach code generation");
-                panic!("Custom logic required for field '{}' - this should be handled separately", field_name);
+                panic!(
+                    "Custom logic required for field '{}' - this should be handled separately",
+                    field_name
+                );
             }
         };
 
@@ -397,7 +432,7 @@ impl FieldAnalysis {
 
     pub fn generate_rust_to_proto_conversion(
         &self,
-        ctx: &FieldProcessingContext
+        ctx: &FieldProcessingContext,
     ) -> proc_macro2::TokenStream {
         let _trace = CallStackDebug::with_context(
             "generate_rust_to_proto_conversion",
@@ -414,14 +449,17 @@ impl FieldAnalysis {
             ConversionStrategy::ProtoIgnore => {
                 _trace.decision("ProtoIgnore", "return empty - field not in proto");
                 quote! {}
-            },
+            }
 
             // -- Custom derive functions --
             ConversionStrategy::DeriveBidirectional(_, into_with_path) => {
                 // Use into_with for rust->proto conversion
-                _trace.decision("DeriveBidirectional_rust_to_proto", &format!("path: {}", into_with_path));
-                let into_with_path: syn::Path = syn::parse_str(into_with_path)
-                    .expect("Failed to parse rust_to_proto_fn path");
+                _trace.decision(
+                    "DeriveBidirectional_rust_to_proto",
+                    &format!("path: {}", into_with_path),
+                );
+                let into_with_path: syn::Path =
+                    syn::parse_str(into_with_path).expect("Failed to parse rust_to_proto_fn path");
 
                 if self.rust_field.is_option && self.proto_field.is_optional() {
                     quote! { #proto_field_ident: #into_with_path(my_struct.#field_name) }
@@ -430,7 +468,7 @@ impl FieldAnalysis {
                 } else {
                     quote! { #proto_field_ident: #into_with_path(my_struct.#field_name) }
                 }
-            },
+            }
             ConversionStrategy::DeriveProtoToRust(_) => {
                 // Handle standalone DeriveFromWith in rust->proto (fallback to .into())
                 _trace.decision("DeriveProtoToRust", "fallback to DirectWithInto");
@@ -441,11 +479,11 @@ impl FieldAnalysis {
                 } else {
                     quote! { #proto_field_ident: my_struct.#field_name.into() }
                 }
-            },
+            }
             ConversionStrategy::DeriveRustToProto(into_with_path) => {
                 _trace.decision("DeriveRustToProto", &format!("path: {}", into_with_path));
-                let into_with_path: syn::Path = syn::parse_str(into_with_path)
-                    .expect("Failed to parse rust_to_proto_fn path");
+                let into_with_path: syn::Path =
+                    syn::parse_str(into_with_path).expect("Failed to parse rust_to_proto_fn path");
 
                 if self.rust_field.is_option && self.proto_field.is_optional() {
                     quote! { #proto_field_ident: #into_with_path(my_struct.#field_name) }
@@ -454,39 +492,45 @@ impl FieldAnalysis {
                 } else {
                     quote! { #proto_field_ident: #into_with_path(my_struct.#field_name) }
                 }
-            },
+            }
 
             // -- Direct conversions --
             ConversionStrategy::DirectAssignment => {
                 _trace.decision("DirectAssignment", "direct assignment");
                 quote! { #proto_field_ident: my_struct.#field_name }
-            },
+            }
             ConversionStrategy::DirectWithInto => {
                 _trace.decision("DirectWithInto", "direct with into");
                 quote! { #proto_field_ident: my_struct.#field_name.into() }
-            },
+            }
 
             // -- Option handling --
             ConversionStrategy::WrapInSome => {
                 _trace.decision("WrapInSome", "wrap in Some with into");
                 quote! { #proto_field_ident: Some(my_struct.#field_name.into()) }
-            },
+            }
             ConversionStrategy::UnwrapOptional if self.proto_field.is_optional() => {
-                _trace.decision("UnwrapOptional + proto_optional", "map instead of unwrap for Option->Option");
+                _trace.decision(
+                    "UnwrapOptional + proto_optional",
+                    "map instead of unwrap for Option->Option",
+                );
                 quote! { #proto_field_ident: my_struct.#field_name.map(|v| v.into()) }
-            },
-            ConversionStrategy::UnwrapOptional  => {
-                _trace.decision("UnwrapOptional + proto_required", "unwrap with unwrap_or_default");
+            }
+            ConversionStrategy::UnwrapOptional => {
+                _trace.decision(
+                    "UnwrapOptional + proto_required",
+                    "unwrap with unwrap_or_default",
+                );
                 quote! { #proto_field_ident: my_struct.#field_name.unwrap_or_default().into() }
-            },
+            }
             ConversionStrategy::MapOption => {
                 _trace.decision("MapOption", "map option rust->proto");
                 quote! { #proto_field_ident: my_struct.#field_name.map(|v| v.into()) }
-            },
+            }
             ConversionStrategy::MapOptionWithDefault => {
                 _trace.decision("MapOptionWithDefault", "map option with into");
                 quote! { #proto_field_ident: my_struct.#field_name.map(|v| v.into()) }
-            },
+            }
 
             // -- Collection handling --
             ConversionStrategy::CollectVec => {
@@ -502,29 +546,35 @@ impl FieldAnalysis {
                         #proto_field_ident: my_struct.#field_name.into_iter().map(Into::into).collect()
                     }
                 }
-            },
+            }
             ConversionStrategy::MapVecInOption => {
                 _trace.decision("MapVecInOption", "map option vec with collect");
                 quote! {
                     #proto_field_ident: my_struct.#field_name
                         .map(|vec| vec.into_iter().map(Into::into).collect())
                 }
-            },
+            }
             ConversionStrategy::VecDirectAssignment => {
                 _trace.decision("VecDirectAssignment", "direct assignment for proto types");
                 quote! { #proto_field_ident: my_struct.#field_name }
-            },
+            }
 
             // -- Proto-to-rust specific strategies - fall back to appropriate rust-to-proto logic --
             ConversionStrategy::UnwrapOptionalWithExpect => {
-                _trace.decision("UnwrapOptionalWithExpect", "wrap in Some for proto optional");
+                _trace.decision(
+                    "UnwrapOptionalWithExpect",
+                    "wrap in Some for proto optional",
+                );
                 quote! { #proto_field_ident: Some(my_struct.#field_name.into()) }
-            },
+            }
 
-            ConversionStrategy::UnwrapOptionalWithError |
-            ConversionStrategy::UnwrapOptionalWithDefault => {
+            ConversionStrategy::UnwrapOptionalWithError
+            | ConversionStrategy::UnwrapOptionalWithDefault => {
                 // These are proto-to-rust specific, fall back to appropriate rust-to-proto logic
-                _trace.decision("proto_to_rust_specific_strategy", "determine appropriate rust_to_proto conversion");
+                _trace.decision(
+                    "proto_to_rust_specific_strategy",
+                    "determine appropriate rust_to_proto conversion",
+                );
 
                 if self.rust_field.is_option {
                     quote! { #proto_field_ident: my_struct.#field_name.map(|v| v.into()) }
@@ -533,10 +583,13 @@ impl FieldAnalysis {
                 } else {
                     quote! { #proto_field_ident: my_struct.#field_name.into() }
                 }
-            },
+            }
 
             ConversionStrategy::TransparentRequired => {
-                _trace.decision("TransparentRequired", "transparent rust->proto using Into trait");
+                _trace.decision(
+                    "TransparentRequired",
+                    "transparent rust->proto using Into trait",
+                );
 
                 // Check if proto field is optional and wrap accordingly
                 if self.proto_field.is_optional() {
@@ -545,19 +598,21 @@ impl FieldAnalysis {
                     // Direct conversion for required proto fields
                     quote! { #proto_field_ident: my_struct.#field_name.into() }
                 }
-            },
+            }
 
-            ConversionStrategy::TransparentOptionalWithExpect |
-            ConversionStrategy::TransparentOptionalWithError |
-            ConversionStrategy::TransparentOptionalWithDefault => {
+            ConversionStrategy::TransparentOptionalWithExpect
+            | ConversionStrategy::TransparentOptionalWithError
+            | ConversionStrategy::TransparentOptionalWithDefault => {
                 _trace.decision("transparent_rust_to_proto", "use Into conversion");
                 quote! { #proto_field_ident: Some(my_struct.#field_name.into()) }
-            },
+            }
 
-            ConversionStrategy::CollectVecWithDefault |
-            ConversionStrategy::CollectVecWithError => {
+            ConversionStrategy::CollectVecWithDefault | ConversionStrategy::CollectVecWithError => {
                 // These are proto-to-rust specific, fall back to appropriate rust-to-proto logic
-                _trace.decision("proto_to_rust_specific_strategy", "determine appropriate rust_to_proto conversion");
+                _trace.decision(
+                    "proto_to_rust_specific_strategy",
+                    "determine appropriate rust_to_proto conversion",
+                );
 
                 let rust = &self.rust_field;
                 let proto = &self.proto_field;
@@ -565,13 +620,16 @@ impl FieldAnalysis {
                 match (rust.is_option, proto.mapping) {
                     (true, ProtoMapping::Optional) => {
                         quote! { #proto_field_ident: my_struct.#field_name.map(|v| v.into()) }
-                    },
+                    }
 
                     (true, ProtoMapping::Repeated) => {
                         // Option<Vec<T>> -> Vec<T> - unwrap with default empty vec
-                        _trace.decision("option_vec_to_vec_conversion", "unwrap_or_default then collect");
+                        _trace.decision(
+                            "option_vec_to_vec_conversion",
+                            "unwrap_or_default then collect",
+                        );
                         quote! { #proto_field_ident: my_struct.#field_name.unwrap_or_default().into_iter().map(Into::into).collect() }
-                    },
+                    }
 
                     (true, ProtoMapping::Scalar | ProtoMapping::Message) => quote! {
                         #proto_field_ident: my_struct.#field_name.unwrap_or_default().into()
@@ -579,9 +637,12 @@ impl FieldAnalysis {
 
                     (true, ProtoMapping::CustomDerived) => {
                         // Option<CustomType> -> CustomType - unwrap with default
-                        _trace.decision("option_custom_derived_fallback", "unwrap_or_default then into");
+                        _trace.decision(
+                            "option_custom_derived_fallback",
+                            "unwrap_or_default then into",
+                        );
                         quote! { #proto_field_ident: my_struct.#field_name.unwrap_or_default().into() }
-                    },
+                    }
 
                     (false, ProtoMapping::Optional) => quote! {
                         #proto_field_ident: Some(my_struct.#field_name.into())
@@ -595,24 +656,27 @@ impl FieldAnalysis {
                                 .map(Into::into)
                                 .collect()
                         }
-                    },
+                    }
 
                     (false, ProtoMapping::Scalar | ProtoMapping::Message) => {
                         _trace.decision("scalar_to_scalar_conversion", "direct into conversion");
                         quote! { #proto_field_ident: my_struct.#field_name.into() }
-                    },
+                    }
 
                     (false, ProtoMapping::CustomDerived) => {
                         _trace.decision("custom_derived_fallback", "direct into conversion");
                         quote! { #proto_field_ident: my_struct.#field_name.into() }
-                    },
+                    }
                 }
-            },
+            }
 
             // -- Proto-to-rust only strategies --
             ConversionStrategy::RequiresCustomLogic => {
                 _trace.error("RequiresCustomLogic strategy should not reach code generation");
-                panic!("Custom logic required for field '{}' - this should be handled separately", field_name);
+                panic!(
+                    "Custom logic required for field '{}' - this should be handled separately",
+                    field_name
+                );
             }
         };
 
@@ -627,7 +691,6 @@ impl FieldAnalysis {
         result
     }
 }
-
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum CollectionType {
@@ -654,9 +717,6 @@ impl CollectionType {
         }
     }
 }
-
-
-
 
 #[derive(Clone)]
 pub struct FieldProcessingContext<'a> {

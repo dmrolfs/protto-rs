@@ -157,7 +157,9 @@ fn test_expect_error_with_missing_field() {
     assert!(result.is_err());
     assert_eq!(
         result.unwrap_err(),
-        HasOptionalWithErrorConversionError::MissingField("track (strategy: proto optional -> rust required (error))".to_string())
+        HasOptionalWithErrorConversionError::MissingField(
+            "track (strategy: proto optional -> rust required (error))".to_string()
+        )
     );
 }
 
@@ -533,8 +535,14 @@ fn test_default_function() {
 fn test_collection_default_vs_expect() {
     // Empty state should use default for default field, succeed for expect field
     let empty_proto_state = proto::State { tracks: vec![] };
-    println!("Proto state tracks length: {}", empty_proto_state.tracks.len());
-    println!("Proto state tracks is_empty: {}", empty_proto_state.tracks.is_empty());
+    println!(
+        "Proto state tracks length: {}",
+        empty_proto_state.tracks.len()
+    );
+    println!(
+        "Proto state tracks is_empty: {}",
+        empty_proto_state.tracks.is_empty()
+    );
 
     let default_result: CollectionWithDefault = empty_proto_state.clone().into();
     println!("Result tracks: {:?}", default_result.tracks);

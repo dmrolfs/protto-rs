@@ -1,8 +1,8 @@
 use super::*;
 
-pub use error_types::{default_error_name, get_actual_error_type};
 use crate::conversion::ConversionStrategy;
 use crate::debug::CallStackDebug;
+pub use error_types::{default_error_name, get_actual_error_type};
 
 /// Main orchestration function for generating all error-related definitions
 pub fn generate_error_definitions_if_needed(

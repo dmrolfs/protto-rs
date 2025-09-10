@@ -97,7 +97,9 @@ fn test_track_id_conversion() {
 
 #[test]
 fn test_track_conversion() {
-    let original = Track { id: TrackId::new(999) };
+    let original = Track {
+        id: TrackId::new(999),
+    };
     println!("Original Track: {:?}", original);
 
     let proto_track: proto::Track = original.clone().into();

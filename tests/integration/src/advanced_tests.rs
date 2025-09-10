@@ -77,7 +77,9 @@ mod custom_type_tests {
     fn test_custom_type_roundtrip() {
         // DMR: Test the reverse conversion (generate_custom_type_from_my_field)
         let rust_struct = CustomTypeStruct {
-            track: Track { id: TrackId::new(99) },
+            track: Track {
+                id: TrackId::new(99),
+            },
             track_id: TrackId::new(88),
             wrapper: TransparentWrapper::new("roundtrip"),
         };
@@ -101,8 +103,8 @@ mod custom_type_tests {
 
 #[cfg(test)]
 mod comprehensive_tests {
-    use crate::basic_types::Status;
     use super::*;
+    use crate::basic_types::Status;
 
     #[test]
     fn test_bidirectional_conversion() {
@@ -222,7 +224,7 @@ mod comprehensive_tests {
         let track = proto::Track { track_id: 1 };
         let header = proto::Header {
             request_id: "test".to_string(),
-            timestamp: 123
+            timestamp: 123,
         };
 
         let proto_msg = proto::DirectVecMessage {
@@ -260,7 +262,7 @@ mod comprehensive_tests {
 
         let rust_struct: VecWithErrorStruct = proto_msg.try_into().unwrap();
         assert_eq!(rust_struct.tracks_with_error.len(), 1); // default_track_vec returns 1 item
-        assert_eq!(rust_struct.tags_with_error.len(), 1);   // default_string_vec returns 1 item
+        assert_eq!(rust_struct.tags_with_error.len(), 1); // default_string_vec returns 1 item
     }
 
     #[test]

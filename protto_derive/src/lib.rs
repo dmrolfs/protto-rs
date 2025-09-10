@@ -16,6 +16,7 @@ mod constants {
 }
 
 mod attribute_parser;
+mod conversion;
 mod debug;
 mod enum_processor;
 mod error_analysis;
@@ -24,14 +25,13 @@ mod error_handler;
 mod error_types;
 mod expect_analysis;
 mod field_analysis;
+mod field_info;
 mod field_processor;
 mod macro_input;
 mod optionality;
 mod struct_impl;
 mod tuple_impl;
 mod type_analysis;
-mod field_info;
-mod conversion;
 
 mod utils {
     pub fn to_screaming_snake_case(s: &str) -> String {
@@ -108,11 +108,7 @@ mod validation {
         pub fn detailed_message(&self) -> String {
             format!(
                 "Protto validation failed for field '{}':\n\n{}\n\nField details:\n• Rust type: {}\n• Proto type: {}\n• Strategy: {}",
-                self.field_path,
-                self.message,
-                self.rust_type,
-                self.proto_type,
-                self.strategy
+                self.field_path, self.message, self.rust_type, self.proto_type, self.strategy
             )
         }
     }

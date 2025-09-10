@@ -151,14 +151,19 @@ pub fn custom_into_conversion(rust_val: CustomComplexType) -> proto::ComplexType
 #[protto(module = "proto", proto_name = "TransparentMessage")]
 pub struct TransparentRequiredStruct {
     #[protto(transparent, proto_name = "wrapper_id")]
-    pub id: TransparentWrapper,  // proto field is required u64
+    pub id: TransparentWrapper, // proto field is required u64
 }
 
 // Test TransparentOptionalWith* variants
 #[derive(Protto, PartialEq, Debug, Clone)]
 #[protto(module = "proto", proto_name = "TransparentOptionalMessage")]
 pub struct TransparentOptionalStruct {
-    #[protto(transparent, expect(panic), proto_name = "panic_wrapper", proto_optional)]
+    #[protto(
+        transparent,
+        expect(panic),
+        proto_name = "panic_wrapper",
+        proto_optional
+    )]
     pub panic_wrapper: TransparentWrapper,
 
     #[protto(transparent, expect, proto_name = "error_wrapper", proto_optional)]
@@ -177,10 +182,10 @@ pub fn default_transparent_wrapper() -> TransparentWrapper {
 #[protto(module = "proto", proto_name = "WrapInSomeMessage")]
 pub struct WrapInSomeStruct {
     #[protto(proto_optional, proto_name = "wrapped_field")]
-    pub required_rust_field: String,  // rust required → proto optional
+    pub required_rust_field: String, // rust required → proto optional
 
     #[protto(proto_optional, proto_name = "wrapped_status")]
-    pub status: Status,  // enum rust required → proto optional
+    pub status: Status, // enum rust required → proto optional
 }
 
 // Test MapOption - both sides optional, no expect/default
@@ -188,10 +193,10 @@ pub struct WrapInSomeStruct {
 #[protto(module = "proto", proto_name = "MapOptionMessage")]
 pub struct MapOptionStruct {
     #[protto(proto_optional, proto_name = "simple_option")]
-    pub optional_string: Option<String>,  // Option<String> → Option<String>
+    pub optional_string: Option<String>, // Option<String> → Option<String>
 
     #[protto(proto_optional, proto_name = "optional_status")]
-    pub optional_status: Option<Status>,  // Option<Status> → Option<i32>
+    pub optional_status: Option<Status>, // Option<Status> → Option<i32>
 }
 
 // Test MapVecInOption - completely missing from current tests
@@ -199,20 +204,20 @@ pub struct MapOptionStruct {
 #[protto(module = "proto", proto_name = "VecOptionMessage")]
 pub struct VecOptionStruct {
     #[protto(proto_optional, proto_name = "optional_tracks")]
-    pub optional_tracks: Option<Vec<Track>>,  // Option<Vec<Track>> → Option<Vec<proto::Track>>
+    pub optional_tracks: Option<Vec<Track>>, // Option<Vec<Track>> → Option<Vec<proto::Track>>
 
     #[protto(proto_optional, proto_name = "optional_strings")]
-    pub optional_strings: Option<Vec<String>>,  // Option<Vec<String>> → Option<Vec<String>>
+    pub optional_strings: Option<Vec<String>>, // Option<Vec<String>> → Option<Vec<String>>
 
     #[protto(proto_optional, proto_name = "optional_proto_tracks")]
-    pub optional_proto_tracks: Option<Vec<proto::Track>>,  // Option<Vec<proto::Track>> → Option<Vec<proto::Track>>
+    pub optional_proto_tracks: Option<Vec<proto::Track>>, // Option<Vec<proto::Track>> → Option<Vec<proto::Track>>
 }
 
 // Test VecDirectAssignment - Vec<proto::Type> scenarios
 #[derive(Protto, PartialEq, Debug, Clone)]
 #[protto(module = "proto", proto_name = "DirectVecMessage")]
 pub struct VecDirectAssignmentStruct {
-    pub proto_tracks: Vec<proto::Track>,  // Vec<proto::Track> → Vec<proto::Track> (no conversion)
+    pub proto_tracks: Vec<proto::Track>, // Vec<proto::Track> → Vec<proto::Track> (no conversion)
     pub proto_headers: Vec<proto::Header>, // Vec<proto::Header> → Vec<proto::Header> (no conversion)
 }
 
@@ -256,7 +261,6 @@ impl std::fmt::Display for VecError {
 
 impl std::error::Error for VecError {}
 
-
 pub fn default_string_vec() -> Vec<String> {
     vec!["default".to_string()]
 }
@@ -265,10 +269,10 @@ pub fn default_string_vec() -> Vec<String> {
 #[derive(Protto, PartialEq, Debug, Clone)]
 #[protto(module = "proto", proto_name = "DirectConversionMessage")]
 pub struct DirectWithIntoStruct {
-    pub status_field: Status,  // Status → i32 via Into
-    pub track_field: Track,    // Track → proto::Track via Into
+    pub status_field: Status, // Status → i32 via Into
+    pub track_field: Track,   // Track → proto::Track via Into
     #[protto(transparent)]
-    pub track_id: TrackId,     // TrackId → u64 via Into (if transparent)
+    pub track_id: TrackId, // TrackId → u64 via Into (if transparent)
 }
 
 // Test edge case combinations
@@ -284,7 +288,10 @@ pub struct EdgeCaseCombinationsStruct {
     pub optional_custom: Option<CustomTypeInner>,
 
     // Vec with custom derive - also rare
-    #[protto(proto_to_rust_fn = "vec_custom_from", rust_to_proto_fn = "vec_custom_into")]
+    #[protto(
+        proto_to_rust_fn = "vec_custom_from",
+        rust_to_proto_fn = "vec_custom_into"
+    )]
     pub vec_custom: Vec<CustomTypeInner>,
 
     // Transparent Option (should this even be allowed?)
@@ -306,11 +313,17 @@ pub fn option_custom_from(proto_val: Option<proto::CustomType>) -> Option<Custom
 }
 
 pub fn vec_custom_from(proto_vec: Vec<proto::CustomType>) -> Vec<CustomTypeInner> {
-    proto_vec.into_iter().map(|p| CustomTypeInner { data: p.data }).collect()
+    proto_vec
+        .into_iter()
+        .map(|p| CustomTypeInner { data: p.data })
+        .collect()
 }
 
 pub fn vec_custom_into(rust_vec: Vec<CustomTypeInner>) -> Vec<proto::CustomType> {
-    rust_vec.into_iter().map(|r| proto::CustomType { data: r.data }).collect()
+    rust_vec
+        .into_iter()
+        .map(|r| proto::CustomType { data: r.data })
+        .collect()
 }
 
 // Test rust->proto specific strategies (UnwrapOptional, TransparentToOptional, etc.)

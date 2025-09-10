@@ -1,5 +1,5 @@
-use crate::conversion::ConversionStrategy;
 use super::*;
+use crate::conversion::ConversionStrategy;
 
 /// Generates error handling code for a specific field
 #[allow(clippy::too_many_arguments)]
@@ -25,7 +25,7 @@ pub fn generate_error_handling(
             field_name,
             proto_field_ident,
             is_rust_optional,
-            error_fn
+            error_fn,
         )
     } else {
         generate_default_error_handling(
@@ -33,7 +33,7 @@ pub fn generate_error_handling(
             field_name,
             proto_field_ident,
             is_rust_optional,
-            error_name
+            error_name,
         )
     }
 }
@@ -59,7 +59,7 @@ fn generate_custom_error_handling(
                     proto_struct.#proto_field_ident.into_iter().map(Into::into).collect()
                 }
             }
-        },
+        }
         _ => {
             if is_rust_optional {
                 quote! {
@@ -70,7 +70,7 @@ fn generate_custom_error_handling(
                     #field_name: proto_struct.#proto_field_ident.ok_or_else(|| #error_fn_path(stringify!(#proto_field_ident)))?.into()
                 }
             }
-        },
+        }
     }
 }
 
