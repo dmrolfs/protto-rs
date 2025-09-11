@@ -32,6 +32,7 @@ mod optionality;
 mod struct_impl;
 mod tuple_impl;
 mod type_analysis;
+mod error_mode;
 
 mod utils {
     pub fn to_screaming_snake_case(s: &str) -> String {
