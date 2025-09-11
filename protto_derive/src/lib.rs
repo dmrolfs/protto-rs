@@ -17,14 +17,17 @@ mod constants {
 
 mod attribute_parser;
 mod conversion;
+mod conversion_strategy;
 mod debug;
 mod enum_processor;
 mod error_analysis;
 mod error_codegen;
 mod error_handler;
+mod error_mode;
 mod error_types;
 mod expect_analysis;
 mod field_analysis;
+mod field_conversion;
 mod field_info;
 mod field_processor;
 mod macro_input;
@@ -32,7 +35,10 @@ mod optionality;
 mod struct_impl;
 mod tuple_impl;
 mod type_analysis;
-mod error_mode;
+
+#[cfg(test)]
+mod compatibility_testing;
+mod conversion_codegen;
 
 mod utils {
     pub fn to_screaming_snake_case(s: &str) -> String {

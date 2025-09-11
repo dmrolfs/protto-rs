@@ -1,8 +1,9 @@
 use super::*;
 use crate::debug::CallStackDebug;
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Default, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum ExpectMode {
+    #[default]
     None,
     Error,
     Panic,

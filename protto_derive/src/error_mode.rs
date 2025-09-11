@@ -27,9 +27,7 @@ impl ErrorMode {
             ExpectMode::None if rust.has_default || ctx.default_fn.is_some() => {
                 Self::Default(ctx.default_fn.clone())
             }
-            ExpectMode::None => {
-                Self::None
-            }
+            ExpectMode::None => Self::None,
         }
     }
 
@@ -95,16 +93,28 @@ impl ErrorMode {
         match strategy {
             crate::conversion::ConversionStrategy::UnwrapOptionalWithExpect => Some(Self::Panic),
             crate::conversion::ConversionStrategy::UnwrapOptionalWithError => Some(Self::Error),
-            crate::conversion::ConversionStrategy::UnwrapOptionalWithDefault => Some(Self::Default(None)),
+            crate::conversion::ConversionStrategy::UnwrapOptionalWithDefault => {
+                Some(Self::Default(None))
+            }
 
-            crate::conversion::ConversionStrategy::TransparentOptionalWithExpect => Some(Self::Panic),
-            crate::conversion::ConversionStrategy::TransparentOptionalWithError => Some(Self::Error),
-            crate::conversion::ConversionStrategy::TransparentOptionalWithDefault => Some(Self::Default(None)),
+            crate::conversion::ConversionStrategy::TransparentOptionalWithExpect => {
+                Some(Self::Panic)
+            }
+            crate::conversion::ConversionStrategy::TransparentOptionalWithError => {
+                Some(Self::Error)
+            }
+            crate::conversion::ConversionStrategy::TransparentOptionalWithDefault => {
+                Some(Self::Default(None))
+            }
 
-            crate::conversion::ConversionStrategy::CollectVecWithDefault => Some(Self::Default(None)),
+            crate::conversion::ConversionStrategy::CollectVecWithDefault => {
+                Some(Self::Default(None))
+            }
             crate::conversion::ConversionStrategy::CollectVecWithError => Some(Self::Error),
 
-            crate::conversion::ConversionStrategy::MapOptionWithDefault => Some(Self::Default(None)),
+            crate::conversion::ConversionStrategy::MapOptionWithDefault => {
+                Some(Self::Default(None))
+            }
 
             // Strategies that don't have explicit error modes
             _ => None,
