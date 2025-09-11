@@ -9,7 +9,7 @@ use std::sync::atomic::AtomicU64;
 #[protto(proto_name = "State")]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct MapState {
-    #[protto(proto_to_rust_fn = "into_map", rust_to_proto_fn = "from_map")]
+    #[protto(from_proto_fn = "into_map", to_proto_fn = "from_map")]
     pub tracks: HashMap<TrackId, Track>,
 }
 
@@ -120,8 +120,8 @@ pub struct CollectionWithExpect {
 #[protto(module = "proto", proto_name = "BidirectionalMessage")]
 pub struct BidirectionalConversionStruct {
     #[protto(
-        proto_to_rust_fn = "custom_from_conversion",
-        rust_to_proto_fn = "custom_into_conversion"
+        from_proto_fn = "custom_from_conversion",
+        to_proto_fn = "custom_into_conversion"
     )]
     pub custom_field: CustomComplexType,
 }
@@ -282,16 +282,13 @@ pub struct EdgeCaseCombinationsStruct {
     // Option with custom derive - rare but possible
     #[protto(
         proto_optional,
-        proto_to_rust_fn = "option_custom_from",
-        rust_to_proto_fn = "option_custom_into"
+        from_proto_fn = "option_custom_from",
+        to_proto_fn = "option_custom_into"
     )]
     pub optional_custom: Option<CustomTypeInner>,
 
     // Vec with custom derive - also rare
-    #[protto(
-        proto_to_rust_fn = "vec_custom_from",
-        rust_to_proto_fn = "vec_custom_into"
-    )]
+    #[protto(from_proto_fn = "vec_custom_from", to_proto_fn = "vec_custom_into")]
     pub vec_custom: Vec<CustomTypeInner>,
 
     // Transparent Option (should this even be allowed?)

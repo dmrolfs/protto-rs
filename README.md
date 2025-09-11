@@ -15,7 +15,7 @@ Rust structs. It dramatically reduces boilerplate when working with Protobufs in
 - Optional fields (`Option<T>`) and collections (`Vec<T>`)
 - Transparent newtype wrappers
 - Field renaming via `#[protto(proto_name = "...")]`
-- Custom conversion functions (`proto_to_rust_fn`, `rust_to_proto_fn`)
+- Custom conversion functions (`from_proto_fn`, `to_proto_fn`)
 - Ignored fields with `#[protto(ignore)]`
 - Smart optionality detection
 - Configurable Protobuf module path

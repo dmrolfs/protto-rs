@@ -14,7 +14,7 @@ pub enum ConversionStrategy {
     // Custom derive functions
     DeriveProtoToRust(String),
     DeriveRustToProto(String),
-    DeriveBidirectional(String, String), // (proto_to_rust_fn, rust_to_proto_fn)
+    DeriveBidirectional(String, String), // (from_proto_fn, to_proto_fn)
 
     // Transparent field handling
     TransparentRequired,            // proto field is required
@@ -316,14 +316,14 @@ impl ConversionStrategy {
             _trace.decision("has_proto_ignore", "ProtoIgnore");
             Self::ProtoIgnore
         } else if let (Some(from_with_path), Some(into_with_path)) =
-            (&rust.proto_to_rust_fn, &rust.rust_to_proto_fn)
+            (&rust.from_proto_fn, &rust.to_proto_fn)
         {
             _trace.decision("has_both_derive_functions", "DeriveBidirectional");
             Self::DeriveBidirectional(from_with_path.clone(), into_with_path.clone())
-        } else if let Some(from_with_path) = &rust.proto_to_rust_fn {
+        } else if let Some(from_with_path) = &rust.from_proto_fn {
             _trace.decision("has_proto_to_rust_fn", "DeriveFromWith");
             Self::DeriveProtoToRust(from_with_path.clone())
-        } else if let Some(into_with_path) = &rust.rust_to_proto_fn {
+        } else if let Some(into_with_path) = &rust.to_proto_fn {
             _trace.decision("has_rust_to_proto_fn", "DeriveIntoWith");
             Self::DeriveRustToProto(into_with_path.clone())
         } else if rust.has_transparent && rust.is_option {

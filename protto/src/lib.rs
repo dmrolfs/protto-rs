@@ -17,7 +17,7 @@
 //! - **Option and Collections:** Supports optional fields (`Option<T>`) and collections (`Vec<T>`).
 //! - **Newtype Wrappers:** Transparent conversions for single-field tuple structs.
 //! - **Field Renaming:** Customize mapping between Rust and Protobuf field names using `#[protto(proto_name = "...")]`.
-//! - **Custom Conversion Functions:** Handle complex scenarios with user-defined functions via `#[protto(proto_to_rust_fn = "...")]` and `#[protto(rust_to_proto_fn = "...")]`.
+//! - **Custom Conversion Functions:** Handle complex scenarios with user-defined functions via `#[protto(from_proto_fn = "...")]` and `#[protto(to_proto_fn = "...")]`.
 //! - **Ignored Fields:** Exclude fields from conversion using `#[protto(ignore)]`.
 //! - **Advanced Error Handling:** Support for custom error types and functions.
 //! - **Smart Optionality Detection:** Automatic inference with manual override capabilities.
@@ -121,23 +121,23 @@
 //!
 //! #### Custom Conversion Functions
 //!
-//! ##### `#[protto(proto_to_rust_fn = "function")]`
+//! ##### `#[protto(from_proto_fn = "function")]`
 //! Uses a custom function for proto → rust conversion.
 //! ```rust,ignore
-//! #[protto(proto_to_rust_fn = "parse_timestamp")]
+//! #[protto(from_proto_fn = "parse_timestamp")]
 //! pub created_at: DateTime<Utc>,
 //! ```
 //!
-//! ##### `#[protto(rust_to_proto_fn = "function")]`
+//! ##### `#[protto(to_proto_fn = "function")]`
 //! Uses a custom function for rust → proto conversion.
 //! ```rust,ignore
-//! #[protto(rust_to_proto_fn = "format_timestamp")]
+//! #[protto(to_proto_fn = "format_timestamp")]
 //! pub created_at: DateTime<Utc>,
 //! ```
 //!
 //! Both can be combined for bidirectional custom conversion:
 //! ```rust,ignore
-//! #[protto(proto_to_rust_fn = "from_proto_map", rust_to_proto_fn = "to_proto_map")]
+//! #[protto(from_proto_fn = "from_proto_map", to_proto_fn = "to_proto_map")]
 //! pub metadata: HashMap<String, Value>,
 //! ```
 //!
@@ -206,7 +206,7 @@
 //! #[derive(Protto)]
 //! #[protto(proto_name = "State")]
 //! pub struct StateMap {
-//!     #[protto(proto_to_rust_fn = "into_map", rust_to_proto_fn = "from_map")]
+//!     #[protto(from_proto_fn = "into_map", to_proto_fn = "from_map")]
 //!     pub tracks: HashMap<TrackId, Track>,
 //! }
 //!
@@ -325,7 +325,7 @@
 //! ### Collections
 //! - `Vec<T>` ↔ `repeated T`
 //! - `Option<Vec<T>>` ↔ `repeated T` (with empty handling)
-//! - Custom collections via `proto_to_rust_fn`/`rust_to_proto_fn`
+//! - Custom collections via `from_proto_fn`/`to_proto_fn`
 //!
 //! ### Optional Types
 //! - `Option<T>` ↔ `optional T`

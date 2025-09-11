@@ -8,8 +8,8 @@ pub struct ProtoFieldMeta {
     pub error_type: Option<String>,
     pub default_fn: Option<String>,
     pub optionality: Option<FieldOptionality>,
-    pub proto_to_rust_fn: Option<String>,
-    pub rust_to_proto_fn: Option<String>,
+    pub from_proto_fn: Option<String>,
+    pub to_proto_fn: Option<String>,
 }
 
 impl ProtoFieldMeta {
@@ -147,24 +147,24 @@ impl ProtoFieldMeta {
                                     ));
                                 }
 
-                                Meta::NameValue(nv) if nv.path.is_ident("proto_to_rust_fn") => {
+                                Meta::NameValue(nv) if nv.path.is_ident("from_proto_fn") => {
                                     match parse_function_value(
                                         &nv.value,
-                                        "proto_to_rust_fn",
+                                        "from_proto_fn",
                                         &field_name,
                                     ) {
-                                        Ok(fn_name) => meta.proto_to_rust_fn = Some(fn_name),
+                                        Ok(fn_name) => meta.from_proto_fn = Some(fn_name),
                                         Err(err_msg) => return Err(err_msg),
                                     }
                                 }
 
-                                Meta::NameValue(nv) if nv.path.is_ident("rust_to_proto_fn") => {
+                                Meta::NameValue(nv) if nv.path.is_ident("to_proto_fn") => {
                                     match parse_function_value(
                                         &nv.value,
-                                        "rust_to_proto_fn",
+                                        "to_proto_fn",
                                         &field_name,
                                     ) {
-                                        Ok(fn_name) => meta.rust_to_proto_fn = Some(fn_name),
+                                        Ok(fn_name) => meta.to_proto_fn = Some(fn_name),
                                         Err(err_msg) => return Err(err_msg),
                                     }
                                 }
@@ -213,24 +213,24 @@ impl ProtoFieldMeta {
 
     /// Get the proto-to-rust conversion function if specified
     pub fn get_proto_to_rust_fn(&self) -> Option<&str> {
-        self.proto_to_rust_fn.as_deref()
+        self.from_proto_fn.as_deref()
     }
 
     /// Get the rust-to-proto conversion function if specified
     pub fn get_rust_to_proto_fn(&self) -> Option<&str> {
-        self.rust_to_proto_fn.as_deref()
+        self.to_proto_fn.as_deref()
     }
 
     /// Check if bidirectional custom conversion is specified
     #[allow(unused)]
     pub fn has_bidirectional_conversion(&self) -> bool {
-        self.proto_to_rust_fn.is_some() && self.rust_to_proto_fn.is_some()
+        self.from_proto_fn.is_some() && self.to_proto_fn.is_some()
     }
 
     /// Check if any custom conversion function is specified
     #[allow(unused)]
     pub fn has_custom_conversion(&self) -> bool {
-        self.proto_to_rust_fn.is_some() || self.rust_to_proto_fn.is_some()
+        self.from_proto_fn.is_some() || self.to_proto_fn.is_some()
     }
 }
 
@@ -432,7 +432,7 @@ pub fn get_proto_to_rust_fn(field: &Field) -> Option<String> {
                     )
                 });
 
-            const ATTR_NAME: &str = "proto_to_rust_fn";
+            const ATTR_NAME: &str = "from_proto_fn";
             for meta in nested_metas {
                 if let Meta::NameValue(meta_nv) = meta
                     && meta_nv.path.is_ident(ATTR_NAME)
@@ -468,7 +468,7 @@ pub fn get_rust_to_proto_fn(field: &Field) -> Option<String> {
                     )
                 });
 
-            const ATTR_NAME: &str = "rust_to_proto_fn";
+            const ATTR_NAME: &str = "to_proto_fn";
             for meta in nested_metas {
                 if let Meta::NameValue(meta_nv) = meta
                     && meta_nv.path.is_ident(ATTR_NAME)

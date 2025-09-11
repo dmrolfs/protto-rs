@@ -109,7 +109,7 @@ impl FieldAnalysis {
                     &format!("path: {}", from_with_path),
                 );
                 let from_with_path: syn::Path =
-                    syn::parse_str(from_with_path).expect("Failed to parse proto_to_rust_fn path");
+                    syn::parse_str(from_with_path).expect("Failed to parse from_proto_fn path");
 
                 if self.rust_field.is_option && self.proto_field.is_optional() {
                     // Custom function handles Option<T> -> Option<U> transformation
@@ -125,7 +125,7 @@ impl FieldAnalysis {
                 // Handle standalone DeriveFromWith in rust->proto (fallback to from_with
                 _trace.decision("DeriveProtoToRust", &format!("path: {}", from_with_path));
                 let from_with_path: syn::Path =
-                    syn::parse_str(from_with_path).expect("Failed to parse proto_to_rust_fn path");
+                    syn::parse_str(from_with_path).expect("Failed to parse from_proto_fn path");
 
                 if self.rust_field.is_option && self.proto_field.is_optional() {
                     // custom function handles Option<T> -> Option<U> transformation
@@ -459,7 +459,7 @@ impl FieldAnalysis {
                     &format!("path: {}", into_with_path),
                 );
                 let into_with_path: syn::Path =
-                    syn::parse_str(into_with_path).expect("Failed to parse rust_to_proto_fn path");
+                    syn::parse_str(into_with_path).expect("Failed to parse to_proto_fn path");
 
                 if self.rust_field.is_option && self.proto_field.is_optional() {
                     quote! { #proto_field_ident: #into_with_path(my_struct.#field_name) }
@@ -483,7 +483,7 @@ impl FieldAnalysis {
             ConversionStrategy::DeriveRustToProto(into_with_path) => {
                 _trace.decision("DeriveRustToProto", &format!("path: {}", into_with_path));
                 let into_with_path: syn::Path =
-                    syn::parse_str(into_with_path).expect("Failed to parse rust_to_proto_fn path");
+                    syn::parse_str(into_with_path).expect("Failed to parse to_proto_fn path");
 
                 if self.rust_field.is_option && self.proto_field.is_optional() {
                     quote! { #proto_field_ident: #into_with_path(my_struct.#field_name) }
