@@ -2,8 +2,7 @@ use proc_macro::TokenStream;
 use proc_macro2::Span;
 use quote::quote;
 use syn::parse::Parser;
-use syn::{self, Attribute, DeriveInput, Expr, Field, Lit, Meta, Type};
-use syn::{punctuated::Punctuated, token::Comma};
+use syn::{self, DeriveInput, };
 
 mod constants {
     pub const PRIMITIVE_TYPES: &[&str] =
@@ -15,30 +14,22 @@ mod constants {
     pub const USE_DEFAULT_IMPL: &str = "__USE_DEFAULT_IMPL__";
 }
 
-mod attribute_parser;
+mod analysis;
 mod conversion;
-mod conversion_strategy;
 mod debug;
 mod enum_processor;
-mod error_analysis;
+mod error;
 mod error_codegen;
 mod error_handler;
-mod error_mode;
 mod error_types;
-mod expect_analysis;
-mod field_analysis;
-mod field_conversion;
-mod field_info;
-mod field_processor;
-mod macro_input;
-mod optionality;
+mod field;
+mod migration;
 mod struct_impl;
 mod tuple_impl;
-mod type_analysis;
 
 #[cfg(test)]
-mod compatibility_testing;
-mod conversion_codegen;
+mod migration_tests;
+
 
 mod utils {
     pub fn to_screaming_snake_case(s: &str) -> String {
@@ -83,8 +74,8 @@ mod registry {
 
 mod validation {
     use crate::conversion::ConversionStrategy;
-    use crate::field_analysis::FieldProcessingContext;
-    use crate::field_info::{ProtoFieldInfo, RustFieldInfo};
+    use crate::analysis::field_analysis::FieldProcessingContext;
+    use crate::field::info::{ProtoFieldInfo, RustFieldInfo};
 
     #[derive(Debug, Clone)]
     pub struct ValidationError {
@@ -131,8 +122,10 @@ mod validation {
 
 #[proc_macro_derive(Protto, attributes(protto))]
 pub fn proto_convert_derive(input: TokenStream) -> TokenStream {
+    field::field_processor::initialize_migration_system();
+
     let ast: DeriveInput = syn::parse(input).unwrap();
-    let parsed_input = macro_input::parse_derive_input(ast.clone());
+    let parsed_input = analysis::macro_input::parse_derive_input(ast.clone());
 
     let name = parsed_input.name;
 
@@ -155,7 +148,7 @@ pub fn proto_convert_derive(input: TokenStream) -> TokenStream {
                     struct_level_error_fn: &parsed_input.struct_level_error_fn,
                 };
 
-                struct_impl::generate_struct_implementations(config).into()
+                struct_impl::generate_struct_implementations_with_migration(config).into()
             }
             syn::Fields::Unnamed(fields_unnamed) => {
                 tuple_impl::generate_tuple_implementations(&name, fields_unnamed).into()

@@ -1,7 +1,10 @@
-use crate::conversion_strategy::CustomConversionStrategy;
-use crate::error_mode::ErrorMode;
-use crate::field_analysis::FieldProcessingContext;
-use crate::field_conversion::{
+use crate::error::mode::ErrorMode;
+use crate::analysis::{
+    field_analysis::FieldProcessingContext,
+    type_analysis,
+};
+use crate::conversion::custom_strategy::CustomConversionStrategy;
+use crate::field::conversion_strategy::{
     CollectionStrategy, DirectStrategy, FieldConversionStrategy, OptionStrategy,
 };
 use quote::quote;
@@ -387,8 +390,8 @@ fn generate_unwrap_with_error_mode(
 }
 
 fn is_option_vec_type(field_type: &syn::Type) -> bool {
-    crate::type_analysis::get_inner_type_from_option(field_type)
-        .map(|inner| crate::type_analysis::is_vec_type(&inner))
+    type_analysis::get_inner_type_from_option(field_type)
+        .map(|inner| type_analysis::is_vec_type(&inner))
         .unwrap_or(false)
 }
 
@@ -396,7 +399,7 @@ fn is_option_vec_type(field_type: &syn::Type) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::compatibility_testing::test_helpers;
+    use crate::migration::compatibility::test_helpers;
 
     #[test]
     fn test_code_generation_produces_valid_tokens() {

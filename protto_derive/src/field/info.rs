@@ -1,9 +1,12 @@
 use crate::debug::CallStackDebug;
-use crate::expect_analysis::ExpectMode;
-use crate::field_analysis::{CollectionType, FieldProcessingContext};
-use crate::optionality::FieldOptionality;
-use crate::{attribute_parser, type_analysis};
 use quote::quote;
+use crate::analysis::{
+    attribute_parser,
+    expect_analysis::ExpectMode,
+    field_analysis::{CollectionType, FieldProcessingContext,},
+    optionality::FieldOptionality,
+    type_analysis,
+};
 
 #[derive(Clone)]
 pub struct RustFieldInfo {

@@ -1,6 +1,8 @@
-use crate::expect_analysis::ExpectMode;
-use crate::field_analysis::FieldProcessingContext;
-use crate::field_info::RustFieldInfo;
+use crate::field::info::RustFieldInfo;
+use crate::analysis::{
+    expect_analysis::ExpectMode,
+    field_analysis::FieldProcessingContext,
+};
 
 /// Error handling mode that consolidates separate strategies for each error handling approach.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

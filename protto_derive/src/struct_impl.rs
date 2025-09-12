@@ -1,5 +1,13 @@
-use super::*;
-use field_analysis::FieldProcessingContext;
+use quote::quote;
+use crate::debug::CallStackDebug;
+use crate::analysis::{
+    attribute_parser,
+    field_analysis::FieldProcessingContext,
+};
+use crate::struct_impl;
+use crate::field::field_processor;
+use crate::error_handler;
+use crate::debug;
 
 pub struct StructImplConfig<'a> {
     pub name: &'a syn::Ident,
@@ -9,6 +17,94 @@ pub struct StructImplConfig<'a> {
     pub proto_path: &'a syn::Path,
     pub struct_level_error_type: &'a Option<syn::Type>,
     pub struct_level_error_fn: &'a Option<String>,
+}
+
+pub fn generate_struct_implementations_with_migration(
+    config: struct_impl::StructImplConfig,
+) -> proc_macro2::TokenStream {
+    let struct_name = config.name;
+    let fields = config.fields;
+
+    // Generate bidirectional conversions in single pass
+    let mut field_conversions = Vec::new();
+    let mut conversion_errors = Vec::new();
+
+    for field in fields {
+        let field_name = field.ident.as_ref().unwrap();
+
+        let _trace = CallStackDebug::with_context(
+            "generate_struct_implementations_with_migration",
+            config.name,
+            field_name,
+            &[],
+        );
+
+        let error_name = syn::Ident::new(
+            &format!("{}ConversionError", struct_name),
+            proc_macro2::Span::call_site(),
+        );
+
+        let ctx = FieldProcessingContext::new(
+            struct_name,
+            field,
+            &error_name,
+            config.struct_level_error_type,
+            config.struct_level_error_fn,
+            config.proto_module,
+            config.proto_name,
+        );
+
+        match field_processor::generate_bidirectional_field_conversion(field, &ctx) {
+            Ok((proto_to_rust, rust_to_proto)) => {
+                field_conversions.push((field_name, proto_to_rust, rust_to_proto));
+            }
+            Err(error_msg) => {
+                conversion_errors.push((field_name, error_msg));
+            }
+        }
+    }
+
+    // Handle any conversion errors
+    if !conversion_errors.is_empty() {
+        let error_msgs: Vec<String> = conversion_errors
+            .iter()
+            .map(|(field_name, error)| format!("Field '{}': {}", field_name, error))
+            .collect();
+        let combined_error = error_msgs.join("\n");
+        return quote! { compile_error!(#combined_error); };
+    }
+
+    // Generate From and Into implementations
+    let proto_to_rust_fields: Vec<_> = field_conversions
+        .iter()
+        .map(|(_, proto_to_rust, _)| proto_to_rust)
+        .collect();
+    let rust_to_proto_fields: Vec<_> = field_conversions
+        .iter()
+        .map(|(_, _, rust_to_proto)| rust_to_proto)
+        .collect();
+
+    let proto_type_path = format!("{}::{}", config.proto_module, config.proto_name);
+    let proto_type: syn::Path = syn::parse_str(&proto_type_path).unwrap();
+
+    quote! {
+        impl From<#proto_type> for #struct_name {
+            fn from(proto_struct: #proto_type) -> Self {
+                Self {
+                    #(#proto_to_rust_fields),*
+                }
+            }
+        }
+
+        impl Into<#proto_type> for #struct_name {
+            fn into(self) -> #proto_type {
+                let my_struct = self;
+                #proto_type {
+                    #(#rust_to_proto_fields),*
+                }
+            }
+        }
+    }
 }
 
 pub fn generate_struct_implementations(config: StructImplConfig) -> proc_macro2::TokenStream {

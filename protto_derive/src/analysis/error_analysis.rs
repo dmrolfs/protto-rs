@@ -1,5 +1,8 @@
-use super::*;
-use crate::expect_analysis::ExpectMode;
+use crate::analysis::{
+    attribute_parser,
+    expect_analysis::ExpectMode,
+};
+use crate::error_types;
 
 /// Analyzes fields to determine if TryFrom trait is needed
 pub fn requires_try_from(

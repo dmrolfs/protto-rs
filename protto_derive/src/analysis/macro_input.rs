@@ -1,4 +1,5 @@
-use super::*;
+use crate::analysis::attribute_parser;
+use crate::constants;
 
 pub struct ParsedInput {
     pub name: syn::Ident,

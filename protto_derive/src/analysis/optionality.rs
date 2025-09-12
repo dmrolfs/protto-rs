@@ -1,8 +1,11 @@
 use crate::debug::CallStackDebug;
-use crate::expect_analysis::ExpectMode;
-use crate::field_analysis::FieldProcessingContext;
-use crate::{attribute_parser, expect_analysis, type_analysis};
 use quote::{ToTokens, quote};
+use crate::analysis::{
+    attribute_parser,
+    expect_analysis::{self, ExpectMode},
+    field_analysis::FieldProcessingContext,
+    type_analysis,
+};
 
 /// Result of build-time metadata detection for field optionality
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]

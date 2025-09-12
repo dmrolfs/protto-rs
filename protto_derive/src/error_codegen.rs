@@ -1,5 +1,9 @@
-use super::*;
+use quote::quote;
 use crate::conversion::ConversionStrategy;
+use crate::analysis::{
+    attribute_parser,
+    type_analysis,
+};
 
 /// Generates error handling code for a specific field
 #[allow(clippy::too_many_arguments)]

@@ -1,9 +1,11 @@
-use crate::conversion_strategy::CustomConversionStrategy;
+use crate::conversion::custom_strategy::CustomConversionStrategy;
 use crate::debug::CallStackDebug;
-use crate::error_mode::ErrorMode;
-use crate::field_analysis::FieldProcessingContext;
-use crate::field_info::{ProtoFieldInfo, RustFieldInfo};
-use crate::{field_info, type_analysis};
+use crate::error::mode::ErrorMode;
+use crate::analysis::{
+    field_analysis::FieldProcessingContext,
+    type_analysis,
+};
+use crate::field::info::{self as field_info, ProtoFieldInfo, RustFieldInfo};
 
 /// Consolidated field conversion strategy
 #[derive(Debug, Clone, PartialEq, Eq)]

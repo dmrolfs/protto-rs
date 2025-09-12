@@ -1,4 +1,4 @@
-use crate::field_info::RustFieldInfo;
+use crate::field::info::RustFieldInfo;
 
 /// Consolidated custom function strategy that replaces separate strategies
 /// for each combination of custom functions
@@ -105,7 +105,7 @@ mod tests {
             is_enum: false,
             has_transparent: false,
             has_default: false,
-            expect_mode: crate::expect_analysis::ExpectMode::None,
+            expect_mode: crate::analysis::expect_analysis::ExpectMode::None,
             has_proto_ignore: false,
             from_proto_fn,
             to_proto_fn,

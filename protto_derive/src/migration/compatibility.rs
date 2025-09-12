@@ -1,8 +1,9 @@
+use crate::analysis::field_analysis::{self, FieldProcessingContext};
 use crate::conversion::ConversionStrategy as OldConversionStrategy;
-use crate::field_analysis::{self, FieldProcessingContext};
-use crate::field_conversion::FieldConversionStrategy;
-use crate::field_info::{ProtoFieldInfo, RustFieldInfo};
-use quote::quote;
+use crate::field::{
+    conversion_strategy::{FieldConversionStrategy, },
+    info::{ProtoFieldInfo, RustFieldInfo},
+};
 
 /// Results from running both old and new strategy selection systems
 #[derive(Debug, Clone)]
@@ -250,14 +251,14 @@ impl CompatibilityReport {
 
 #[cfg(test)]
 mod tests {
+    use crate::field::conversion_strategy;
     use super::*;
-    use crate::field_conversion;
 
     #[test]
     fn test_strategy_equivalence_detection() {
         let old_direct = OldConversionStrategy::DirectAssignment;
         let new_direct =
-            FieldConversionStrategy::Direct(field_conversion::DirectStrategy::Assignment);
+            FieldConversionStrategy::Direct(conversion_strategy::DirectStrategy::Assignment);
 
         assert!(StrategyCompatibilityTester::strategies_are_equivalent(
             &old_direct,
@@ -290,13 +291,37 @@ mod tests {
         assert!(!report.all_tests_passed()); // Not all code matches
         assert_eq!(report.get_strategy_mismatches().len(), 0); // No results to check
     }
+
+    #[test]
+    fn test_comprehensive_compatibility() {
+        let test_suite = test_helpers::create_comprehensive_test_suite();
+        let report = test_suite.run_all_tests();
+
+        report.print_summary();
+
+        if !report.all_tests_passed() {
+            println!("Issues found:");
+            for mismatch in report.get_strategy_mismatches() {
+                println!(
+                    "Strategy mismatch: {}.{}",
+                    mismatch.struct_name, mismatch.field_name
+                );
+            }
+            for mismatch in report.get_code_mismatches() {
+                println!(
+                    "Code mismatch: {}.{}",
+                    mismatch.struct_name, mismatch.field_name
+                );
+            }
+        }
+    }
 }
 
 // Helper functions for creating test contexts and mock data
 #[cfg(test)]
 pub mod test_helpers {
-    use syn::parse::Parser;
     use super::*;
+    use syn::parse::Parser;
 
     /// Create a mock field processing context for testing
     pub fn create_mock_context(
@@ -313,10 +338,10 @@ pub mod test_helpers {
         let mut attrs = Vec::new();
         for attr_str in attributes {
             if !attr_str.is_empty() {
-                let attr_tokens: proc_macro2::TokenStream = format!("#[protto({})]", attr_str).parse().unwrap();
-                let attrs_parsed: Vec<syn::Attribute> = syn::Attribute::parse_outer
-                    .parse2(attr_tokens)
-                    .unwrap();
+                let attr_tokens: proc_macro2::TokenStream =
+                    format!("#[protto({})]", attr_str).parse().unwrap();
+                let attrs_parsed: Vec<syn::Attribute> =
+                    syn::Attribute::parse_outer.parse2(attr_tokens).unwrap();
                 attrs.extend(attrs_parsed);
             }
         }

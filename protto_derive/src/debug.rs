@@ -323,7 +323,10 @@ pub fn should_output_debug(name: impl Display, _field_name: impl Display) -> boo
 /// - Suffix glob: "*Request"
 /// - Contains glob: "*Track*"
 /// - Multiple patterns: "Request,Track*,*Response"
-fn matches_debug_pattern(pattern: &str, name: &str) -> bool {
+fn matches_debug_pattern(pattern: impl AsRef<str>, name: impl AsRef<str>) -> bool {
+    let pattern = pattern.as_ref();
+    let name = name.as_ref();
+
     if pattern == "all" {
         return true;
     }
@@ -496,18 +499,18 @@ impl CallStackDebug {
     }
 
     /// Log a checkpoint within the function
-    pub fn checkpoint(&self, message: &str) {
+    pub fn checkpoint(&self, message: impl AsRef<str>) {
         if self.enabled {
             let indent = "  ".repeat(self.depth);
-            eprintln!("{}│  ✓ {}", indent, message);
+            eprintln!("{}│  ✓ {}", indent, message.as_ref());
         }
     }
 
     /// Log a checkpoint with data
-    pub fn checkpoint_data(&self, message: &str, data: &[(&str, &str)]) {
+    pub fn checkpoint_data(&self, message: impl AsRef<str>, data: &[(&str, &str)]) {
         if self.enabled {
             let indent = "  ".repeat(self.depth);
-            eprintln!("{}│  ✓ {}", indent, message);
+            eprintln!("{}│  ✓ {}", indent, message.as_ref());
             for (key, value) in data {
                 eprintln!("{}│    {}: {}", indent, key, value);
             }
@@ -515,19 +518,19 @@ impl CallStackDebug {
     }
 
     /// Log an error or warning
-    pub fn error(&self, message: &str) {
+    pub fn error(&self, message: impl AsRef<str>) {
         if self.enabled {
             let indent = "  ".repeat(self.depth);
-            eprintln!("{}│  ❌ ERROR: {}", indent, message);
+            eprintln!("{}│  ❌ ERROR: {}", indent, message.as_ref());
         }
     }
 
     /// Log an error with context data
     #[allow(unused)]
-    pub fn error_data(&self, message: &str, data: &[(&str, &str)]) {
+    pub fn error_data(&self, message: impl AsRef<str>, data: &[(&str, &str)]) {
         if self.enabled {
             let indent = "  ".repeat(self.depth);
-            eprintln!("{}│  ⌘ ERROR: {}", indent, message);
+            eprintln!("{}│  ⌘ ERROR: {}", indent, message.as_ref());
             for (key, value) in data {
                 eprintln!("{}│    {}: {}", indent, key, value);
             }
@@ -635,13 +638,13 @@ impl CallStackDebug {
     pub fn error_condition(
         &self,
         error_type: &str,
-        details: &str,
+        details: impl AsRef<str>,
         suggested_fix: Option<&str>,
     ) -> &Self {
         if self.enabled {
             let indent = "  ".repeat(self.depth);
             eprintln!("{}│  ❌ ERROR: {}", indent, error_type);
-            eprintln!("{}│    📝 Details: {}", indent, details);
+            eprintln!("{}│    📝 Details: {}", indent, details.as_ref());
             if let Some(fix) = suggested_fix {
                 eprintln!("{}│    💡 Fix: {}", indent, fix);
             }

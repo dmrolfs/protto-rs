@@ -1,10 +1,17 @@
-use super::*;
+use quote::quote;
 use crate::conversion::ConversionStrategy;
 use crate::debug::CallStackDebug;
-use crate::expect_analysis::ExpectMode;
-use crate::field_info::{ProtoFieldInfo, ProtoMapping, RustFieldInfo};
-use crate::field_processor::generate_default_value;
+use crate::field::{
+    info::{ProtoFieldInfo, ProtoMapping, RustFieldInfo},
+    field_processor::generate_default_value,
+};
 use crate::validation::ValidationError;
+use crate::analysis::{
+    attribute_parser,
+    expect_analysis::ExpectMode,
+    type_analysis,
+};
+use crate::error_handler;
 
 pub fn generate_field_conversions(
     field: &syn::Field,

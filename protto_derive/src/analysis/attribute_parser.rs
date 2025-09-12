@@ -1,5 +1,11 @@
-use super::*;
-use crate::optionality::FieldOptionality;
+use quote::quote;
+use syn::{Attribute, Expr, Field, Lit, Meta};
+use syn::parse::Parser;
+use syn::punctuated::Punctuated;
+use syn::token::Comma;
+use crate::analysis::optionality::FieldOptionality;
+use crate::constants;
+
 
 #[derive(Debug, Default, Clone)]
 pub struct ProtoFieldMeta {

@@ -1,4 +1,5 @@
-use super::*;
+use quote::quote;
+use crate::analysis::attribute_parser;
 
 /// Generates the default error name for a struct
 pub fn default_error_name(struct_name: &syn::Ident) -> syn::Ident {
