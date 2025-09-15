@@ -366,7 +366,7 @@ fn generate_unwrap_with_error_mode(
         ErrorMode::Error => {
             quote! {
                 #field_name: proto_struct.#proto_field
-                    .ok_or_else(|| ConversionError::MissingField(stringify!(#proto_field).to_string()))?
+                    .ok_or_else(|| ValidationError::missing_field(stringify!(#proto_field)))?
                     .into()
             }
         }

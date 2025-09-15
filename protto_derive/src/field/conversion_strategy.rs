@@ -98,6 +98,11 @@ impl FieldConversionStrategy {
             Self::Collection(Self::determine_collection_strategy(
                 ctx, rust, proto, &trace,
             ))
+        } else if rust.has_default || ctx.default_fn.is_some() {
+            // Handle fields with default values - they need unwrap with default fallback
+            trace.decision("default_field", "Field has default value");
+            let error_mode = ErrorMode::from_field_context(ctx, rust);
+            Self::Option(OptionStrategy::Unwrap(error_mode))
         } else {
             // Handle optionality patterns (simple 2x2 matrix)
             let rust_optional = rust.is_option;

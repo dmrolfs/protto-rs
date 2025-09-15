@@ -124,10 +124,12 @@ pub fn generate_struct_implementations(config: StructImplConfig) -> proc_macro2:
     );
 
     //todo: refactor to perform a single interation on fields w dual generation
-    let from_proto_fields: Vec<_> =
-        generate_from_proto_fields(config.fields, &config, &error_name).collect();
-    let from_my_fields: Vec<_> =
-        generate_from_my_fields(config.fields, &config, &error_name).collect();
+    let from_proto_fields: Vec<_> = generate_from_proto_fields(config.fields, &config, &error_name)
+        .filter(|ts| !ts.is_empty())  // DMR: Filter out empty TokenStreams from ignored fields
+        .collect();
+    let from_my_fields: Vec<_> = generate_from_my_fields(config.fields, &config, &error_name)
+        .filter(|ts| !ts.is_empty())  // DMR: Filter out empty TokenStreams from ignored fields
+        .collect();
 
     let name = config.name;
     let proto_path = config.proto_path;

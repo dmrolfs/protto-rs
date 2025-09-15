@@ -21,7 +21,7 @@ pub fn generate_bidirectional_field_conversion(
         &[
             ("rust_field_type", &quote!(ctx.field_type).to_string()),
             ("proto_field_ident", &ctx.proto_field_ident.to_string()),
-            ("migration_mode", "enabled"),
+            ("migration_mode", &format!("{:?}", migration::get_global_migration())),
         ],
     );
 

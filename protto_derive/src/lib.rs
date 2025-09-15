@@ -3,6 +3,7 @@ use proc_macro2::Span;
 use quote::quote;
 use syn::parse::Parser;
 use syn::{self, DeriveInput, };
+use crate::debug::CallStackDebug;
 
 mod constants {
     pub const PRIMITIVE_TYPES: &[&str] =
@@ -26,9 +27,6 @@ mod field;
 mod migration;
 mod struct_impl;
 mod tuple_impl;
-
-#[cfg(test)]
-mod migration_tests;
 
 
 mod utils {
@@ -128,6 +126,13 @@ pub fn proto_convert_derive(input: TokenStream) -> TokenStream {
     let parsed_input = analysis::macro_input::parse_derive_input(ast.clone());
 
     let name = parsed_input.name;
+    
+    let _trace = CallStackDebug::with_context(
+        "derive Protto trait",
+        &name,
+        "",
+        &[("migration", &format!("{:?}", migration::get_global_migration())),]
+    );
 
     // -- phase 1 - check if this is an enum type with #[proto(enum)] --
     if let syn::Data::Enum(_) = &ast.data {
@@ -135,7 +140,7 @@ pub fn proto_convert_derive(input: TokenStream) -> TokenStream {
     }
 
     // -- phase 2 - process the struct/enum --
-    match &ast.data {
+    let generated = match &ast.data {
         syn::Data::Struct(data_struct) => match &data_struct.fields {
             syn::Fields::Named(fields_named) => {
                 let config = struct_impl::StructImplConfig {
@@ -163,5 +168,15 @@ pub fn proto_convert_derive(input: TokenStream) -> TokenStream {
                 .into()
         }
         _ => panic!("Protto only supports structs and enums, not unions"),
-    }
+    };
+
+    _trace.generated_code(
+        &generated,
+        name,
+        "",
+        "bidirectional_proto_to_rust",
+        &[],
+    );
+
+    generated.into()
 }

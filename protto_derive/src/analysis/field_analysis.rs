@@ -455,7 +455,7 @@ impl FieldAnalysis {
             // -- Ignore fields - not included in proto struct --
             ConversionStrategy::ProtoIgnore => {
                 _trace.decision("ProtoIgnore", "return empty - field not in proto");
-                quote! {}
+                proc_macro2::TokenStream::new()
             }
 
             // -- Custom derive functions --

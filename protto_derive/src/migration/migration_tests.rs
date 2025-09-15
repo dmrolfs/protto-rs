@@ -2,9 +2,24 @@ use crate::migration::compatibility::{StrategyCompatibilityTester, test_helpers}
 use crate::migration::config;
 
 #[cfg(test)]
+pub fn with_env_var<F>(key: &str, value: &str, test: F)
+where F: FnOnce() {
+    unsafe {
+        let old_value = std::env::var(key).ok();
+        std::env::set_var(key, value);
+        test();
+        match old_value {
+            Some(val) => std::env::set_var(key, val),
+            None => std::env::remove_var(key),
+        }
+    }
+}
+
+#[cfg(test)]
 mod baseline_migration_test {
     use crate::analysis::field_analysis;
     use crate::migration::config;
+    use crate::migration::migration_tests::with_env_var;
 
     #[test]
     fn test_migration_framework_baseline() {
@@ -34,15 +49,14 @@ mod baseline_migration_test {
             }
         }
 
-        unsafe {
-            std::env::set_var("PROTTO_MIGRATION_MODE", "validate_both");
-        }
-        config::from_env();
-        println!("✓ Environment configuration: OK");
-
-        unsafe {
-            std::env::remove_var("PROTTO_MIGRATION_MODE");
-        }
+        with_env_var(
+            "PROTTO_MIGRATION_MODE",
+            "validate_both",
+            || {
+                config::from_env();
+                println!("✓ Environment configuration: OK");
+            }
+        );
 
         println!("Migration framework baseline: OK");
     }
