@@ -51,6 +51,7 @@ pub fn generate_error_handling(
     struct_level_error_fn: &Option<String>,
 ) -> proc_macro2::TokenStream {
     let _trace = CallStackDebug::with_context(
+        "error_handler",
         "generate_error_handling_with_strategy",
         field_name.to_string(),
         proto_field_ident.to_string(),

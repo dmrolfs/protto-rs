@@ -15,6 +15,7 @@ pub fn generate_bidirectional_field_conversion(
     ctx: &FieldProcessingContext,
 ) -> Result<(proc_macro2::TokenStream, proc_macro2::TokenStream), MigrationError> {
     let _trace = CallStackDebug::with_context(
+        "field::field_processor",
         "generate_bidirectional_field_conversion",
         ctx.struct_name,
         ctx.field_name,
@@ -61,6 +62,7 @@ pub fn generate_from_proto_field(
     ctx: &FieldProcessingContext,
 ) -> proc_macro2::TokenStream {
     let _trace = CallStackDebug::with_context(
+        "field::field_processor",
         "generate_from_proto_field",
         ctx.struct_name,
         ctx.field_name,
@@ -81,7 +83,12 @@ pub fn generate_from_my_field(
     field: &syn::Field,
     ctx: &FieldProcessingContext,
 ) -> proc_macro2::TokenStream {
-    let _trace = CallStackDebug::new("generate_from_my_field", ctx.struct_name, ctx.field_name);
+    let _trace = CallStackDebug::new(
+        "field::field_processor",
+        "generate_from_my_field",
+        ctx.struct_name,
+        ctx.field_name
+    );
 
     generate_bidirectional_field_conversion(field, ctx)
         .map(|(_, to_proto)| to_proto)

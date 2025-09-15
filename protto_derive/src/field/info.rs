@@ -151,7 +151,8 @@ impl ProtoFieldInfo {
         rust_field: &RustFieldInfo,
     ) -> Self {
         let _trace = CallStackDebug::with_context(
-            "ProtoFieldInfo::infer_from",
+            "field::info::ProtoFieldInfo",
+            "infer_from",
             ctx.struct_name,
             ctx.field_name,
             &[

@@ -71,7 +71,8 @@ impl FieldConversionStrategy {
         proto: &ProtoFieldInfo,
     ) -> Self {
         let trace = CallStackDebug::with_context(
-            "ConsolidatedStrategy::from_field_info",
+            "field::conversion_strategy::ConsolidatedStrategy",
+            "from_field_info",
             ctx.struct_name,
             ctx.field_name,
             &[

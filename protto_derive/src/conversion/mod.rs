@@ -307,7 +307,8 @@ impl ConversionStrategy {
         proto: &ProtoFieldInfo,
     ) -> Self {
         let _trace = CallStackDebug::with_context(
-            "ConversionStrategy::from_field_info",
+            "conversion::ConversionStrategy",
+            "from_field_info",
             ctx.struct_name,
             ctx.field_name,
             &[

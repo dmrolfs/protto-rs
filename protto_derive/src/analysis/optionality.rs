@@ -46,6 +46,7 @@ impl FieldOptionality {
 impl FieldOptionality {
     pub fn from_field_context(ctx: &FieldProcessingContext, field: &syn::Field) -> Self {
         let _trace = CallStackDebug::with_context(
+            "analysis::optionality::FieldOptionality",
             "from_field_context",
             ctx.struct_name,
             ctx.field_name,
@@ -75,6 +76,7 @@ impl FieldOptionality {
 
     fn infer_from_patterns(ctx: &FieldProcessingContext, field: &syn::Field) -> Option<Self> {
         let _trace = CallStackDebug::with_context(
+            "analysis::optionality::FieldOptionality",
             "infer_from_patterns",
             ctx.struct_name,
             ctx.field_name,
@@ -166,11 +168,11 @@ impl FieldOptionality {
 
         if result {
             CallStackDebug::new(
+                "analysis::optionality::FieldOptionality",
                 "has_explicit_optional_usage_indicators",
                 ctx.struct_name,
                 ctx.field_name,
-            )
-            .checkpoint_data(
+            ).checkpoint_data(
                 "explicit_usage_found",
                 &[
                     ("has_explicit_expect", &has_explicit_expect.to_string()),
@@ -201,6 +203,7 @@ impl FieldOptionality {
 
                 if is_custom {
                     CallStackDebug::new(
+                        "analysis::optionality::FieldOptionality",
                         "is_custom_type_without_optional_indicators",
                         ctx.struct_name,
                         ctx.field_name,

@@ -18,6 +18,7 @@ pub fn generate_field_conversions(
     ctx: &FieldProcessingContext,
 ) -> Result<(proc_macro2::TokenStream, proc_macro2::TokenStream), ValidationError> {
     let _trace = CallStackDebug::with_context(
+        "analysis::field_analysis",
         "generate_field_conversions",
         ctx.struct_name,
         ctx.field_name,
@@ -50,7 +51,12 @@ impl FieldAnalysis {
         ctx: &FieldProcessingContext,
         field: &syn::Field,
     ) -> Result<Self, ValidationError> {
-        let _trace = CallStackDebug::new("FieldAnalysis", ctx.struct_name, ctx.field_name);
+        let _trace = CallStackDebug::new(
+            "analysis::field_analysis::FieldAnalysis",
+            "analyze",
+            ctx.struct_name,
+            ctx.field_name
+        );
 
         let rust_field = RustFieldInfo::analyze(ctx, field);
         let proto_field = ProtoFieldInfo::infer_from(ctx, field, &rust_field);
@@ -85,6 +91,7 @@ impl FieldAnalysis {
         ctx: &FieldProcessingContext,
     ) -> proc_macro2::TokenStream {
         let _trace = CallStackDebug::with_context(
+            "analysis::field_analysis::FieldAnalysis",
             "generate_proto_to_rust_conversion",
             ctx.struct_name,
             ctx.field_name,
@@ -442,6 +449,7 @@ impl FieldAnalysis {
         ctx: &FieldProcessingContext,
     ) -> proc_macro2::TokenStream {
         let _trace = CallStackDebug::with_context(
+            "analysis::field_analysis::FieldAnalysis",
             "generate_rust_to_proto_conversion",
             ctx.struct_name,
             ctx.field_name,

@@ -386,7 +386,13 @@ pub struct CallStackDebug {
 
 impl CallStackDebug {
     /// Create a new call stack tracker
-    pub fn new(function_name: &str, struct_name: impl Display, field_name: impl Display) -> Self {
+    pub fn new(
+        code_module: &str,
+        function_name: &str,
+        struct_name: impl Display,
+        field_name: impl Display
+    ) -> Self {
+        let function_name = format!("{code_module}::{function_name}");
         let struct_name = struct_name.to_string();
         let field_name = field_name.to_string();
         let context = format!("{}.{}", struct_name, field_name);
@@ -402,7 +408,7 @@ impl CallStackDebug {
         }
 
         Self {
-            function_name: function_name.to_string(),
+            function_name,
             context,
             depth,
             enabled,
@@ -411,6 +417,7 @@ impl CallStackDebug {
 
     #[allow(unused)]
     pub fn with_struct_field(
+        code_module: &str,
         function_name: &str,
         struct_name: impl Display,
         field: &syn::Field,
@@ -420,17 +427,18 @@ impl CallStackDebug {
             .as_ref()
             .map(|f| f.to_string())
             .unwrap_or_default();
-        Self::new(function_name, struct_name, field_name)
+        Self::new(code_module, function_name, struct_name, field_name)
     }
 
     /// Create a tracker with additional context info
     pub fn with_context(
+        code_module: &str,
         function_name: &str,
         struct_name: impl Display,
         field_name: impl Display,
         extra_context: &[(&str, &str)],
     ) -> Self {
-        let tracker = Self::new(function_name, struct_name, field_name);
+        let tracker = Self::new(code_module, function_name, struct_name, field_name);
 
         if tracker.enabled && !extra_context.is_empty() {
             let indent = "  ".repeat(tracker.depth);

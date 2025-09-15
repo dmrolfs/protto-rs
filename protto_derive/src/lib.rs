@@ -119,7 +119,7 @@ mod validation {
 }
 
 #[proc_macro_derive(Protto, attributes(protto))]
-pub fn proto_convert_derive(input: TokenStream) -> TokenStream {
+pub fn protto_derive(input: TokenStream) -> TokenStream {
     field::field_processor::initialize_migration_system();
 
     let ast: DeriveInput = syn::parse(input).unwrap();
@@ -128,7 +128,8 @@ pub fn proto_convert_derive(input: TokenStream) -> TokenStream {
     let name = parsed_input.name;
     
     let _trace = CallStackDebug::with_context(
-        "derive Protto trait",
+        "protto_derive::lib",
+        "protto_derive",
         &name,
         "",
         &[("migration", &format!("{:?}", migration::get_global_migration())),]

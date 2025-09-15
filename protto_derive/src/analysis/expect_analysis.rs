@@ -17,7 +17,8 @@ impl ExpectMode {
         proto_meta: &attribute_parser::ProtoFieldMeta,
     ) -> ExpectMode {
         let _trace = CallStackDebug::new(
-            "ExpectMode::from_field_meta",
+            "expect_analysis::ExpectMode",
+            "from_field_meta",
             "",
             field
                 .ident
