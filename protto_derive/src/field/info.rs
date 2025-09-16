@@ -10,8 +10,8 @@ use crate::analysis::{
 
 #[derive(Clone)]
 pub struct RustFieldInfo {
+    pub field_name: syn::Ident,
     pub field_type: syn::Type,
-    // pub type_name: String,
     pub is_option: bool,
     pub is_vec: bool,
     pub is_primitive: bool,
@@ -28,6 +28,7 @@ pub struct RustFieldInfo {
 impl std::fmt::Debug for RustFieldInfo {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("RustFieldInfo")
+            .field("field_name", &self.field_name)
             .field("field_type", &quote!(self.field_type).to_string())
             .field("is_option", &self.is_option)
             .field("is_vec", &self.is_vec)
@@ -46,6 +47,7 @@ impl std::fmt::Debug for RustFieldInfo {
 
 impl RustFieldInfo {
     pub fn analyze(ctx: &FieldProcessingContext, field: &syn::Field) -> Self {
+        let field_name = field.ident.as_ref().unwrap().clone();
         let field_type = ctx.field_type.clone();
         let is_option = type_analysis::is_option_type(&field_type);
         let is_vec = type_analysis::is_vec_type(&field_type);
@@ -54,6 +56,7 @@ impl RustFieldInfo {
         let is_enum = type_analysis::is_enum_type(&field_type);
 
         Self {
+            field_name,
             field_type,
             is_option,
             is_vec,

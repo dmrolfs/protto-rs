@@ -16,6 +16,9 @@ pub enum FieldConversionStrategy {
     /// Uses custom user-provided functions
     Custom(CustomConversionStrategy),
 
+    /// Custom functions that need error handling
+    CustomWithError(CustomConversionStrategy, ErrorMode),
+
     /// Direct assignment or conversion between compatible types
     Direct(DirectStrategy),
 
@@ -87,9 +90,14 @@ impl FieldConversionStrategy {
         if rust.has_proto_ignore {
             trace.decision("proto_ignore", "Field marked with #[protto(ignore)]");
             Self::Ignore
-        } else if let Some(custom_strategy) = CustomConversionStrategy::from_field_info(rust) {
+        } else if let Some(custom_strategy) = CustomConversionStrategy::from_field_info(ctx.struct_name, rust) {
             trace.decision("custom_functions", "Custom conversion functions detected");
-            Self::Custom(custom_strategy)
+            if Self::custom_needs_error_handling(ctx, rust, proto) {
+                let error_mode = ErrorMode::from_field_context(ctx, rust);
+                Self::CustomWithError(custom_strategy, error_mode)
+            } else {
+                Self::Custom(custom_strategy)
+            }
         } else if rust.has_transparent {
             trace.decision("transparent_field", "Transparent wrapper detected");
             let error_mode = ErrorMode::from_field_context(ctx, rust);
@@ -131,6 +139,43 @@ impl FieldConversionStrategy {
         }
     }
 
+    /// Determine if custom functions need error handling based on field context
+    fn custom_needs_error_handling(
+        ctx: &FieldProcessingContext,
+        rust: &RustFieldInfo,
+        proto: &ProtoFieldInfo,
+    ) -> bool {
+        // Custom functions need error handling when:
+
+        // 1. Explicit error handling attributes
+        if rust.expect_mode != crate::analysis::expect_analysis::ExpectMode::None {
+            return true;
+        }
+
+        // 2. Field has error function specified
+        if ctx.struct_level_error_fn.is_some() {
+            return true;
+        }
+
+        // 3. Proto optional -> Rust required pattern (needs unwrapping)
+        if proto.is_optional() && !rust.is_option {
+            return true;
+        }
+
+        // 4. Collection that might be empty but rust expects content
+        if proto.is_repeated() && rust.is_vec && !rust.has_default && !rust.is_option {
+            return true;
+        }
+
+        // 5. Complex custom types with bidirectional functions get error handling by default (compatibility)
+        if !rust.is_option && !rust.is_primitive && rust.is_custom
+            && rust.from_proto_fn.is_some() && rust.to_proto_fn.is_some() {
+            return true;
+        }
+
+        false
+    }
+
     fn is_collection_conversion(rust: &RustFieldInfo, proto: &ProtoFieldInfo) -> bool {
         rust.is_vec || proto.is_repeated() || Self::is_option_vec_type(&rust.field_type)
     }
@@ -156,9 +201,16 @@ impl FieldConversionStrategy {
             // Check for direct assignment (proto types)
             trace.decision("proto_vec_direct", "Vec<ProtoType> -> direct assignment");
             CollectionStrategy::DirectAssignment
+        } else if rust.has_default {
+            // Only apply error handling for collections when there's a default (matches old system)
+            let error_mode = ErrorMode::from_field_context(ctx, rust);
+            match error_mode {
+                ErrorMode::Error => CollectionStrategy::Collect(ErrorMode::Error),
+                _ => CollectionStrategy::Collect(ErrorMode::Default(ctx.default_fn.clone())),
+            }
         } else {
             trace.decision("standard_collection", "Standard collection conversion");
-            let error_mode = ErrorMode::from_field_context(ctx, rust);
+            let error_mode = ErrorMode::None;
             CollectionStrategy::Collect(error_mode)
         }
     }
@@ -195,11 +247,6 @@ impl FieldConversionStrategy {
     pub fn description(&self) -> &'static str {
         match self {
             Self::Ignore => "field ignored - not in proto",
-            Self::Custom(custom) => match custom {
-                CustomConversionStrategy::FromFn(_) => "custom proto->rust function",
-                CustomConversionStrategy::IntoFn(_) => "custom rust->proto function",
-                CustomConversionStrategy::Bidirectional(_, _) => "bidirectional custom functions",
-            },
             Self::Direct(direct) => match direct {
                 DirectStrategy::Assignment => "direct assignment (no conversion)",
                 DirectStrategy::WithConversion => "direct conversion with Into",
@@ -215,6 +262,26 @@ impl FieldConversionStrategy {
                 CollectionStrategy::MapOption => "map optional vector",
                 CollectionStrategy::DirectAssignment => "direct vector assignment",
             },
+            Self::Custom(custom) | Self::CustomWithError(custom, ErrorMode::None)=> match custom {
+                CustomConversionStrategy::FromFn(_) => "custom proto->rust function",
+                CustomConversionStrategy::IntoFn(_) => "custom rust->proto function",
+                CustomConversionStrategy::Bidirectional(_, _) => "bidirectional custom functions",
+            },
+            Self::CustomWithError(custom, ErrorMode::Error) => match custom {
+                CustomConversionStrategy::FromFn(_) => "custom proto->rust function + error",
+                CustomConversionStrategy::IntoFn(_) => "custom rust->proto function + error",
+                CustomConversionStrategy::Bidirectional(_, _) => "bidirectional custom functions + error",
+            },
+            Self::CustomWithError(custom, ErrorMode::Panic) => match custom {
+                CustomConversionStrategy::FromFn(_) => "custom proto->rust function + panic",
+                CustomConversionStrategy::IntoFn(_) => "custom rust->proto function + panic",
+                CustomConversionStrategy::Bidirectional(_, _) => "bidirectional custom functions + panic",
+            },
+            Self::CustomWithError(custom, ErrorMode::Default(_)) => match custom {
+                CustomConversionStrategy::FromFn(_) => "custom proto->rust function + default",
+                CustomConversionStrategy::IntoFn(_) => "custom rust->proto function + default",
+                CustomConversionStrategy::Bidirectional(_, _) => "bidirectional custom functions + default",
+            },
         }
     }
 
@@ -222,7 +289,7 @@ impl FieldConversionStrategy {
     pub fn category(&self) -> &'static str {
         match self {
             Self::Ignore => "ignore",
-            Self::Custom(_) => "custom",
+            Self::Custom(_) | Self::CustomWithError(_, _) => "custom",
             Self::Direct(_) => "direct",
             Self::Option(_) => "option",
             Self::Transparent(_) => "transparent",
@@ -325,7 +392,9 @@ impl FieldConversionStrategy {
         match self {
             Self::Ignore => Some(crate::conversion::ConversionStrategy::ProtoIgnore),
 
-            Self::Custom(custom) => Some(custom.to_old_strategy()),
+            Self::Custom(custom) | Self::CustomWithError(custom, _) => {
+                Some(custom.to_old_strategy())
+            },
 
             Self::Direct(DirectStrategy::Assignment) => {
                 Some(crate::conversion::ConversionStrategy::DirectAssignment)

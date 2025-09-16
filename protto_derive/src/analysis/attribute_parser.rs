@@ -143,7 +143,7 @@ impl ProtoFieldMeta {
                                         ));
                                     }
                                     // Use a special marker to distinguish from custom default_fn
-                                    meta.default_fn = Some("__USE_DEFAULT_IMPL__".to_string());
+                                    meta.default_fn = Some(constants::USE_DEFAULT_IMPL.to_string());
                                 }
                                 Meta::Path(path) if path.is_ident("default_fn") => {
                                     return Err(format!(

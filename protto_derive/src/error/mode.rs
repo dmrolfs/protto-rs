@@ -29,8 +29,19 @@ impl ErrorMode {
             ExpectMode::None if rust.has_default || ctx.default_fn.is_some() => {
                 Self::Default(ctx.default_fn.clone())
             }
+            ExpectMode::None if Self::custom_functions_need_default_panic(rust) => Self::Panic,
             ExpectMode::None => Self::None,
         }
+    }
+
+    /// Determine if custom functions should get panic behavior by default
+    /// This maintains compatibility with the old system's behavior
+    fn custom_functions_need_default_panic(rust: &RustFieldInfo) -> bool {
+        // Custom bidirectional functions on complex types got panic behavior in old system
+        rust.from_proto_fn.is_some()
+            && rust.to_proto_fn.is_some()  // Bidirectional
+            && !rust.is_primitive           // Complex type
+            && !rust.is_option             // Not already optional
     }
 
     /// Check if this mode requires error handling infrastructure

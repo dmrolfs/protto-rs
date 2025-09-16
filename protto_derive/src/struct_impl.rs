@@ -38,6 +38,8 @@ pub fn generate_struct_implementations_with_migration(
         &error_handler::default_error_name(struct_name),
     );
 
+    let error_name = error_handler::default_error_name(struct_name);
+
     // Generate bidirectional conversions in single pass
     let mut field_conversions = Vec::new();
     let mut conversion_errors = Vec::new();
@@ -52,8 +54,6 @@ pub fn generate_struct_implementations_with_migration(
             field_name,
             &[],
         );
-
-        let error_name = error_handler::default_error_name(struct_name);
 
         let ctx = FieldProcessingContext::new(
             struct_name,
@@ -100,7 +100,7 @@ pub fn generate_struct_implementations_with_migration(
     let proto_type_path = format!("{}::{}", config.proto_module, config.proto_name);
     let proto_type: syn::Path = syn::parse_str(&proto_type_path).unwrap();
 
-    let trait_implementations = if needs_try_from {
+    let from_trait_impl = if needs_try_from {
         quote! {
             impl TryFrom<#proto_type> for #struct_name {
                 type Error = #actual_error_type;
@@ -109,15 +109,6 @@ pub fn generate_struct_implementations_with_migration(
                     Ok(Self {
                         #(#proto_to_rust_fields,)*
                     })
-                }
-            }
-
-            impl Into<#proto_type> for #struct_name {
-                fn into(self) -> #proto_type {
-                    let my_struct = self;
-                    #proto_type {
-                        #(#rust_to_proto_fields,)*
-                    }
                 }
             }
         }
@@ -130,13 +121,15 @@ pub fn generate_struct_implementations_with_migration(
                     }
                 }
             }
+        }
+    };
 
-            impl Into<#proto_type> for #struct_name {
-                fn into(self) -> #proto_type {
-                    let my_struct = self;
-                    #proto_type {
-                        #(#rust_to_proto_fields,)*
-                    }
+    let into_trait_impl = quote! {
+        impl Into<#proto_type> for #struct_name {
+            fn into(self) -> #proto_type {
+                let my_struct = self;
+                #proto_type {
+                    #(#rust_to_proto_fields,)*
                 }
             }
         }
@@ -145,7 +138,8 @@ pub fn generate_struct_implementations_with_migration(
     quote! {
         #conversion_error_def
         #error_conversions
-        #trait_implementations
+        #from_trait_impl
+        #into_trait_impl
     }
 }
 

@@ -11,11 +11,12 @@ pub struct StrategyComparisonResult {
     pub old_strategy: OldConversionStrategy,
     pub new_strategy: FieldConversionStrategy,
     pub strategies_match: bool,
-    pub old_proto_to_rust: proc_macro2::TokenStream,
-    pub old_rust_to_proto: proc_macro2::TokenStream,
-    pub new_proto_to_rust: proc_macro2::TokenStream,
-    pub new_rust_to_proto: proc_macro2::TokenStream,
-    pub code_generation_matches: bool,
+    pub old_from_proto: proc_macro2::TokenStream,
+    pub old_to_proto: proc_macro2::TokenStream,
+    pub new_from_proto: proc_macro2::TokenStream,
+    pub new_to_proto: proc_macro2::TokenStream,
+    pub from_proto_generation_matches: bool,
+    pub to_proto_generation_matches: bool,
     pub field_name: String,
     pub struct_name: String,
 }
@@ -36,7 +37,7 @@ impl StrategyCompatibilityTester {
             OldConversionStrategy::from_field_info(ctx, field, &rust_field, &proto_field);
 
         // Generate old code
-        let (old_proto_to_rust, old_rust_to_proto) =
+        let (old_from_proto, old_to_proto) =
             field_analysis::generate_field_conversions(field, ctx)
                 .map_err(|e| format!("Old system code generation failed: {:?}", e))?;
 
@@ -45,29 +46,34 @@ impl StrategyCompatibilityTester {
             FieldConversionStrategy::from_field_info(ctx, field, &rust_field, &proto_field);
 
         // Generate new code (placeholder - we'll implement this in later steps)
-        let (new_proto_to_rust, new_rust_to_proto) =
-            Self::generate_new_field_conversions(&new_strategy, ctx);
+        let (new_from_proto, new_to_proto) =
+            Self::generate_new_field_conversions(&new_strategy, ctx, field);
 
         // Compare strategies
         let strategies_match = Self::strategies_are_equivalent(&old_strategy, &new_strategy);
 
         // Compare generated code
-        let code_generation_matches = Self::compare_generated_code(
-            &old_proto_to_rust,
-            &old_rust_to_proto,
-            &new_proto_to_rust,
-            &new_rust_to_proto,
+        let from_proto_generation_matches = Self::compare_generated_code(
+            "from_proto",
+            &old_from_proto,
+            &new_from_proto
+        );
+        let to_proto_generation_matches = Self::compare_generated_code(
+            "to_proto",
+            &old_to_proto,
+            &new_to_proto
         );
 
         Ok(StrategyComparisonResult {
             old_strategy,
             new_strategy,
             strategies_match,
-            old_proto_to_rust,
-            old_rust_to_proto,
-            new_proto_to_rust,
-            new_rust_to_proto,
-            code_generation_matches,
+            old_from_proto,
+            old_to_proto,
+            new_from_proto,
+            new_to_proto,
+            from_proto_generation_matches,
+            to_proto_generation_matches,
             field_name: ctx.field_name.to_string(),
             struct_name: ctx.struct_name.to_string(),
         })
@@ -79,8 +85,11 @@ impl StrategyCompatibilityTester {
         new: &FieldConversionStrategy,
     ) -> bool {
         // Try to map old strategy to new and see if it matches
-        if let Some(mapped_new) = FieldConversionStrategy::from_old_strategy(old) {
-            &mapped_new == new
+        if let Some(mapped_new) = FieldConversionStrategy::from_old_strategy(old)
+        && &mapped_new == new {
+            true
+        } else if let Some(mapped_old) = new.to_old_strategy() && &mapped_old == old {
+            true
         } else {
             // If we can't map the old strategy, they don't match
             false
@@ -89,21 +98,17 @@ impl StrategyCompatibilityTester {
 
     /// Compare generated code (simplified comparison for now)
     fn compare_generated_code(
-        old_proto_to_rust: &proc_macro2::TokenStream,
-        old_rust_to_proto: &proc_macro2::TokenStream,
-        new_proto_to_rust: &proc_macro2::TokenStream,
-        new_rust_to_proto: &proc_macro2::TokenStream,
+        label: &str,
+        old: &proc_macro2::TokenStream,
+        new: &proc_macro2::TokenStream
     ) -> bool {
         // For now, just compare the string representations
         // In a real implementation, you might want more sophisticated comparison
-        let old_proto_str = old_proto_to_rust.to_string();
-        let new_proto_str = new_proto_to_rust.to_string();
-        let old_rust_str = old_rust_to_proto.to_string();
-        let new_rust_str = new_rust_to_proto.to_string();
+        let old_str = Self::normalize_code(&old.to_string());
+        let new_str = Self::normalize_code(&new.to_string());
 
-        // Normalize whitespace for comparison
-        Self::normalize_code(&old_proto_str) == Self::normalize_code(&new_proto_str)
-            && Self::normalize_code(&old_rust_str) == Self::normalize_code(&new_rust_str)
+        eprintln!("{label}\nold_str: {old_str}\nnew_str: {new_str}\n");
+        old_str == new_str
     }
 
     /// Normalize code for comparison by removing extra whitespace
@@ -115,9 +120,10 @@ impl StrategyCompatibilityTester {
     pub fn generate_new_field_conversions(
         strategy: &FieldConversionStrategy,
         ctx: &FieldProcessingContext,
+        field: &syn::Field,
     ) -> (proc_macro2::TokenStream, proc_macro2::TokenStream) {
-        let proto_to_rust = strategy.generate_proto_to_rust_conversion(ctx);
-        let rust_to_proto = strategy.generate_rust_to_proto_conversion(ctx);
+        let proto_to_rust = strategy.generate_proto_to_rust_conversion(ctx, field);
+        let rust_to_proto = strategy.generate_rust_to_proto_conversion(ctx, field);
         (proto_to_rust, rust_to_proto)
     }
 
@@ -139,7 +145,7 @@ impl StrategyCompatibilityTester {
                     if result.strategies_match {
                         strategy_matches += 1;
                     }
-                    if result.code_generation_matches {
+                    if result.from_proto_generation_matches && result.to_proto_generation_matches {
                         code_matches += 1;
                     }
                     results.push(result);
@@ -237,7 +243,7 @@ impl CompatibilityReport {
     pub fn get_code_mismatches(&self) -> Vec<&StrategyComparisonResult> {
         self.results
             .iter()
-            .filter(|r| !r.code_generation_matches)
+            .filter(|r| !r.from_proto_generation_matches || !r.to_proto_generation_matches)
             .collect()
     }
 
@@ -777,7 +783,7 @@ pub mod test_helpers {
             let strategy_matches = all_results.iter().filter(|r| r.strategies_match).count();
             let code_matches = all_results
                 .iter()
-                .filter(|r| r.code_generation_matches)
+                .filter(|r| r.from_proto_generation_matches && r.to_proto_generation_matches)
                 .count();
 
             CompatibilityReport {

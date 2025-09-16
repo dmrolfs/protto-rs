@@ -12,7 +12,7 @@ mod constants {
 
     pub const PROTTO_ATTRIBUTE: &str = "protto";
     pub const DEFAULT_CONVERSION_ERROR_SUFFIX: &str = "ConversionError";
-    pub const USE_DEFAULT_IMPL: &str = "__USE_DEFAULT_IMPL__";
+    pub const USE_DEFAULT_IMPL: &str = "Default::default";
 }
 
 mod analysis;

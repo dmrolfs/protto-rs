@@ -16,7 +16,7 @@ pub enum MigrationMode {
     /// Use old system only (current production mode)
     OldOnly,
     /// Use new system with old system as fallback
-    NewWithFallback,
+    // NewWithFallback,
     /// Use new system only (target end state)
     NewOnly,
     /// Run both systems and validate they produce identical results
@@ -27,7 +27,7 @@ impl std::fmt::Display for MigrationMode {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
             Self::OldOnly => write!(f, "Old Only"),
-            Self::NewWithFallback => write!(f, "New With Fallback"),
+            // Self::NewWithFallback => write!(f, "New With Fallback"),
             Self::NewOnly => write!(f, "New Only"),
             Self::ValidateBoth => write!(f, "Validate Both"),
         }
@@ -39,7 +39,7 @@ impl std::fmt::Display for MigrationMode {
 pub struct FieldConversionMigration {
     pub mode: MigrationMode,
     validation_enabled: bool,
-    failure_fallback: bool,
+    // failure_fallback: bool,
 }
 
 impl FieldConversionMigration {
@@ -48,7 +48,7 @@ impl FieldConversionMigration {
         Self {
             mode,
             validation_enabled: matches!(mode, MigrationMode::ValidateBoth),
-            failure_fallback: matches!(mode, MigrationMode::NewWithFallback),
+            // failure_fallback: matches!(mode, MigrationMode::NewWithFallback),
         }
     }
 
@@ -58,11 +58,11 @@ impl FieldConversionMigration {
         self
     }
 
-    /// Enable/disable fallback on new system failures
-    pub fn with_fallback(mut self, enabled: bool) -> Self {
-        self.failure_fallback = enabled;
-        self
-    }
+    // /// Enable/disable fallback on new system failures
+    // pub fn with_fallback(mut self, enabled: bool) -> Self {
+    //     self.failure_fallback = enabled;
+    //     self
+    // }
 }
 
 /// Global migration configuration
@@ -92,7 +92,7 @@ pub fn get_global_migration() -> &'static FieldConversionMigration {
 pub fn configure_migration_from_env() -> MigrationMode {
     match std::env::var("PROTTO_MIGRATION_MODE").as_deref() {
         Ok("old_only") => MigrationMode::OldOnly,
-        Ok("new_with_fallback") => MigrationMode::NewWithFallback,
+        // Ok("new_with_fallback") => MigrationMode::NewWithFallback,
         Ok("new_only") => MigrationMode::NewOnly,
         Ok("validate_both") => MigrationMode::ValidateBoth,
         _ => MigrationMode::OldOnly, // Safe default
@@ -107,9 +107,9 @@ pub mod config {
         initialize_migration(MigrationMode::OldOnly);
     }
 
-    pub fn new_with_fallback() {
-        initialize_migration(MigrationMode::NewWithFallback);
-    }
+    // pub fn new_with_fallback() {
+    //     initialize_migration(MigrationMode::NewWithFallback);
+    // }
 
     pub fn new_only() {
         initialize_migration(MigrationMode::NewOnly);
@@ -135,9 +135,9 @@ impl FieldConversionMigration {
     ) -> Result<(proc_macro2::TokenStream, proc_macro2::TokenStream), MigrationError> {
         match self.mode {
             MigrationMode::OldOnly => self.generate_with_old_system_only(field, ctx),
-            MigrationMode::NewWithFallback => {
-                self.generate_with_new_system_and_fallback(field, ctx)
-            }
+            // MigrationMode::NewWithFallback => {
+            //     self.generate_with_new_system_and_fallback(field, ctx)
+            // }
             MigrationMode::NewOnly => self.generate_with_new_system_only(field, ctx),
             MigrationMode::ValidateBoth => self.generate_with_validation(field, ctx),
         }
@@ -166,13 +166,13 @@ impl FieldConversionMigration {
                 }
                 Ok(result)
             }
-            Err(new_error) if self.failure_fallback => {
-                eprintln!(
-                    "New system failed for {}.{}, falling back to old system: {:?}",
-                    ctx.struct_name, ctx.field_name, new_error
-                );
-                self.generate_with_old_system_only(field, ctx)
-            }
+            // Err(new_error) if self.failure_fallback => {
+            //     eprintln!(
+            //         "New system failed for {}.{}, falling back to old system: {:?}",
+            //         ctx.struct_name, ctx.field_name, new_error
+            //     );
+            //     self.generate_with_old_system_only(field, ctx)
+            // }
             Err(new_error) => Err(new_error),
         }
     }
@@ -203,16 +203,24 @@ impl FieldConversionMigration {
             });
         }
 
-        if !comparison.code_generation_matches {
+        if !comparison.from_proto_generation_matches {
             return Err(MigrationError::CodeGenerationMismatch {
                 field_name: ctx.field_name.to_string(),
-                old_code: comparison.old_proto_to_rust.to_string(),
-                new_code: comparison.new_proto_to_rust.to_string(),
+                old_code: comparison.old_from_proto.to_string(),
+                new_code: comparison.new_from_proto.to_string(),
+            });
+        }
+
+        if !comparison.to_proto_generation_matches {
+            return Err(MigrationError::CodeGenerationMismatch {
+                field_name: ctx.field_name.to_string(),
+                old_code: comparison.old_to_proto.to_string(),
+                new_code: comparison.new_to_proto.to_string(),
             });
         }
 
         // Both systems match, return new system result
-        Ok((comparison.new_proto_to_rust, comparison.new_rust_to_proto))
+        Ok((comparison.new_from_proto, comparison.new_to_proto))
     }
 
     /// Try using the new system
@@ -237,8 +245,8 @@ impl FieldConversionMigration {
         }
 
         // Generate code
-        let proto_to_rust = strategy.generate_proto_to_rust_conversion(ctx);
-        let rust_to_proto = strategy.generate_rust_to_proto_conversion(ctx);
+        let proto_to_rust = strategy.generate_proto_to_rust_conversion(ctx, field);
+        let rust_to_proto = strategy.generate_rust_to_proto_conversion(ctx, field);
 
         Ok((proto_to_rust, rust_to_proto))
     }
@@ -288,7 +296,7 @@ impl FieldConversionMigration {
         MigrationStats {
             mode: self.mode,
             validation_enabled: self.validation_enabled,
-            fallback_enabled: self.failure_fallback,
+            // fallback_enabled: self.failure_fallback,
         }
     }
 }
@@ -350,7 +358,7 @@ impl std::error::Error for MigrationError {}
 pub struct MigrationStats {
     pub mode: MigrationMode,
     pub validation_enabled: bool,
-    pub fallback_enabled: bool,
+    // pub fallback_enabled: bool,
 }
 
 
@@ -413,7 +421,7 @@ mod tests {
     fn test_migration_modes() {
         let modes = vec![
             MigrationMode::OldOnly,
-            MigrationMode::NewWithFallback,
+            // MigrationMode::NewWithFallback,
             MigrationMode::NewOnly,
             MigrationMode::ValidateBoth,
         ];
@@ -478,16 +486,16 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_fallback_mode() {
-        let migration =
-            FieldConversionMigration::new(MigrationMode::NewWithFallback).with_fallback(true);
-
-        assert!(migration.failure_fallback);
-
-        let stats = migration.get_migration_stats();
-        assert!(stats.fallback_enabled);
-    }
+    // #[test]
+    // fn test_fallback_mode() {
+    //     let migration =
+    //         FieldConversionMigration::new(MigrationMode::NewWithFallback).with_fallback(true);
+    //
+    //     assert!(migration.failure_fallback);
+    //
+    //     let stats = migration.get_migration_stats();
+    //     assert!(stats.fallback_enabled);
+    // }
 }
 
 // Usage example in your main macro:

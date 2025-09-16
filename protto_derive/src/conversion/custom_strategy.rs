@@ -1,3 +1,5 @@
+use crate::debug::CallStackDebug;
+use crate::error::mode::ErrorMode;
 use crate::field::info::RustFieldInfo;
 
 /// Consolidated custom function strategy that replaces separate strategies
@@ -16,18 +18,38 @@ pub enum CustomConversionStrategy {
 
 impl CustomConversionStrategy {
     /// Detect custom strategy from field analysis
-    pub fn from_field_info(rust: &RustFieldInfo) -> Option<Self> {
-        match (&rust.from_proto_fn, &rust.to_proto_fn) {
+    pub fn from_field_info(name: &syn::Ident, rust: &RustFieldInfo) -> Option<Self> {
+        let _trace = CallStackDebug::with_context(
+            "conversion::custom_strategy::CustomConversionStrategy",
+            "from_field_info",
+            name,
+            &rust.field_name,
+            &[
+                ("from_proto_fn", &format!("{:?}", rust.from_proto_fn)),
+                ("to_proto_fn", &format!("{:?}", rust.to_proto_fn)),
+            ],
+        );
+
+        let strategy = match (&rust.from_proto_fn, &rust.to_proto_fn) {
             (Some(from_fn), Some(into_fn)) => {
                 Some(Self::Bidirectional(from_fn.clone(), into_fn.clone()))
             }
 
-            (Some(from_fn), None) => Some(Self::FromFn(from_fn.clone())),
+            (Some(from_fn), None) => {
+                Some(Self::FromFn(from_fn.clone()))
+            },
 
             (None, Some(into_fn)) => Some(Self::IntoFn(into_fn.clone())),
 
             (None, None) => None,
-        }
+        };
+
+        _trace.checkpoint_data(
+            "custom_conversion_strategy",
+            &[("strategy", &format!("{:?}", strategy)),]
+        );
+
+        strategy
     }
 
     /// Get the proto->rust function name if available
@@ -75,7 +97,9 @@ impl CustomConversionStrategy {
         };
 
         match self {
-            Self::FromFn(path) => validate_path(path, "proto_to_rust"),
+            Self::FromFn(path) => {
+                validate_path(path, "proto_to_rust")
+            },
             Self::IntoFn(path) => validate_path(path, "rust_to_proto"),
             Self::Bidirectional(from_path, into_path) => {
                 validate_path(from_path, "proto_to_rust")?;
@@ -84,6 +108,19 @@ impl CustomConversionStrategy {
             }
         }
     }
+
+    /// Determine if custom function needs error handling
+    fn needs_error_handling(rust: &RustFieldInfo) -> bool {
+        // If field has explicit error handling attributes
+        if rust.expect_mode != crate::analysis::expect_analysis::ExpectMode::None {
+            return true;
+        }
+
+        // Default behavior for custom functions with no explicit error attributes
+        // The old system would apply UnwrapOptionalWithExpect for complex types with custom functions
+        !rust.is_option && !rust.is_primitive && rust.is_custom
+    }
+
 }
 
 #[cfg(test)]
@@ -94,9 +131,11 @@ mod tests {
         from_proto_fn: Option<String>,
         to_proto_fn: Option<String>,
     ) -> RustFieldInfo {
+        let field_name: syn::Ident = syn::parse_str("test_field").unwrap();
         let field_type: syn::Type = syn::parse_str("String").unwrap();
 
         RustFieldInfo {
+            field_name,
             field_type,
             is_option: false,
             is_vec: false,
@@ -114,10 +153,11 @@ mod tests {
 
     #[test]
     fn test_custom_strategy_detection() {
+        let field_name: syn::Ident = syn::parse_str("test_field").unwrap();
         // Test bidirectional
         let rust =
             mock_rust_field_with_fns(Some("from_proto".to_string()), Some("to_proto".to_string()));
-        let strategy = CustomConversionStrategy::from_field_info(&rust);
+        let strategy = CustomConversionStrategy::from_field_info(&field_name, &rust);
         assert_eq!(
             strategy,
             Some(CustomConversionStrategy::Bidirectional(
@@ -128,7 +168,7 @@ mod tests {
 
         // Test proto->rust only
         let rust = mock_rust_field_with_fns(Some("from_proto".to_string()), None);
-        let strategy = CustomConversionStrategy::from_field_info(&rust);
+        let strategy = CustomConversionStrategy::from_field_info(&field_name, &rust);
         assert_eq!(
             strategy,
             Some(CustomConversionStrategy::FromFn("from_proto".to_string()))
@@ -136,7 +176,7 @@ mod tests {
 
         // Test rust->proto only
         let rust = mock_rust_field_with_fns(None, Some("to_proto".to_string()));
-        let strategy = CustomConversionStrategy::from_field_info(&rust);
+        let strategy = CustomConversionStrategy::from_field_info(&field_name, &rust);
         assert_eq!(
             strategy,
             Some(CustomConversionStrategy::IntoFn("to_proto".to_string()))
@@ -144,7 +184,7 @@ mod tests {
 
         // Test no custom functions
         let rust = mock_rust_field_with_fns(None, None);
-        let strategy = CustomConversionStrategy::from_field_info(&rust);
+        let strategy = CustomConversionStrategy::from_field_info(&field_name, &rust);
         assert_eq!(strategy, None);
     }
 
