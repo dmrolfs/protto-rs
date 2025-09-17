@@ -74,7 +74,7 @@ impl FieldConversionStrategy {
         proto: &ProtoFieldInfo,
     ) -> Self {
         let trace = CallStackDebug::with_context(
-            "field::conversion_strategy::ConsolidatedStrategy",
+            "field::conversion_strategy::FieldConsolidatedStrategy",
             "from_field_info",
             ctx.struct_name,
             ctx.field_name,
@@ -108,10 +108,15 @@ impl FieldConversionStrategy {
                 ctx, rust, proto, &trace,
             ))
         } else if rust.has_default || ctx.default_fn.is_some() {
-            // Handle fields with default values - they need unwrap with default fallback
-            trace.decision("default_field", "Field has default value");
-            let error_mode = ErrorMode::from_field_context(ctx, rust);
-            Self::Option(OptionStrategy::Unwrap(error_mode))
+            if rust.is_option && proto.is_optional() {
+                trace.decision("default_field_both_optional", "Field has default + both optional -> Map with default");
+                Self::Option(OptionStrategy::Map) // Map handles the Option<T> -> Option<U> conversion properly
+            } else {
+                // Handle fields with default values - they need unwrap with default fallback
+                trace.decision("default_field", "Field has default value");
+                let error_mode = ErrorMode::from_field_context(ctx, rust);
+                Self::Option(OptionStrategy::Unwrap(error_mode))
+            }
         } else {
             // Handle optionality patterns (simple 2x2 matrix)
             let rust_optional = rust.is_option;
@@ -192,6 +197,18 @@ impl FieldConversionStrategy {
         proto: &ProtoFieldInfo,
         trace: &CallStackDebug,
     ) -> CollectionStrategy {
+        let _trace = CallStackDebug::with_context(
+            "field::converstion_strategy::FieldConversionStrategy",
+            "determine_collection_strategy",
+            ctx.struct_name,
+            &rust.field_name,
+            &[
+                ("rust.has_default", &rust.has_default.to_string()),
+                ("rust.expect_mode", &format!("{:?}", rust.expect_mode)),
+                ("ctx.default_fn", &format!("{:?}", ctx.default_fn)),
+            ]
+        );
+
         if Self::is_option_vec_type(&rust.field_type) {
             trace.decision("option_vec", "Option<Vec<T>> detected");
             CollectionStrategy::MapOption
@@ -201,12 +218,29 @@ impl FieldConversionStrategy {
             // Check for direct assignment (proto types)
             trace.decision("proto_vec_direct", "Vec<ProtoType> -> direct assignment");
             CollectionStrategy::DirectAssignment
-        } else if rust.has_default {
+        } else if rust.has_default || ctx.default_fn.is_some() {
+            trace.decision("collection_with_default", "Collection with default detected");
             // Only apply error handling for collections when there's a default (matches old system)
             let error_mode = ErrorMode::from_field_context(ctx, rust);
             match error_mode {
-                ErrorMode::Error => CollectionStrategy::Collect(ErrorMode::Error),
-                _ => CollectionStrategy::Collect(ErrorMode::Default(ctx.default_fn.clone())),
+                ErrorMode::Error => {
+                    trace.decision("rust_has_default_or_default_fn_w_error", "Vec<ProtoType> -> Standard collection conversion");
+                    CollectionStrategy::Collect(ErrorMode::Error)
+                },
+                ErrorMode::Default(_) => {
+                    let default_fn = if ctx.default_fn.is_none() && rust.has_default {
+                        None
+                    } else {
+                        ctx.default_fn.clone()
+                    };
+
+                    trace.decision("collection_default", "Collection with default value");
+                    CollectionStrategy::Collect(ErrorMode::Default(default_fn))
+                },
+                _ => {
+                    trace.decision("rust_has_default_or_default_fn_wo_error", "Vec<ProtoType> -> Standard collection w default conversion");
+                    CollectionStrategy::Collect(ErrorMode::Default(ctx.default_fn.clone()))
+                },
             }
         } else {
             trace.decision("standard_collection", "Standard collection conversion");

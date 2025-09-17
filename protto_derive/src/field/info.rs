@@ -159,6 +159,7 @@ impl ProtoFieldInfo {
             ctx.struct_name,
             ctx.field_name,
             &[
+                ("is_rust_option", &rust_field.is_option.to_string()),
                 ("is_rust_vec", &rust_field.is_vec.to_string()),
                 ("is_rust_primitive", &rust_field.is_primitive.to_string()),
                 ("is_rust_custom", &rust_field.is_custom.to_string()),
@@ -168,7 +169,7 @@ impl ProtoFieldInfo {
 
         let type_name = Self::infer_proto_type_name(ctx, rust_field);
 
-        if rust_field.from_proto_fn.is_some() || rust_field.to_proto_fn.is_some() {
+        let info = if rust_field.from_proto_fn.is_some() || rust_field.to_proto_fn.is_some() {
             // Priority 1 - Handle custom derive scenarios first
             Self::infer_for_custom_derive(ctx, field, rust_field, type_name, &_trace)
         } else if Self::is_any_collection_type(ctx.field_type) {
@@ -177,7 +178,20 @@ impl ProtoFieldInfo {
         } else {
             // Priority 3 - Handle standard field patterns
             Self::infer_for_standard_field(ctx, field, rust_field, type_name, &_trace)
-        }
+        };
+
+        _trace.checkpoint_data(
+            "proto_field_info",
+            &[
+                ("type_name", &info.type_name),
+                ("is_optional", &info.is_optional().to_string()),
+                ("is_repeated", &info.is_repeated().to_string()),
+                ("mapping", &format!("{:?}", info.mapping)),
+                ("optionality", &format!("{}", info.optionality)),
+            ]
+        );
+
+        info
     }
 
     fn is_any_collection_type(field_type: &syn::Type) -> bool {

@@ -7,3 +7,4 @@
 cc d931a4c6551d7fefc3971897762f43cdf3a174380949e69b9fa588361b32409b # shrinks to status_values = [Some(MovedPermanently), None, None, None]
 cc eb674a654267c4fda5c54805760a16ed1d5d4801a823405b59a24615c05563a5 # shrinks to id = 0, optional_name_val = None, optional_count_val = None, optional_priority_val = None, repeated_tags_val = []
 cc 09d4822a79ef49148c6ff34311eb4dca7176e43e5d9847cb1a512859d5bdedae # shrinks to status_values = [Some(MovedPermanently), Some(MovedPermanently), None, None]
+cc b139966e1c14ccad2f9c7a6af87b97fc075f3e0684821331c19e2909e4699ae1 # shrinks to status_values = [Some(MovedPermanently), Some(MovedPermanently), None, None]
