@@ -69,9 +69,9 @@ impl FieldConversionStrategy {
     /// Create consolidated strategy from field analysis using simplified decision tree
     pub fn from_field_info(
         ctx: &FieldProcessingContext,
-        field: &syn::Field,
-        rust: &RustFieldInfo,
-        proto: &ProtoFieldInfo,
+        _field: &syn::Field,
+        rust_field_info: &RustFieldInfo,
+        proto_field_info: &ProtoFieldInfo,
     ) -> Self {
         let trace = CallStackDebug::with_context(
             "field::conversion_strategy::FieldConsolidatedStrategy",
@@ -79,48 +79,47 @@ impl FieldConversionStrategy {
             ctx.struct_name,
             ctx.field_name,
             &[
-                ("rust_is_option", &rust.is_option.to_string()),
-                ("rust_is_vec", &rust.is_vec.to_string()),
-                ("proto_is_optional", &proto.is_optional().to_string()),
-                ("proto_is_repeated", &proto.is_repeated().to_string()),
+                ("rust_is_option", &rust_field_info.is_option.to_string()),
+                ("rust_is_vec", &rust_field_info.is_vec.to_string()),
+                ("proto_is_optional", &proto_field_info.is_optional().to_string()),
+                ("proto_is_repeated", &proto_field_info.is_repeated().to_string()),
             ],
         );
 
         // Handle special cases first (sequential elimination)
-        if rust.has_proto_ignore {
+        if rust_field_info.has_proto_ignore {
             trace.decision("proto_ignore", "Field marked with #[protto(ignore)]");
             Self::Ignore
-        } else if let Some(custom_strategy) = CustomConversionStrategy::from_field_info(ctx.struct_name, rust) {
+        } else if let Some(custom_strategy) = CustomConversionStrategy::from_field_info(ctx.struct_name, rust_field_info) {
             trace.decision("custom_functions", "Custom conversion functions detected");
-            if Self::custom_needs_error_handling(ctx, rust, proto) {
-                let error_mode = ErrorMode::from_field_context(ctx, rust);
+            if Self::custom_needs_error_handling(ctx, rust_field_info, proto_field_info) {
+                let error_mode = ErrorMode::from_field_context(ctx, rust_field_info);
                 Self::CustomWithError(custom_strategy, error_mode)
             } else {
                 Self::Custom(custom_strategy)
             }
-        } else if rust.has_transparent {
+        } else if rust_field_info.has_transparent {
             trace.decision("transparent_field", "Transparent wrapper detected");
-            let error_mode = ErrorMode::from_field_context(ctx, rust);
+            let error_mode = ErrorMode::from_field_context(ctx, rust_field_info);
             Self::Transparent(error_mode)
-        } else if Self::is_collection_conversion(rust, proto) {
+        } else if Self::is_collection_conversion(rust_field_info, proto_field_info) {
             trace.decision("collection_conversion", "Collection type detected");
             Self::Collection(Self::determine_collection_strategy(
-                ctx, rust, proto, &trace,
+                ctx, rust_field_info, proto_field_info, &trace,
             ))
-        } else if rust.has_default || ctx.default_fn.is_some() {
-            if rust.is_option && proto.is_optional() {
-                trace.decision("default_field_both_optional", "Field has default + both optional -> Map with default");
-                Self::Option(OptionStrategy::Map) // Map handles the Option<T> -> Option<U> conversion properly
+        } else if rust_field_info.has_default || ctx.default_fn.is_some() {
+            if rust_field_info.is_option && proto_field_info.is_optional() && ctx.default_fn.is_none() && !rust_field_info.has_default {
+                trace.decision("map_optional", "Option<T> -> Option<U>");
+                Self::Option(OptionStrategy::Map)
             } else {
-                // Handle fields with default values - they need unwrap with default fallback
                 trace.decision("default_field", "Field has default value");
-                let error_mode = ErrorMode::from_field_context(ctx, rust);
+                let error_mode = ErrorMode::from_field_context(ctx, rust_field_info);
                 Self::Option(OptionStrategy::Unwrap(error_mode))
             }
         } else {
             // Handle optionality patterns (simple 2x2 matrix)
-            let rust_optional = rust.is_option;
-            let proto_optional = proto.is_optional();
+            let rust_optional = rust_field_info.is_option;
+            let proto_optional = proto_field_info.is_optional();
 
             match (rust_optional, proto_optional) {
                 (true, false) => {
@@ -129,7 +128,7 @@ impl FieldConversionStrategy {
                 }
                 (false, true) => {
                     trace.decision("unwrap_optional", "Proto Option<T> -> Rust T");
-                    let error_mode = ErrorMode::from_field_context(ctx, rust);
+                    let error_mode = ErrorMode::from_field_context(ctx, rust_field_info);
                     Self::Option(OptionStrategy::Unwrap(error_mode))
                 }
                 (true, true) => {
@@ -138,7 +137,7 @@ impl FieldConversionStrategy {
                 }
                 (false, false) => {
                     trace.decision("direct_conversion", "Both required -> direct conversion");
-                    Self::Direct(Self::determine_direct_strategy(ctx, rust, proto, &trace))
+                    Self::Direct(Self::determine_direct_strategy(ctx, rust_field_info, proto_field_info, &trace))
                 }
             }
         }
@@ -147,13 +146,13 @@ impl FieldConversionStrategy {
     /// Determine if custom functions need error handling based on field context
     fn custom_needs_error_handling(
         ctx: &FieldProcessingContext,
-        rust: &RustFieldInfo,
-        proto: &ProtoFieldInfo,
+        rust_field_info: &RustFieldInfo,
+        proto_field_info: &ProtoFieldInfo,
     ) -> bool {
         // Custom functions need error handling when:
 
         // 1. Explicit error handling attributes
-        if rust.expect_mode != crate::analysis::expect_analysis::ExpectMode::None {
+        if rust_field_info.expect_mode != crate::analysis::expect_analysis::ExpectMode::None {
             return true;
         }
 
@@ -163,26 +162,29 @@ impl FieldConversionStrategy {
         }
 
         // 3. Proto optional -> Rust required pattern (needs unwrapping)
-        if proto.is_optional() && !rust.is_option {
+        if proto_field_info.is_optional() && !rust_field_info.is_option {
             return true;
         }
 
         // 4. Collection that might be empty but rust expects content
-        if proto.is_repeated() && rust.is_vec && !rust.has_default && !rust.is_option {
+        if proto_field_info.is_repeated() && rust_field_info.is_vec && !rust_field_info.has_default && !rust_field_info.is_option {
             return true;
         }
 
         // 5. Complex custom types with bidirectional functions get error handling by default (compatibility)
-        if !rust.is_option && !rust.is_primitive && rust.is_custom
-            && rust.from_proto_fn.is_some() && rust.to_proto_fn.is_some() {
+        if !rust_field_info.is_option && !rust_field_info.is_primitive && rust_field_info.is_custom
+            && rust_field_info.from_proto_fn.is_some() && rust_field_info.to_proto_fn.is_some() {
             return true;
         }
 
         false
     }
 
-    fn is_collection_conversion(rust: &RustFieldInfo, proto: &ProtoFieldInfo) -> bool {
-        rust.is_vec || proto.is_repeated() || Self::is_option_vec_type(&rust.field_type)
+    fn is_collection_conversion(
+        rust_field_info: &RustFieldInfo,
+        proto_field_info: &ProtoFieldInfo
+    ) -> bool {
+        rust_field_info.is_vec || proto_field_info.is_repeated() || Self::is_option_vec_type(&rust_field_info.field_type)
     }
 
     fn is_option_vec_type(field_type: &syn::Type) -> bool {
@@ -193,42 +195,42 @@ impl FieldConversionStrategy {
 
     fn determine_collection_strategy(
         ctx: &FieldProcessingContext,
-        rust: &RustFieldInfo,
-        proto: &ProtoFieldInfo,
+        rust_field_info: &RustFieldInfo,
+        _proto_field_info: &ProtoFieldInfo,
         trace: &CallStackDebug,
     ) -> CollectionStrategy {
         let _trace = CallStackDebug::with_context(
             "field::converstion_strategy::FieldConversionStrategy",
             "determine_collection_strategy",
             ctx.struct_name,
-            &rust.field_name,
+            &rust_field_info.field_name,
             &[
-                ("rust.has_default", &rust.has_default.to_string()),
-                ("rust.expect_mode", &format!("{:?}", rust.expect_mode)),
+                ("rust.has_default", &rust_field_info.has_default.to_string()),
+                ("rust.expect_mode", &format!("{:?}", rust_field_info.expect_mode)),
                 ("ctx.default_fn", &format!("{:?}", ctx.default_fn)),
             ]
         );
 
-        if Self::is_option_vec_type(&rust.field_type) {
+        if Self::is_option_vec_type(&rust_field_info.field_type) {
             trace.decision("option_vec", "Option<Vec<T>> detected");
             CollectionStrategy::MapOption
-        } else if let Some(inner_type) = type_analysis::get_inner_type_from_vec(&rust.field_type)
+        } else if let Some(inner_type) = type_analysis::get_inner_type_from_vec(&rust_field_info.field_type)
             && type_analysis::is_proto_type(&inner_type, ctx.proto_module)
         {
             // Check for direct assignment (proto types)
             trace.decision("proto_vec_direct", "Vec<ProtoType> -> direct assignment");
             CollectionStrategy::DirectAssignment
-        } else if rust.has_default || ctx.default_fn.is_some() {
+        } else if rust_field_info.has_default || ctx.default_fn.is_some() {
             trace.decision("collection_with_default", "Collection with default detected");
             // Only apply error handling for collections when there's a default (matches old system)
-            let error_mode = ErrorMode::from_field_context(ctx, rust);
+            let error_mode = ErrorMode::from_field_context(ctx, rust_field_info);
             match error_mode {
                 ErrorMode::Error => {
                     trace.decision("rust_has_default_or_default_fn_w_error", "Vec<ProtoType> -> Standard collection conversion");
                     CollectionStrategy::Collect(ErrorMode::Error)
                 },
                 ErrorMode::Default(_) => {
-                    let default_fn = if ctx.default_fn.is_none() && rust.has_default {
+                    let default_fn = if ctx.default_fn.is_none() && rust_field_info.has_default {
                         None
                     } else {
                         ctx.default_fn.clone()
@@ -251,12 +253,12 @@ impl FieldConversionStrategy {
 
     fn determine_direct_strategy(
         ctx: &FieldProcessingContext,
-        rust: &RustFieldInfo,
-        proto: &ProtoFieldInfo,
+        rust_field_info: &RustFieldInfo,
+        proto_field_info: &ProtoFieldInfo,
         trace: &CallStackDebug,
     ) -> DirectStrategy {
         // Check if types are identical or can be directly assigned
-        if Self::types_are_identical(ctx, rust, proto) {
+        if Self::types_are_identical(ctx, rust_field_info, proto_field_info) {
             trace.decision(
                 "identical_types",
                 "Types are identical -> direct assignment",
@@ -270,11 +272,11 @@ impl FieldConversionStrategy {
 
     fn types_are_identical(
         ctx: &FieldProcessingContext,
-        rust: &RustFieldInfo,
-        proto: &ProtoFieldInfo,
+        rust_field_info: &RustFieldInfo,
+        proto_field_info: &ProtoFieldInfo,
     ) -> bool {
-        (rust.is_primitive && proto.mapping == field_info::ProtoMapping::Scalar) // Primitive scalar types
-            || type_analysis::is_proto_type(&rust.field_type, ctx.proto_module) // Proto types (same module)
+        (rust_field_info.is_primitive && proto_field_info.mapping == field_info::ProtoMapping::Scalar) // Primitive scalar types
+            || type_analysis::is_proto_type(&rust_field_info.field_type, ctx.proto_module) // Proto types (same module)
     }
 
     /// Get a human-readable description of this strategy

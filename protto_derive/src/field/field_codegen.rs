@@ -17,6 +17,8 @@ impl FieldConversionStrategy {
         &self,
         ctx: &FieldProcessingContext,
         field: &syn::Field,
+        rust_field_info: &RustFieldInfo,
+        proto_field_info: &ProtoFieldInfo,
     ) -> proc_macro2::TokenStream {
         let field_name = ctx.field_name;
         let proto_field = &ctx.proto_field_ident;
@@ -37,23 +39,17 @@ impl FieldConversionStrategy {
             }
 
             Self::Option(option_strategy) => {
-                generate_option_proto_to_rust(option_strategy, field_name, proto_field, ctx)
+                generate_option_proto_to_rust(option_strategy, field_name, rust_field_info, proto_field, ctx)
             }
 
             Self::Transparent(error_mode) => {
-                let rust_field = RustFieldInfo::analyze(ctx, field);
-                let proto_field_info = ProtoFieldInfo::infer_from(ctx, field, &rust_field);
-
                 if proto_field_info.is_optional() {
-                    generate_transparent_proto_to_rust(error_mode, ctx, &rust_field, &proto_field_info)
+                    generate_transparent_proto_to_rust(error_mode, ctx, &rust_field_info, &proto_field_info)
                 } else {
-                    // DMR: Proto field is required - direct conversion
                     let field_name = ctx.field_name;
                     let proto_field = &ctx.proto_field_ident;
                     let field_type = ctx.field_type;
-                    quote! {
-                        #field_name: #field_type::from(proto_struct.#proto_field)
-                    }
+                    quote! { #field_name: #field_type::from(proto_struct.#proto_field) }
                 }
             },
 
@@ -68,11 +64,11 @@ impl FieldConversionStrategy {
         &self,
         ctx: &FieldProcessingContext,
         field: &syn::Field,
+        rust_field_info: &RustFieldInfo,
+        proto_field_info: &ProtoFieldInfo,
     ) -> proc_macro2::TokenStream {
         let field_name = ctx.field_name;
         let proto_field = &ctx.proto_field_ident;
-        let rust_field = RustFieldInfo::analyze(ctx, field);
-        let proto_field_info = ProtoFieldInfo::infer_from(ctx, field, &rust_field);
 
         match self {
             Self::Ignore => {
@@ -85,7 +81,7 @@ impl FieldConversionStrategy {
                 generate_custom_rust_to_proto(
                     custom_strategy,
                     field_name,
-                    &rust_field,
+                    &rust_field_info,
                     proto_field,
                     &proto_field_info
                 )
@@ -96,14 +92,14 @@ impl FieldConversionStrategy {
             }
 
             Self::Option(option_strategy) => {
-                generate_option_rust_to_proto(option_strategy, field_name, proto_field)
+                generate_option_rust_to_proto(option_strategy, field_name, proto_field, rust_field_info, proto_field_info)
             }
 
             Self::Transparent(error_mode) => {
                 generate_transparent_rust_to_proto(
                     error_mode,
                     field_name,
-                    &rust_field,
+                    &rust_field_info,
                     proto_field,
                     &proto_field_info
                 )
@@ -134,11 +130,11 @@ fn generate_custom_proto_to_rust(
     field: &syn::Field,
     field_name: &syn::Ident,
     proto_field: &syn::Ident,
-    error_mode: Option<&ErrorMode>,
+    _error_mode: Option<&ErrorMode>,
     ctx: &FieldProcessingContext,
 ) -> proc_macro2::TokenStream {
-    let rust_field = RustFieldInfo::analyze(ctx, field);
-    let proto_field_info = ProtoFieldInfo::infer_from(ctx, field, &rust_field);
+    let rust_field_info = RustFieldInfo::analyze(ctx, field);
+    let proto_field_info = ProtoFieldInfo::infer_from(ctx, field, &rust_field_info);
 
     match custom_strategy {
         CustomConversionStrategy::FromFn(fn_path)
@@ -149,7 +145,7 @@ fn generate_custom_proto_to_rust(
             if proto_field_info.is_repeated() {
                 quote! { #field_name: #from_fn(proto_struct.#proto_field) }
             } else if proto_field_info.is_optional() {
-                if rust_field.is_option {
+                if rust_field_info.is_option {
                     quote! { #field_name: #from_fn(proto_struct.#proto_field) }
                 } else {
                     quote! {
@@ -241,6 +237,7 @@ fn generate_direct_proto_to_rust(
 fn generate_option_proto_to_rust(
     option_strategy: &OptionStrategy,
     field_name: &syn::Ident,
+    rust_field_info: &RustFieldInfo,
     proto_field: &syn::Ident,
     ctx: &FieldProcessingContext,
 ) -> proc_macro2::TokenStream {
@@ -249,7 +246,7 @@ fn generate_option_proto_to_rust(
             quote! { #field_name: Some(proto_struct.#proto_field.into()) }
         }
         OptionStrategy::Unwrap(error_mode) => {
-            generate_unwrap_with_error_mode(error_mode, field_name, proto_field, ctx)
+            generate_unwrap_with_error_mode(error_mode, field_name, rust_field_info, proto_field, ctx)
         }
         OptionStrategy::Map => {
             quote! { #field_name: proto_struct.#proto_field.map(|v| v.into()) }
@@ -260,7 +257,7 @@ fn generate_option_proto_to_rust(
 fn generate_transparent_proto_to_rust(
     error_mode: &ErrorMode,
     ctx: &FieldProcessingContext,
-    rust_field: &RustFieldInfo,
+    _rust_field_info: &RustFieldInfo,
     proto_field_info: &ProtoFieldInfo,
 ) -> proc_macro2::TokenStream {
     let field_name = ctx.field_name;
@@ -466,7 +463,7 @@ fn generate_collection_proto_to_rust(
 fn generate_custom_rust_to_proto(
     custom_strategy: &CustomConversionStrategy,
     field_name: &syn::Ident,
-    rust_field: &RustFieldInfo,
+    rust_field_info: &RustFieldInfo,
     proto_field: &syn::Ident,
     proto_field_info: &ProtoFieldInfo,
 ) -> proc_macro2::TokenStream {
@@ -476,7 +473,7 @@ fn generate_custom_rust_to_proto(
             let into_fn: syn::Path =
                 syn::parse_str(fn_path).expect("Failed to parse function path");
 
-            if proto_field_info.is_optional() && !rust_field.is_option {
+            if proto_field_info.is_optional() && !rust_field_info.is_option {
                 quote! { #proto_field: Some(#into_fn(my_struct.#field_name)) }
             } else {
                 quote! { #proto_field: #into_fn(my_struct.#field_name) }
@@ -512,13 +509,17 @@ fn generate_option_rust_to_proto(
     option_strategy: &OptionStrategy,
     field_name: &syn::Ident,
     proto_field: &syn::Ident,
+    rust_field_info: &RustFieldInfo,
+    proto_field_info: &ProtoFieldInfo
 ) -> proc_macro2::TokenStream {
     match option_strategy {
         OptionStrategy::Wrap => {
             quote! { #proto_field: Some(my_struct.#field_name.into()) }
         }
+        OptionStrategy::Unwrap(_) if rust_field_info.is_option && proto_field_info.is_optional() => {
+            quote! { #proto_field: my_struct.#field_name.map(|v| v.into()) }
+        }
         OptionStrategy::Unwrap(_) => {
-            // For rust-to-proto: wrap required rust value in Some()
             quote! { #proto_field: Some(my_struct.#field_name.into()) }
         }
         OptionStrategy::Map => {
@@ -530,12 +531,12 @@ fn generate_option_rust_to_proto(
 fn generate_transparent_rust_to_proto(
     _error_mode: &ErrorMode,
     field_name: &syn::Ident,
-    rust_field: &RustFieldInfo,
+    rust_field_info: &RustFieldInfo,
     proto_field: &syn::Ident,
     proto_field_info: &ProtoFieldInfo,
 ) -> proc_macro2::TokenStream {
     if proto_field_info.is_optional() {
-        type_analysis::get_inner_type_from_option(&rust_field.field_type)
+        type_analysis::get_inner_type_from_option(&rust_field_info.field_type)
             .map(|_inner_type| {
                 quote! { #proto_field: my_struct.#field_name.map(|inner| inner.into()) }
             })
@@ -573,56 +574,57 @@ fn generate_collection_rust_to_proto(
 fn generate_unwrap_with_error_mode(
     error_mode: &ErrorMode,
     field_name: &syn::Ident,
+    rust_field_info: &RustFieldInfo,
     proto_field: &syn::Ident,
     ctx: &FieldProcessingContext,
 ) -> proc_macro2::TokenStream {
     match error_mode {
         ErrorMode::None | ErrorMode::Panic => {
-            // if is_enum_type(ctx.field_type) {
-            //     quote! {
-            //         #field_name: {
-            //             let proto_val = proto_struct.#proto_field
-            //                 .expect(&format!("Proto field {} is required", stringify!(#proto_field)));
-            //             proto_val.try_into().expect(&format!("Invalid enum value: {}", proto_val))
-            //         }
-            //     }
-            // } else {
-                quote! {
-                    #field_name: proto_struct.#proto_field
-                        .expect(&format!("Proto field {} is required", stringify!(#proto_field)))
-                        .into()
-                }
-            // }
+            quote! {
+                #field_name: proto_struct.#proto_field
+                    .expect(&format!("Proto field {} is required", stringify!(#proto_field)))
+                    .into()
+            }
+        }
+        ErrorMode::Error if ctx.proto_meta.error_fn.is_some() => {
+            let error_fn: syn::Path = ctx.proto_meta.error_fn
+                .as_ref()
+                .and_then(|error_fn| syn::parse_str(error_fn).ok())
+                .expect("Failed to parse error function path");
+            quote! {
+                #field_name: proto_struct.#proto_field
+                    .ok_or_else(|| #error_fn(stringify!(#proto_field)))?
+                    .into()
+            }
         }
         ErrorMode::Error => {
-            if let Some(explicit_error_fn) = &ctx.proto_meta.error_fn {
-                let error_fn: syn::Path = syn::parse_str(explicit_error_fn)
-                    .expect("Failed to parse error function path");
-                quote! {
-                    #field_name: proto_struct.#proto_field
-                        .ok_or_else(|| #error_fn(stringify!(#proto_field)))?
-                        .into()
-                }
-            } else {
-                let struct_name = &ctx.struct_name;
-                let error_type_name = format!("{}ConversionError", struct_name);
-                let error_type: syn::Ident = syn::parse_str(&error_type_name)
-                    .expect("Failed to parse error type name");
+            let struct_name = &ctx.struct_name;
+            let error_type_name = format!("{}ConversionError", struct_name);
+            let error_type: syn::Ident = syn::parse_str(&error_type_name)
+                .expect("Failed to parse error type name");
 
-                quote! {
-                    #field_name: proto_struct.#proto_field
-                        .ok_or_else(|| #error_type::MissingField(stringify!(#proto_field).to_string()))?
-                        .into()
-                }
+            quote! {
+                #field_name: proto_struct.#proto_field
+                    .ok_or_else(|| #error_type::MissingField(stringify!(#proto_field).to_string()))?
+                    .into()
+            }
+        }
+        ErrorMode::Default(Some(default_fn)) if rust_field_info.is_option => {
+            let default_fn: syn::Path = syn::parse_str(default_fn)
+                .expect("Failed to parse default function");
+            quote! {
+                #field_name: proto_struct.#proto_field
+                    .map(|v| v.into())
+                    .or_else(|| #default_fn())
             }
         }
         ErrorMode::Default(Some(default_fn)) => {
-            let default_fn_path: syn::Path =
+            let default_fn: syn::Path =
                 syn::parse_str(default_fn).expect("Failed to parse default function");
             quote! {
                 #field_name: proto_struct.#proto_field
                     .map(|v| v.into())
-                    .unwrap_or_else(|| #default_fn_path())
+                    .unwrap_or_else(|| #default_fn())
             }
         }
         ErrorMode::Default(None) => {
@@ -665,16 +667,18 @@ mod tests {
         ];
 
         for (name, strategy) in test_cases {
-            let (field, context) = test_helpers::create_mock_context(
+            let (field, ctx) = test_helpers::create_mock_context(
                 "TestStruct",
                 "test_field",
                 "String",
                 "proto",
                 &[],
             );
+            let rust_field_info = RustFieldInfo::analyze(&ctx, &field);
+            let proto_field_info = ProtoFieldInfo::infer_from(&ctx, &field, &rust_field_info);
 
-            let proto_to_rust = strategy.generate_proto_to_rust_conversion(&context, &field);
-            let rust_to_proto = strategy.generate_rust_to_proto_conversion(&context, &field);
+            let proto_to_rust = strategy.generate_proto_to_rust_conversion(&ctx, &field, &rust_field_info, &proto_field_info);
+            let rust_to_proto = strategy.generate_rust_to_proto_conversion(&ctx, &field, &rust_field_info, &proto_field_info);
 
             // Verify tokens are not empty and parse correctly
             assert!(
@@ -720,15 +724,17 @@ mod tests {
 
         for error_mode in error_modes {
             let strategy = FieldConversionStrategy::Transparent(error_mode.clone());
-            let (field, context) = test_helpers::create_mock_context(
+            let (field, ctx) = test_helpers::create_mock_context(
                 "TestStruct",
                 "test_field",
                 "Option<TransparentWrapper>",
                 "proto",
                 &["transparent"],
             );
+            let rust_field_info = RustFieldInfo::analyze(&ctx, &field);
+            let proto_field_info = ProtoFieldInfo::infer_from(&ctx, &field, &rust_field_info);
 
-            let proto_to_rust = strategy.generate_proto_to_rust_conversion(&context, &field);
+            let proto_to_rust = strategy.generate_proto_to_rust_conversion(&ctx, &field, &rust_field_info, &proto_field_info);
             let code_str = proto_to_rust.to_string();
             println!("Generated code for {:?}: {}", error_mode, code_str);  // DMR: Debug print
 
@@ -766,16 +772,18 @@ mod tests {
 
         for custom_strategy in custom_strategies {
             let strategy = FieldConversionStrategy::Custom(custom_strategy.clone());
-            let (field, context) = test_helpers::create_mock_context(
+            let (field, ctx) = test_helpers::create_mock_context(
                 "TestStruct",
                 "test_field",
                 "CustomType",
                 "proto",
                 &[],
             );
+            let rust_field_info = RustFieldInfo::analyze(&ctx, &field);
+            let proto_field_info = ProtoFieldInfo::infer_from(&ctx, &field, &rust_field_info);
 
-            let proto_to_rust = strategy.generate_proto_to_rust_conversion(&context, &field);
-            let rust_to_proto = strategy.generate_rust_to_proto_conversion(&context, &field);
+            let proto_to_rust = strategy.generate_proto_to_rust_conversion(&ctx, &field, &rust_field_info, &proto_field_info);
+            let rust_to_proto = strategy.generate_rust_to_proto_conversion(&ctx, &field, &rust_field_info, &proto_field_info);
 
             let proto_to_rust_str = proto_to_rust.to_string();
             let rust_to_proto_str = rust_to_proto.to_string();
@@ -823,15 +831,17 @@ mod tests {
 
         for error_mode in error_modes {
             let strategy = FieldConversionStrategy::CustomWithError(custom_strategy.clone(), error_mode.clone());
-            let (field, context) = test_helpers::create_mock_context(
+            let (field, ctx) = test_helpers::create_mock_context(
                 "TestStruct",
                 "test_field",
                 "CustomComplexType",
                 "proto",
                 &["proto_to_rust_fn = \"custom_from\"", "rust_to_proto_fn = \"custom_into\""],
             );
+            let rust_field_info = RustFieldInfo::analyze(&ctx, &field);
+            let proto_field_info = ProtoFieldInfo::infer_from(&ctx, &field, &rust_field_info);
 
-            let proto_to_rust = strategy.generate_proto_to_rust_conversion(&context, &field);
+            let proto_to_rust = strategy.generate_proto_to_rust_conversion(&ctx, &field, &rust_field_info, &proto_field_info);
             let code_str = proto_to_rust.to_string();
 
             // Should contain the custom function name

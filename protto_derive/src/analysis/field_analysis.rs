@@ -41,8 +41,8 @@ pub fn generate_field_conversions(
 
 #[derive(Debug, Clone)]
 pub struct FieldAnalysis {
-    pub rust_field: RustFieldInfo,
-    pub proto_field: ProtoFieldInfo,
+    pub rust_field_info: RustFieldInfo,
+    pub proto_field_info: ProtoFieldInfo,
     pub conversion_strategy: ConversionStrategy,
 }
 
@@ -58,13 +58,13 @@ impl FieldAnalysis {
             ctx.field_name
         );
 
-        let rust_field = RustFieldInfo::analyze(ctx, field);
-        let proto_field = ProtoFieldInfo::infer_from(ctx, field, &rust_field);
+        let rust_field_info = RustFieldInfo::analyze(ctx, field);
+        let proto_field_info = ProtoFieldInfo::infer_from(ctx, field, &rust_field_info);
         let conversion_strategy =
-            ConversionStrategy::from_field_info(ctx, field, &rust_field, &proto_field);
+            ConversionStrategy::from_field_info(ctx, field, &rust_field_info, &proto_field_info);
 
         if let Err(validation_message) =
-            conversion_strategy.validate_for_context(ctx, &rust_field, &proto_field)
+            conversion_strategy.validate_for_context(ctx, &rust_field_info, &proto_field_info)
         {
             _trace.error(&format!(
                 "Invalid conversion strategy for field `{}.{}`: {}",
@@ -72,16 +72,16 @@ impl FieldAnalysis {
             ));
             return Err(ValidationError::new(
                 ctx,
-                &rust_field,
-                &proto_field,
+                &rust_field_info,
+                &proto_field_info,
                 &conversion_strategy,
                 validation_message,
             ));
         }
 
         Ok(Self {
-            rust_field,
-            proto_field,
+            rust_field_info,
+            proto_field_info,
             conversion_strategy,
         })
     }
@@ -125,10 +125,10 @@ impl FieldAnalysis {
                 let from_with_path: syn::Path =
                     syn::parse_str(from_with_path).expect("Failed to parse from_proto_fn path");
 
-                if self.rust_field.is_option && self.proto_field.is_optional() {
+                if self.rust_field_info.is_option && self.proto_field_info.is_optional() {
                     // Custom function handles Option<T> -> Option<U> transformation
                     quote! { #field_name: #from_with_path(proto_struct.#proto_field_ident) }
-                } else if self.proto_field.is_optional() {
+                } else if self.proto_field_info.is_optional() {
                     // Custom function expects unwrapped value - use single line quote
                     quote! { #field_name: #from_with_path(proto_struct.#proto_field_ident.expect(&format!("Proto field {} is required for custom conversion", stringify!(#proto_field_ident)))) }
                 } else {
@@ -141,10 +141,10 @@ impl FieldAnalysis {
                 let from_with_path: syn::Path =
                     syn::parse_str(from_with_path).expect("Failed to parse from_proto_fn path");
 
-                if self.rust_field.is_option && self.proto_field.is_optional() {
+                if self.rust_field_info.is_option && self.proto_field_info.is_optional() {
                     // custom function handles Option<T> -> Option<U> transformation
                     quote! { #field_name: #from_with_path(proto_struct.#proto_field_ident) }
-                } else if self.proto_field.is_optional() {
+                } else if self.proto_field_info.is_optional() {
                     // custom fn expects unwrapped value
                     quote! {
                         #field_name: #from_with_path(
@@ -162,7 +162,7 @@ impl FieldAnalysis {
             ConversionStrategy::DeriveRustToProto(_) => {
                 // Handle standalone DeriveIntoWith in proto->rust (fallback to .into())
                 _trace.decision("DeriveRustToProto", "fallback to DirectWithInto");
-                if self.proto_field.is_optional() {
+                if self.proto_field_info.is_optional() {
                     quote! {
                         #field_name: proto_struct.#proto_field_ident
                             .expect(&format!("Proto field {} is required", stringify!(#proto_field_ident)))
@@ -182,7 +182,7 @@ impl FieldAnalysis {
                 let field_type = ctx.field_type;
 
                 // Check if proto field is optional and handle accordingly
-                if self.proto_field.is_optional() {
+                if self.proto_field_info.is_optional() {
                     quote! {
                         #field_name: #field_type::from(
                             proto_struct.#proto_field_ident
@@ -293,8 +293,8 @@ impl FieldAnalysis {
                 _trace.decision("MapOption", "map option with transparent handling");
 
                 // Check if this is a transparent option case
-                if self.rust_field.has_transparent && self.rust_field.is_option {
-                    if let Some(inner_type) = self.rust_field.get_inner_type() {
+                if self.rust_field_info.has_transparent && self.rust_field_info.is_option {
+                    if let Some(inner_type) = self.rust_field_info.get_inner_type() {
                         quote! {
                             #field_name: proto_struct.#proto_field_ident.map(|proto_val| {
                                 #inner_type::from(proto_val)
@@ -322,7 +322,7 @@ impl FieldAnalysis {
             // -- Collection handling --
             ConversionStrategy::CollectVec => {
                 _trace.decision("CollectVec", "collect with into_iter.map");
-                if self.rust_field.is_option {
+                if self.rust_field_info.is_option {
                     // Proto Vec<T> → Rust Option<Vec<U>> - preserve None for empty vecs
                     quote! {
                         #field_name: if proto_struct.#proto_field_ident.is_empty() {
@@ -476,9 +476,9 @@ impl FieldAnalysis {
                 let into_with_path: syn::Path =
                     syn::parse_str(into_with_path).expect("Failed to parse to_proto_fn path");
 
-                if self.rust_field.is_option && self.proto_field.is_optional() {
+                if self.rust_field_info.is_option && self.proto_field_info.is_optional() {
                     quote! { #proto_field_ident: #into_with_path(my_struct.#field_name) }
-                } else if self.proto_field.is_optional() {
+                } else if self.proto_field_info.is_optional() {
                     quote! { #proto_field_ident: Some(#into_with_path(my_struct.#field_name)) }
                 } else {
                     quote! { #proto_field_ident: #into_with_path(my_struct.#field_name) }
@@ -487,9 +487,9 @@ impl FieldAnalysis {
             ConversionStrategy::DeriveProtoToRust(_) => {
                 // Handle standalone DeriveFromWith in rust->proto (fallback to .into())
                 _trace.decision("DeriveProtoToRust", "fallback to DirectWithInto");
-                if self.rust_field.is_option && self.proto_field.is_optional() {
+                if self.rust_field_info.is_option && self.proto_field_info.is_optional() {
                     quote! { #proto_field_ident: my_struct.#field_name }
-                } else if self.proto_field.is_optional() {
+                } else if self.proto_field_info.is_optional() {
                     quote! { #proto_field_ident: Some(my_struct.#field_name.into()) }
                 } else {
                     quote! { #proto_field_ident: my_struct.#field_name.into() }
@@ -500,9 +500,9 @@ impl FieldAnalysis {
                 let into_with_path: syn::Path =
                     syn::parse_str(into_with_path).expect("Failed to parse to_proto_fn path");
 
-                if self.rust_field.is_option && self.proto_field.is_optional() {
+                if self.rust_field_info.is_option && self.proto_field_info.is_optional() {
                     quote! { #proto_field_ident: #into_with_path(my_struct.#field_name) }
-                } else if self.proto_field.is_optional() {
+                } else if self.proto_field_info.is_optional() {
                     quote! { #proto_field_ident: Some(#into_with_path(my_struct.#field_name)) }
                 } else {
                     quote! { #proto_field_ident: #into_with_path(my_struct.#field_name) }
@@ -524,7 +524,7 @@ impl FieldAnalysis {
                 _trace.decision("WrapInSome", "wrap in Some with into");
                 quote! { #proto_field_ident: Some(my_struct.#field_name.into()) }
             }
-            ConversionStrategy::UnwrapOptional if self.proto_field.is_optional() => {
+            ConversionStrategy::UnwrapOptional if self.proto_field_info.is_optional() => {
                 _trace.decision(
                     "UnwrapOptional + proto_optional",
                     "map instead of unwrap for Option->Option",
@@ -550,7 +550,7 @@ impl FieldAnalysis {
             // -- Collection handling --
             ConversionStrategy::CollectVec => {
                 _trace.decision("CollectVec", "collect with into_iter.map");
-                if self.rust_field.is_option {
+                if self.rust_field_info.is_option {
                     // Rust Option<Vec<T>> → Proto Vec<U>
                     quote! {
                         #proto_field_ident: my_struct.#field_name.unwrap_or_default().into_iter().map(Into::into).collect()
@@ -591,9 +591,9 @@ impl FieldAnalysis {
                     "determine appropriate rust_to_proto conversion",
                 );
 
-                if self.rust_field.is_option {
+                if self.rust_field_info.is_option {
                     quote! { #proto_field_ident: my_struct.#field_name.map(|v| v.into()) }
-                } else if self.proto_field.is_optional() {
+                } else if self.proto_field_info.is_optional() {
                     quote! { #proto_field_ident: Some(my_struct.#field_name.into()) }
                 } else {
                     quote! { #proto_field_ident: my_struct.#field_name.into() }
@@ -607,7 +607,7 @@ impl FieldAnalysis {
                 );
 
                 // Check if proto field is optional and wrap accordingly
-                if self.proto_field.is_optional() {
+                if self.proto_field_info.is_optional() {
                     quote! { #proto_field_ident: Some(my_struct.#field_name.into()) }
                 } else {
                     // Direct conversion for required proto fields
@@ -629,8 +629,8 @@ impl FieldAnalysis {
                     "determine appropriate rust_to_proto conversion",
                 );
 
-                let rust = &self.rust_field;
-                let proto = &self.proto_field;
+                let rust = &self.rust_field_info;
+                let proto = &self.proto_field_info;
 
                 match (rust.is_option, proto.mapping) {
                     (true, ProtoMapping::Optional) => {

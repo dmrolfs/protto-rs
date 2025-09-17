@@ -87,16 +87,16 @@ mod validation {
     impl ValidationError {
         pub fn new(
             ctx: &FieldProcessingContext,
-            rust: &RustFieldInfo,
-            proto: &ProtoFieldInfo,
+            rust_field_info: &RustFieldInfo,
+            proto_field_info: &ProtoFieldInfo,
             strategy: &ConversionStrategy,
             message: String,
         ) -> Self {
             Self {
                 field_path: format!("{}.{}", ctx.struct_name, ctx.field_name),
                 message,
-                rust_type: rust.type_name(),
-                proto_type: proto.type_name.clone(),
+                rust_type: rust_field_info.type_name(),
+                proto_type: proto_field_info.type_name.clone(),
                 strategy: format!("{:?}", strategy),
             }
         }

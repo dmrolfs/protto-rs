@@ -31,10 +31,10 @@ impl StrategyCompatibilityTester {
         field: &syn::Field,
     ) -> Result<StrategyComparisonResult, String> {
         // Run old system
-        let rust_field = RustFieldInfo::analyze(ctx, field);
-        let proto_field = ProtoFieldInfo::infer_from(ctx, field, &rust_field);
+        let rust_field_info = RustFieldInfo::analyze(ctx, field);
+        let proto_field_info = ProtoFieldInfo::infer_from(ctx, field, &rust_field_info);
         let old_strategy =
-            OldConversionStrategy::from_field_info(ctx, field, &rust_field, &proto_field);
+            OldConversionStrategy::from_field_info(ctx, field, &rust_field_info, &proto_field_info);
 
         // Generate old code
         let (old_from_proto, old_to_proto) =
@@ -43,11 +43,11 @@ impl StrategyCompatibilityTester {
 
         // Run new system
         let new_strategy =
-            FieldConversionStrategy::from_field_info(ctx, field, &rust_field, &proto_field);
+            FieldConversionStrategy::from_field_info(ctx, field, &rust_field_info, &proto_field_info);
 
         // Generate new code (placeholder - we'll implement this in later steps)
         let (new_from_proto, new_to_proto) =
-            Self::generate_new_field_conversions(&new_strategy, ctx, field);
+            Self::generate_new_field_conversions(&new_strategy, ctx, field, &rust_field_info, &proto_field_info);
 
         // Compare strategies
         let strategies_match = Self::strategies_are_equivalent(&old_strategy, &new_strategy);
@@ -121,9 +121,11 @@ impl StrategyCompatibilityTester {
         strategy: &FieldConversionStrategy,
         ctx: &FieldProcessingContext,
         field: &syn::Field,
+        rust_field_info: &RustFieldInfo,
+        proto_field_info: &ProtoFieldInfo,
     ) -> (proc_macro2::TokenStream, proc_macro2::TokenStream) {
-        let proto_to_rust = strategy.generate_proto_to_rust_conversion(ctx, field);
-        let rust_to_proto = strategy.generate_rust_to_proto_conversion(ctx, field);
+        let proto_to_rust = strategy.generate_proto_to_rust_conversion(ctx, field, rust_field_info, proto_field_info);
+        let rust_to_proto = strategy.generate_rust_to_proto_conversion(ctx, field, rust_field_info, proto_field_info);
         (proto_to_rust, rust_to_proto)
     }
 

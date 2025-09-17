@@ -110,15 +110,15 @@ impl CustomConversionStrategy {
     }
 
     /// Determine if custom function needs error handling
-    fn needs_error_handling(rust: &RustFieldInfo) -> bool {
+    fn needs_error_handling(rust_field_info: &RustFieldInfo) -> bool {
         // If field has explicit error handling attributes
-        if rust.expect_mode != crate::analysis::expect_analysis::ExpectMode::None {
+        if rust_field_info.expect_mode != crate::analysis::expect_analysis::ExpectMode::None {
             return true;
         }
 
         // Default behavior for custom functions with no explicit error attributes
         // The old system would apply UnwrapOptionalWithExpect for complex types with custom functions
-        !rust.is_option && !rust.is_primitive && rust.is_custom
+        !rust_field_info.is_option && !rust_field_info.is_primitive && rust_field_info.is_custom
     }
 
 }
