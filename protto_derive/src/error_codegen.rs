@@ -86,14 +86,17 @@ fn generate_default_error_handling(
     is_rust_optional: bool,
     error_name: &syn::Ident,
 ) -> proc_macro2::TokenStream {
-    let strategy_info = strategy.debug_info();
+    // let strategy_info = strategy.debug_info();
+    // let error_expr = quote! {
+    //     #error_name::MissingField(format!(
+    //         "{} (strategy: {})",
+    //         stringify!(#proto_field_ident),
+    //         #strategy_info
+    //     ))
+    // };
 
     let error_expr = quote! {
-        #error_name::MissingField(format!(
-            "{} (strategy: {})",
-            stringify!(#proto_field_ident),
-            #strategy_info
-        ))
+        #error_name::MissingField(stringify!(#proto_field_ident).to_string())
     };
 
     if is_rust_optional {

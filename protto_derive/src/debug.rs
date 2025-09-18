@@ -723,7 +723,7 @@ pub fn debug_struct_conversion_generation(
 }
 
 /// Format generated code for better readability with proper Rust syntax handling
-fn format_rust_code(code: impl AsRef<str>) -> String {
+pub fn format_rust_code(code: impl AsRef<str>) -> String {
     let code = code.as_ref();
     let mut result = String::new();
     let mut indent_level = 0;

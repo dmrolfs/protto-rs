@@ -501,8 +501,8 @@ pub mod test_helpers {
             "CustomComplexType",
             "proto",
             &[
-                "proto_to_rust_fn = \"custom_from_conversion\"",
-                "rust_to_proto_fn = \"custom_into_conversion\"",
+                "from_proto_fn = \"custom_from_conversion\"",
+                "to_proto_fn = \"custom_into_conversion\"",
             ],
         ));
 
@@ -617,8 +617,8 @@ pub mod test_helpers {
                 "CustomComplexType",
                 "proto",
                 &[
-                    "proto_to_rust_fn = \"custom_from_conversion\"",
-                    "rust_to_proto_fn = \"custom_into_conversion\"",
+                    "from_proto_fn = \"custom_from_conversion\"",
+                    "to_proto_fn = \"custom_into_conversion\"",
                 ],
             )),
             "ignored_field" => Some(create_mock_context(
@@ -690,8 +690,8 @@ pub mod test_helpers {
                 "CustomComplexType",
                 "proto",
                 &[
-                    "proto_to_rust_fn = \"custom_from_conversion\"",
-                    "rust_to_proto_fn = \"custom_into_conversion\"",
+                    "from_proto_fn = \"custom_from_conversion\"",
+                    "to_proto_fn = \"custom_into_conversion\"",
                 ],
             )),
             _ => None,
