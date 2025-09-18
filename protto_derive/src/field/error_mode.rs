@@ -1,4 +1,5 @@
-use crate::analysis::{expect_analysis::ExpectMode, field_analysis::FieldProcessingContext};
+use crate::analysis::expect_analysis::ExpectMode;
+use crate::field::FieldProcessingContext;
 use crate::field::info::RustFieldInfo;
 
 /// Error handling mode that consolidates separate strategies for each error handling approach.
@@ -99,39 +100,3 @@ mod tests {
         assert_eq!(panic_mode.default_function(), None);
     }
 }
-
-// show how existing strategies map to ErrorMode
-// impl ErrorMode {
-//     /// Map from old strategy to new error mode (for migration/testing)
-//     pub fn from_old_strategy(strategy: &crate::conversion::ConversionStrategy) -> Option<Self> {
-//         match strategy {
-//             crate::conversion::ConversionStrategy::UnwrapOptionalWithExpect => Some(Self::Panic),
-//             crate::conversion::ConversionStrategy::UnwrapOptionalWithError => Some(Self::Error),
-//             crate::conversion::ConversionStrategy::UnwrapOptionalWithDefault => {
-//                 Some(Self::Default(None))
-//             }
-//
-//             crate::conversion::ConversionStrategy::TransparentOptionalWithExpect => {
-//                 Some(Self::Panic)
-//             }
-//             crate::conversion::ConversionStrategy::TransparentOptionalWithError => {
-//                 Some(Self::Error)
-//             }
-//             crate::conversion::ConversionStrategy::TransparentOptionalWithDefault => {
-//                 Some(Self::Default(None))
-//             }
-//
-//             crate::conversion::ConversionStrategy::CollectVecWithDefault => {
-//                 Some(Self::Default(None))
-//             }
-//             crate::conversion::ConversionStrategy::CollectVecWithError => Some(Self::Error),
-//
-//             crate::conversion::ConversionStrategy::MapOptionWithDefault => {
-//                 Some(Self::Default(None))
-//             }
-//
-//             // Strategies that don't have explicit error modes
-//             _ => None,
-//         }
-//     }
-// }

@@ -108,18 +108,6 @@ impl CustomConversionStrategy {
             }
         }
     }
-
-    // /// Determine if custom function needs error handling
-    // fn needs_error_handling(rust_field_info: &RustFieldInfo) -> bool {
-    //     // If field has explicit error handling attributes
-    //     if rust_field_info.expect_mode != crate::analysis::expect_analysis::ExpectMode::None {
-    //         return true;
-    //     }
-    //
-    //     // Default behavior for custom functions with no explicit error attributes
-    //     // The old system would apply UnwrapOptionalWithExpect for complex types with custom functions
-    //     !rust_field_info.is_option && !rust_field_info.is_primitive && rust_field_info.is_custom
-    // }
 }
 
 #[cfg(test)]
@@ -230,42 +218,5 @@ mod tests {
         let bidirectional_invalid =
             CustomConversionStrategy::Bidirectional("from_fn".to_string(), "".to_string());
         assert!(bidirectional_invalid.validate().is_err());
-    }
-}
-
-// Mapping from old strategies to new custom strategy (for migration/testing)
-impl CustomConversionStrategy {
-    // /// Map from old strategy to new custom strategy (for migration/testing)
-    // pub fn from_old_strategy(strategy: &crate::conversion::ConversionStrategy) -> Option<Self> {
-    //     match strategy {
-    //         crate::conversion::ConversionStrategy::DeriveProtoToRust(path) => {
-    //             Some(Self::FromFn(path.clone()))
-    //         }
-    //         crate::conversion::ConversionStrategy::DeriveRustToProto(path) => {
-    //             Some(Self::IntoFn(path.clone()))
-    //         }
-    //         crate::conversion::ConversionStrategy::DeriveBidirectional(from_path, into_path) => {
-    //             Some(Self::Bidirectional(from_path.clone(), into_path.clone()))
-    //         }
-    //         _ => None,
-    //     }
-    // }
-
-    /// Convert back to old strategy format (for compatibility during migration)
-    pub fn to_old_strategy(&self) -> crate::conversion::ConversionStrategy {
-        match self {
-            Self::FromFn(path) => {
-                crate::conversion::ConversionStrategy::DeriveProtoToRust(path.clone())
-            }
-            Self::IntoFn(path) => {
-                crate::conversion::ConversionStrategy::DeriveRustToProto(path.clone())
-            }
-            Self::Bidirectional(from_path, into_path) => {
-                crate::conversion::ConversionStrategy::DeriveBidirectional(
-                    from_path.clone(),
-                    into_path.clone(),
-                )
-            }
-        }
     }
 }

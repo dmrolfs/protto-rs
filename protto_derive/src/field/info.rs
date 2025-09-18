@@ -1,11 +1,8 @@
 use crate::analysis::{
-    attribute_parser,
-    expect_analysis::ExpectMode,
-    field_analysis::{CollectionType, FieldProcessingContext},
-    optionality::FieldOptionality,
-    type_analysis,
+    attribute_parser, expect_analysis::ExpectMode, optionality::FieldOptionality, type_analysis,
 };
 use crate::debug::CallStackDebug;
+use crate::field::context::{CollectionType, FieldProcessingContext};
 use quote::quote;
 
 #[derive(Clone)]
@@ -75,16 +72,6 @@ impl RustFieldInfo {
     pub fn type_name(&self) -> String {
         let field_type = &self.field_type;
         quote!(#field_type).to_string()
-    }
-
-    pub fn get_inner_type(&self) -> Option<syn::Type> {
-        if self.is_option {
-            type_analysis::get_inner_type_from_option(&self.field_type)
-        } else if self.is_vec {
-            type_analysis::get_inner_type_from_vec(&self.field_type)
-        } else {
-            None
-        }
     }
 }
 

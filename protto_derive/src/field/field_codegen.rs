@@ -1,11 +1,14 @@
-use crate::analysis::{field_analysis::FieldProcessingContext, type_analysis};
-use crate::conversion::custom_strategy::CustomConversionStrategy;
+use crate::analysis::type_analysis;
 use crate::debug::CallStackDebug;
-use crate::error::mode::ErrorMode;
-use crate::field::conversion_strategy::{
-    CollectionStrategy, DirectStrategy, FieldConversionStrategy, OptionStrategy,
+use crate::field::{
+    FieldProcessingContext,
+    conversion_strategy::{
+        CollectionStrategy, DirectStrategy, FieldConversionStrategy, OptionStrategy,
+    },
+    custom_conversion::CustomConversionStrategy,
+    error_mode::ErrorMode,
+    info::{ProtoFieldInfo, RustFieldInfo},
 };
-use crate::field::info::{ProtoFieldInfo, RustFieldInfo};
 use quote::quote;
 
 impl FieldConversionStrategy {
@@ -186,56 +189,6 @@ fn generate_custom_proto_to_rust(
         }
     }
 }
-
-// fn generate_custom_with_error_mode(
-//     error_mode: &ErrorMode,
-//     field_name: &syn::Ident,
-//     proto_field: &syn::Ident,
-//     custom_fn: &syn::Path,
-//     ctx: &FieldProcessingContext,
-// ) -> proc_macro2::TokenStream {
-//     match error_mode {
-//         ErrorMode::None | ErrorMode::Panic => {
-//             quote! {
-//                 #field_name: #custom_fn(
-//                     proto_struct.#proto_field.expect(&format!(
-//                         "Proto field {} is required for custom conversion",
-//                         stringify!(#proto_field)
-//                     ))
-//                 )
-//             }
-//         }
-//         ErrorMode::Error => {
-//             let struct_name = &ctx.struct_name;
-//             let error_type_name = format!("{}ConversionError", struct_name);
-//             let error_type: syn::Ident =
-//                 syn::parse_str(&error_type_name).expect("Failed to parse error type name");
-//
-//             quote! {
-//                 #field_name: #custom_fn(
-//                     proto_struct.#proto_field
-//                         .ok_or_else(|| #error_type::MissingField(stringify!(#proto_field).to_string()))?
-//                 )
-//             }
-//         }
-//         ErrorMode::Default(Some(default_fn)) => {
-//             let default_fn_path: syn::Path =
-//                 syn::parse_str(default_fn).expect("Failed to parse default function");
-//             quote! {
-//                 #field_name: proto_struct.#proto_field
-//                     .map(|v| #custom_fn(v))
-//                     .unwrap_or_else(|| #default_fn_path())
-//             }
-//         }
-//         ErrorMode::Default(None) => {
-//             quote! {
-//                 #field_name: proto_struct.#proto_field
-//                     .map(|v| #custom_fn(v))
-//                     .unwrap_or_default()
-//             }
-//         }
-//     }
-// }
 
 fn generate_direct_proto_to_rust(
     direct_strategy: &DirectStrategy,
@@ -738,14 +691,77 @@ fn is_option_vec_type(field_type: &syn::Type) -> bool {
         .unwrap_or(false)
 }
 
-// Replace the placeholder implementation in compatibility testing
+#[cfg(test)]
+pub mod test_helpers {
+    use crate::field::FieldProcessingContext;
+    use syn::parse::Parser;
+
+    /// Create a mock field processing context for testing
+    pub fn create_mock_context(
+        struct_name: &str,
+        field_name: &str,
+        field_type: &str,
+        proto_module: &str,
+        attributes: &[&str],
+    ) -> (syn::Field, FieldProcessingContext<'static>) {
+        // Parse field type
+        let field_type: syn::Type = syn::parse_str(field_type).unwrap();
+
+        // Create attributes from string descriptions
+        let mut attrs = Vec::new();
+        for attr_str in attributes {
+            if !attr_str.is_empty() {
+                let attr_tokens: proc_macro2::TokenStream =
+                    format!("#[protto({})]", attr_str).parse().unwrap();
+                let attrs_parsed: Vec<syn::Attribute> =
+                    syn::Attribute::parse_outer.parse2(attr_tokens).unwrap();
+                attrs.extend(attrs_parsed);
+            }
+        }
+
+        // Create field
+        let field: syn::Field = syn::Field {
+            attrs,
+            vis: syn::Visibility::Public(Default::default()),
+            mutability: syn::FieldMutability::None,
+            ident: Some(syn::Ident::new(field_name, proc_macro2::Span::call_site())),
+            colon_token: Some(syn::Token![:](proc_macro2::Span::call_site())),
+            ty: field_type.clone(),
+        };
+
+        let field_static: &'static syn::Field = Box::leak(field.clone().into());
+
+        // Create leaked strings for 'static lifetime in tests
+        let struct_name_static = Box::leak(struct_name.to_string().into_boxed_str());
+        let proto_module_static = Box::leak(proto_module.to_string().into_boxed_str());
+        let proto_name_static = Box::leak(struct_name.to_string().into_boxed_str());
+
+        // Create identifiers
+        let struct_ident =
+            Box::leak(syn::Ident::new(struct_name_static, proc_macro2::Span::call_site()).into());
+        let error_ident =
+            Box::leak(syn::Ident::new("TestError", proc_macro2::Span::call_site()).into());
+
+        // Use FieldProcessingContext::new constructor
+        let context = FieldProcessingContext::new(
+            struct_ident,
+            field_static,
+            error_ident,
+            &None, // struct_level_error_fn
+            proto_module_static,
+            proto_name_static,
+        );
+
+        (field, context)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::analysis::optionality::FieldOptionality;
     use crate::debug;
     use crate::field::info::ProtoMapping;
-    use crate::migration::compatibility::test_helpers;
 
     #[test]
     fn test_code_generation_produces_valid_tokens() {

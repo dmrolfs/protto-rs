@@ -490,7 +490,6 @@ impl CallStackDebug {
             eprintln!(
                 "\n{indent}=== 🛠️ GENERATED CODE: {struct_name}.{field_name} - {context} ==="
             );
-            // eprintln!("{}│  📝 GENERATED: {}", indent, context);
 
             for (key, value) in info {
                 eprintln!("{}│    📌 {}: {}", indent, key, value);

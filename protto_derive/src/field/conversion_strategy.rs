@@ -1,9 +1,11 @@
-use crate::analysis::expect_analysis::ExpectMode;
-use crate::analysis::{field_analysis::FieldProcessingContext, type_analysis};
-use crate::conversion::custom_strategy::CustomConversionStrategy;
+use crate::analysis::{expect_analysis::ExpectMode, type_analysis};
 use crate::debug::CallStackDebug;
-use crate::error::mode::ErrorMode;
-use crate::field::info::{self as field_info, ProtoFieldInfo, RustFieldInfo};
+use crate::field::{
+    FieldProcessingContext,
+    custom_conversion::CustomConversionStrategy,
+    error_mode::ErrorMode,
+    info::{self as field_info, ProtoFieldInfo, RustFieldInfo},
+};
 
 /// Consolidated field conversion strategy
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -391,208 +393,98 @@ impl FieldConversionStrategy {
     }
 }
 
-// Mapping from old strategies to new consolidated strategies
-impl FieldConversionStrategy {
-    /// Map from old strategy to new consolidated strategy (for migration/testing)
-    pub fn from_old_strategy(strategy: &crate::conversion::ConversionStrategy) -> Option<Self> {
-        match strategy {
-            // Ignore
-            crate::conversion::ConversionStrategy::ProtoIgnore => Some(Self::Ignore),
+/// Migration error types
+#[derive(Debug)]
+pub enum FieldGenerationError {
+    ConversionValidation(String),
+}
 
-            // Custom functions
-            crate::conversion::ConversionStrategy::DeriveProtoToRust(path) => {
-                Some(Self::Custom(CustomConversionStrategy::FromFn(path.clone())))
+impl std::fmt::Display for FieldGenerationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FieldGenerationError::ConversionValidation(msg) => {
+                write!(f, "field conversion validation failed: {}", msg)
             }
-            crate::conversion::ConversionStrategy::DeriveRustToProto(path) => {
-                Some(Self::Custom(CustomConversionStrategy::IntoFn(path.clone())))
-            }
-            crate::conversion::ConversionStrategy::DeriveBidirectional(from, into) => {
-                Some(Self::Custom(CustomConversionStrategy::Bidirectional(
-                    from.clone(),
-                    into.clone(),
-                )))
-            }
-
-            // Direct conversions
-            crate::conversion::ConversionStrategy::DirectAssignment => {
-                Some(Self::Direct(DirectStrategy::Assignment))
-            }
-            crate::conversion::ConversionStrategy::DirectWithInto => {
-                Some(Self::Direct(DirectStrategy::WithConversion))
-            }
-
-            // Option handling
-            crate::conversion::ConversionStrategy::WrapInSome => {
-                Some(Self::Option(OptionStrategy::Wrap))
-            }
-            crate::conversion::ConversionStrategy::UnwrapOptionalWithExpect => {
-                Some(Self::Option(OptionStrategy::Unwrap(ErrorMode::Panic)))
-            }
-            crate::conversion::ConversionStrategy::UnwrapOptionalWithError => {
-                Some(Self::Option(OptionStrategy::Unwrap(ErrorMode::Error)))
-            }
-            crate::conversion::ConversionStrategy::UnwrapOptionalWithDefault => Some(Self::Option(
-                OptionStrategy::Unwrap(ErrorMode::Default(None)),
-            )),
-            crate::conversion::ConversionStrategy::MapOption => {
-                Some(Self::Option(OptionStrategy::Map))
-            }
-            crate::conversion::ConversionStrategy::MapOptionWithDefault => {
-                Some(Self::Option(OptionStrategy::Map)) // Note: default handling in ErrorMode
-            }
-            crate::conversion::ConversionStrategy::UnwrapOptional => {
-                Some(Self::Option(OptionStrategy::Unwrap(ErrorMode::None)))
-            }
-
-            // Transparent handling
-            crate::conversion::ConversionStrategy::TransparentRequired => {
-                Some(Self::Transparent(ErrorMode::None))
-            }
-            crate::conversion::ConversionStrategy::TransparentOptionalWithExpect => {
-                Some(Self::Transparent(ErrorMode::Panic))
-            }
-            crate::conversion::ConversionStrategy::TransparentOptionalWithError => {
-                Some(Self::Transparent(ErrorMode::Error))
-            }
-            crate::conversion::ConversionStrategy::TransparentOptionalWithDefault => {
-                Some(Self::Transparent(ErrorMode::Default(None)))
-            }
-
-            // Collection handling
-            crate::conversion::ConversionStrategy::CollectVec => Some(Self::Collection(
-                CollectionStrategy::Collect(ErrorMode::None),
-            )),
-            crate::conversion::ConversionStrategy::CollectVecWithDefault => Some(Self::Collection(
-                CollectionStrategy::Collect(ErrorMode::Default(None)),
-            )),
-            crate::conversion::ConversionStrategy::CollectVecWithError => Some(Self::Collection(
-                CollectionStrategy::Collect(ErrorMode::Error),
-            )),
-            crate::conversion::ConversionStrategy::MapVecInOption => {
-                Some(Self::Collection(CollectionStrategy::MapOption))
-            }
-            crate::conversion::ConversionStrategy::VecDirectAssignment => {
-                Some(Self::Collection(CollectionStrategy::DirectAssignment))
-            }
-
-            // Strategies that don't have direct mappings or are obsolete
-            _ => None,
         }
     }
+}
 
-    /// Convert back to old strategy format (for compatibility during migration)
-    pub fn to_old_strategy(&self) -> Option<crate::conversion::ConversionStrategy> {
+impl std::error::Error for FieldGenerationError {}
+
+/// Main entry point for field conversion with migration support
+pub fn generate_field_conversions(
+    field: &syn::Field,
+    ctx: &FieldProcessingContext,
+) -> Result<(proc_macro2::TokenStream, proc_macro2::TokenStream), FieldGenerationError> {
+    // Analyze field using new system
+    let rust_field_info = RustFieldInfo::analyze(ctx, field);
+    let proto_field_info = ProtoFieldInfo::infer_from(ctx, field, &rust_field_info);
+    let strategy =
+        FieldConversionStrategy::from_field_info(ctx, field, &rust_field_info, &proto_field_info);
+
+    // Validate strategy is reasonable
+    strategy.validate_for_context(ctx, &rust_field_info, &proto_field_info)?;
+
+    // Generate code
+    let proto_to_rust =
+        strategy.generate_proto_to_rust_conversion(ctx, field, &rust_field_info, &proto_field_info);
+    let rust_to_proto =
+        strategy.generate_rust_to_proto_conversion(ctx, field, &rust_field_info, &proto_field_info);
+
+    Ok((proto_to_rust, rust_to_proto))
+}
+
+// Integration with existing field analysis
+impl FieldConversionStrategy {
+    /// Validate that this strategy is compatible with the given context
+    pub fn validate_for_context(
+        &self,
+        _ctx: &FieldProcessingContext,
+        rust_field_info: &RustFieldInfo,
+        proto_field_info: &ProtoFieldInfo,
+    ) -> Result<(), FieldGenerationError> {
+        // Use the existing validation logic from the new system
         match self {
-            Self::Ignore => Some(crate::conversion::ConversionStrategy::ProtoIgnore),
-
-            Self::Custom(custom) | Self::CustomWithError(custom, _) => {
-                Some(custom.to_old_strategy())
+            FieldConversionStrategy::Ignore => {
+                if !rust_field_info.has_proto_ignore {
+                    return Err(FieldGenerationError::ConversionValidation(
+                        "Ignore strategy requires #[protto(ignore)] attribute".to_string(),
+                    ));
+                }
             }
-
-            Self::Direct(DirectStrategy::Assignment) => {
-                Some(crate::conversion::ConversionStrategy::DirectAssignment)
+            FieldConversionStrategy::Custom(custom_strategy) => {
+                custom_strategy
+                    .validate()
+                    .map_err(FieldGenerationError::ConversionValidation)?;
             }
-            Self::Direct(DirectStrategy::WithConversion) => {
-                Some(crate::conversion::ConversionStrategy::DirectWithInto)
+            FieldConversionStrategy::Transparent(_) => {
+                if !rust_field_info.has_transparent {
+                    return Err(FieldGenerationError::ConversionValidation(
+                        "Transparent strategy requires #[protto(transparent)] attribute"
+                            .to_string(),
+                    ));
+                }
+                // Additional transparent-specific validation could go here
             }
-
-            Self::Option(OptionStrategy::Wrap) => {
-                Some(crate::conversion::ConversionStrategy::WrapInSome)
+            FieldConversionStrategy::Collection(_) => {
+                if !rust_field_info.is_vec && !proto_field_info.is_repeated() {
+                    return Err(FieldGenerationError::ConversionValidation(
+                        "Collection strategy requires Vec or repeated field".to_string(),
+                    ));
+                }
             }
-            Self::Option(OptionStrategy::Unwrap(ErrorMode::Panic)) => {
-                Some(crate::conversion::ConversionStrategy::UnwrapOptionalWithExpect)
+            _ => {
+                // Other strategies have their own validation logic
             }
-            Self::Option(OptionStrategy::Unwrap(ErrorMode::Error)) => {
-                Some(crate::conversion::ConversionStrategy::UnwrapOptionalWithError)
-            }
-            Self::Option(OptionStrategy::Unwrap(ErrorMode::Default(_))) => {
-                Some(crate::conversion::ConversionStrategy::UnwrapOptionalWithDefault)
-            }
-            Self::Option(OptionStrategy::Unwrap(ErrorMode::None)) => {
-                Some(crate::conversion::ConversionStrategy::UnwrapOptional)
-            }
-            Self::Option(OptionStrategy::Map) => {
-                Some(crate::conversion::ConversionStrategy::MapOption)
-            }
-
-            Self::Transparent(ErrorMode::None) => {
-                Some(crate::conversion::ConversionStrategy::TransparentRequired)
-            }
-            Self::Transparent(ErrorMode::Panic) => {
-                Some(crate::conversion::ConversionStrategy::TransparentOptionalWithExpect)
-            }
-            Self::Transparent(ErrorMode::Error) => {
-                Some(crate::conversion::ConversionStrategy::TransparentOptionalWithError)
-            }
-            Self::Transparent(ErrorMode::Default(_)) => {
-                Some(crate::conversion::ConversionStrategy::TransparentOptionalWithDefault)
-            }
-
-            Self::Collection(CollectionStrategy::Collect(ErrorMode::None)) => {
-                Some(crate::conversion::ConversionStrategy::CollectVec)
-            }
-            Self::Collection(CollectionStrategy::Collect(ErrorMode::Default(_))) => {
-                Some(crate::conversion::ConversionStrategy::CollectVecWithDefault)
-            }
-            Self::Collection(CollectionStrategy::Collect(ErrorMode::Error)) => {
-                Some(crate::conversion::ConversionStrategy::CollectVecWithError)
-            }
-            Self::Collection(CollectionStrategy::MapOption) => {
-                Some(crate::conversion::ConversionStrategy::MapVecInOption)
-            }
-            Self::Collection(CollectionStrategy::DirectAssignment) => {
-                Some(crate::conversion::ConversionStrategy::VecDirectAssignment)
-            }
-
-            // Some combinations don't have direct old strategy equivalents
-            _ => None,
         }
+
+        Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_strategy_mapping_roundtrip() {
-        let test_cases = vec![
-            crate::conversion::ConversionStrategy::ProtoIgnore,
-            crate::conversion::ConversionStrategy::DirectAssignment,
-            crate::conversion::ConversionStrategy::DirectWithInto,
-            crate::conversion::ConversionStrategy::WrapInSome,
-            crate::conversion::ConversionStrategy::UnwrapOptionalWithExpect,
-            crate::conversion::ConversionStrategy::CollectVec,
-            crate::conversion::ConversionStrategy::TransparentRequired,
-        ];
-
-        for old_strategy in test_cases {
-            let consolidated = FieldConversionStrategy::from_old_strategy(&old_strategy);
-            assert!(
-                consolidated.is_some(),
-                "Should map old strategy: {:?}",
-                old_strategy
-            );
-
-            let back_to_old = consolidated.unwrap().to_old_strategy();
-            assert!(back_to_old.is_some(), "Should map back to old strategy");
-            // Note: exact equality might not hold due to consolidation, but category should match
-        }
-    }
-
-    #[test]
-    fn test_decision_tree_logic() {
-        // Test that identical inputs produce deterministic outputs
-        //todo: need to create mock contexts and field info for testing
-        // This is a placeholder showing the testing approach
-
-        // let ctx = mock_field_context();
-        // let rust_info = mock_rust_field_info();
-        // let proto_info = mock_proto_field_info();
-
-        // let strategy = ConsolidatedStrategy::from_field_info(&ctx, &field, &rust_info, &proto_info);
-        // assert!(matches!(strategy, ConsolidatedStrategy::Direct(_)));
-    }
 
     #[test]
     fn test_strategy_descriptions() {

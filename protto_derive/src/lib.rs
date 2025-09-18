@@ -1,7 +1,5 @@
 use crate::debug::CallStackDebug;
 use proc_macro::TokenStream;
-use proc_macro2::Span;
-use quote::quote;
 use syn::{self, DeriveInput};
 
 mod constants {
@@ -15,17 +13,11 @@ mod constants {
 }
 
 mod analysis;
-mod conversion;
 mod debug;
-mod enum_processor;
-mod error;
-mod error_codegen;
-mod error_handler;
-mod error_types;
+mod enum_generator;
 mod field;
-mod migration;
-mod struct_impl;
-mod tuple_impl;
+mod struct_generator;
+mod tuple_generator;
 
 mod utils {
     pub fn to_screaming_snake_case(s: &str) -> String {
@@ -68,73 +60,14 @@ mod registry {
     }
 }
 
-mod validation {
-    use crate::analysis::field_analysis::FieldProcessingContext;
-    use crate::conversion::ConversionStrategy;
-    use crate::field::info::{ProtoFieldInfo, RustFieldInfo};
-
-    #[derive(Debug, Clone)]
-    pub struct ValidationError {
-        pub field_path: String,
-        pub message: String,
-        pub rust_type: String,
-        pub proto_type: String,
-        pub strategy: String,
-    }
-
-    impl ValidationError {
-        pub fn new(
-            ctx: &FieldProcessingContext,
-            rust_field_info: &RustFieldInfo,
-            proto_field_info: &ProtoFieldInfo,
-            strategy: &ConversionStrategy,
-            message: String,
-        ) -> Self {
-            Self {
-                field_path: format!("{}.{}", ctx.struct_name, ctx.field_name),
-                message,
-                rust_type: rust_field_info.type_name(),
-                proto_type: proto_field_info.type_name.clone(),
-                strategy: format!("{:?}", strategy),
-            }
-        }
-
-        pub fn detailed_message(&self) -> String {
-            format!(
-                "Protto validation failed for field '{}':\n\n{}\n\nField details:\n• Rust type: {}\n• Proto type: {}\n• Strategy: {}",
-                self.field_path, self.message, self.rust_type, self.proto_type, self.strategy
-            )
-        }
-    }
-
-    impl std::fmt::Display for ValidationError {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            write!(f, "{}", self.detailed_message())
-        }
-    }
-
-    impl std::error::Error for ValidationError {}
-}
-
 #[proc_macro_derive(Protto, attributes(protto))]
 pub fn protto_derive(input: TokenStream) -> TokenStream {
-    field::field_processor::initialize_migration_system();
-
     let ast: DeriveInput = syn::parse(input).unwrap();
     let parsed_input = analysis::macro_input::parse_derive_input(ast.clone());
 
     let name = parsed_input.name;
 
-    let _trace = CallStackDebug::with_context(
-        "protto_derive::lib",
-        "protto_derive",
-        &name,
-        "",
-        &[(
-            "migration",
-            &format!("{:?}", migration::get_global_migration()),
-        )],
-    );
+    let _trace = CallStackDebug::new("protto_derive::lib", "protto_derive", &name, "");
 
     // -- phase 1 - check if this is an enum type with #[proto(enum)] --
     if let syn::Data::Enum(_) = &ast.data {
@@ -145,7 +78,7 @@ pub fn protto_derive(input: TokenStream) -> TokenStream {
     let generated = match &ast.data {
         syn::Data::Struct(data_struct) => match &data_struct.fields {
             syn::Fields::Named(fields_named) => {
-                let config = struct_impl::StructImplConfig {
+                let config = struct_generator::StructImplConfig {
                     name: &name,
                     fields: &fields_named.named,
                     proto_module: &parsed_input.proto_module,
@@ -155,10 +88,10 @@ pub fn protto_derive(input: TokenStream) -> TokenStream {
                     struct_level_error_fn: &parsed_input.struct_level_error_fn,
                 };
 
-                struct_impl::generate_struct_implementations_with_migration(config)
+                struct_generator::generate_struct_implementations(config)
             }
             syn::Fields::Unnamed(fields_unnamed) => {
-                tuple_impl::generate_tuple_implementations(&name, fields_unnamed)
+                tuple_generator::generate_tuple_implementations(&name, fields_unnamed)
             }
             syn::Fields::Unit => {
                 panic!("Protto does not support unit structs");
@@ -166,7 +99,7 @@ pub fn protto_derive(input: TokenStream) -> TokenStream {
         },
         syn::Data::Enum(data_enum) => {
             let variants = &data_enum.variants;
-            enum_processor::generate_enum_conversions(&name, variants, &parsed_input.proto_module)
+            enum_generator::generate_enum_conversions(&name, variants, &parsed_input.proto_module)
         }
         _ => panic!("Protto only supports structs and enums, not unions"),
     };

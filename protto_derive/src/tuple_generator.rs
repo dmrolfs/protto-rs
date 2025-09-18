@@ -1,4 +1,4 @@
-use super::*;
+use quote::quote;
 
 pub fn generate_tuple_implementations(
     name: &syn::Ident,

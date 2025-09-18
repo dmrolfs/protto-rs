@@ -1,4 +1,6 @@
-use super::*;
+use crate::utils;
+use proc_macro2::Span;
+use quote::quote;
 
 pub fn generate_enum_conversions(
     name: &syn::Ident,

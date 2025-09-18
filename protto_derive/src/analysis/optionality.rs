@@ -1,10 +1,10 @@
 use crate::analysis::{
     attribute_parser,
     expect_analysis::{self, ExpectMode},
-    field_analysis::FieldProcessingContext,
     type_analysis,
 };
 use crate::debug::CallStackDebug;
+use crate::field::FieldProcessingContext;
 use quote::{ToTokens, quote};
 
 /// Result of build-time metadata detection for field optionality
