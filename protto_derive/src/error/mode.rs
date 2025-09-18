@@ -1,8 +1,5 @@
+use crate::analysis::{expect_analysis::ExpectMode, field_analysis::FieldProcessingContext};
 use crate::field::info::RustFieldInfo;
-use crate::analysis::{
-    expect_analysis::ExpectMode,
-    field_analysis::FieldProcessingContext,
-};
 
 /// Error handling mode that consolidates separate strategies for each error handling approach.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -41,25 +38,29 @@ impl ErrorMode {
         rust.from_proto_fn.is_some()
             && rust.to_proto_fn.is_some()  // Bidirectional
             && !rust.is_primitive           // Complex type
-            && !rust.is_option             // Not already optional
+            && !rust.is_option // Not already optional
     }
 
     /// Check if this mode requires error handling infrastructure
+    #[cfg(test)]
     pub fn requires_error_handling(&self) -> bool {
         matches!(self, Self::Error)
     }
 
     /// Check if this mode uses default values
+    #[cfg(test)]
     pub fn uses_default(&self) -> bool {
         matches!(self, Self::Default(_))
     }
 
     /// Check if this mode will panic on missing values
+    #[cfg(test)]
     pub fn will_panic(&self) -> bool {
         matches!(self, Self::Panic | Self::None)
     }
 
     /// Get the default function name if specified
+    #[cfg(test)]
     pub fn default_function(&self) -> Option<&str> {
         match self {
             Self::Default(Some(fn_name)) => Some(fn_name),
@@ -100,37 +101,37 @@ mod tests {
 }
 
 // show how existing strategies map to ErrorMode
-impl ErrorMode {
-    /// Map from old strategy to new error mode (for migration/testing)
-    pub fn from_old_strategy(strategy: &crate::conversion::ConversionStrategy) -> Option<Self> {
-        match strategy {
-            crate::conversion::ConversionStrategy::UnwrapOptionalWithExpect => Some(Self::Panic),
-            crate::conversion::ConversionStrategy::UnwrapOptionalWithError => Some(Self::Error),
-            crate::conversion::ConversionStrategy::UnwrapOptionalWithDefault => {
-                Some(Self::Default(None))
-            }
-
-            crate::conversion::ConversionStrategy::TransparentOptionalWithExpect => {
-                Some(Self::Panic)
-            }
-            crate::conversion::ConversionStrategy::TransparentOptionalWithError => {
-                Some(Self::Error)
-            }
-            crate::conversion::ConversionStrategy::TransparentOptionalWithDefault => {
-                Some(Self::Default(None))
-            }
-
-            crate::conversion::ConversionStrategy::CollectVecWithDefault => {
-                Some(Self::Default(None))
-            }
-            crate::conversion::ConversionStrategy::CollectVecWithError => Some(Self::Error),
-
-            crate::conversion::ConversionStrategy::MapOptionWithDefault => {
-                Some(Self::Default(None))
-            }
-
-            // Strategies that don't have explicit error modes
-            _ => None,
-        }
-    }
-}
+// impl ErrorMode {
+//     /// Map from old strategy to new error mode (for migration/testing)
+//     pub fn from_old_strategy(strategy: &crate::conversion::ConversionStrategy) -> Option<Self> {
+//         match strategy {
+//             crate::conversion::ConversionStrategy::UnwrapOptionalWithExpect => Some(Self::Panic),
+//             crate::conversion::ConversionStrategy::UnwrapOptionalWithError => Some(Self::Error),
+//             crate::conversion::ConversionStrategy::UnwrapOptionalWithDefault => {
+//                 Some(Self::Default(None))
+//             }
+//
+//             crate::conversion::ConversionStrategy::TransparentOptionalWithExpect => {
+//                 Some(Self::Panic)
+//             }
+//             crate::conversion::ConversionStrategy::TransparentOptionalWithError => {
+//                 Some(Self::Error)
+//             }
+//             crate::conversion::ConversionStrategy::TransparentOptionalWithDefault => {
+//                 Some(Self::Default(None))
+//             }
+//
+//             crate::conversion::ConversionStrategy::CollectVecWithDefault => {
+//                 Some(Self::Default(None))
+//             }
+//             crate::conversion::ConversionStrategy::CollectVecWithError => Some(Self::Error),
+//
+//             crate::conversion::ConversionStrategy::MapOptionWithDefault => {
+//                 Some(Self::Default(None))
+//             }
+//
+//             // Strategies that don't have explicit error modes
+//             _ => None,
+//         }
+//     }
+// }

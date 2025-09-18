@@ -1,9 +1,6 @@
-use quote::quote;
+use crate::analysis::{attribute_parser, type_analysis};
 use crate::conversion::ConversionStrategy;
-use crate::analysis::{
-    attribute_parser,
-    type_analysis,
-};
+use quote::quote;
 
 /// Generates error handling code for a specific field
 #[allow(clippy::too_many_arguments)]
@@ -80,7 +77,7 @@ fn generate_custom_error_handling(
 
 /// Generates error handling using the default error type
 fn generate_default_error_handling(
-    strategy: &ConversionStrategy,
+    _strategy: &ConversionStrategy,
     field_name: &syn::Ident,
     proto_field_ident: &syn::Ident,
     is_rust_optional: bool,

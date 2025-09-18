@@ -1,11 +1,11 @@
-use crate::debug::CallStackDebug;
-use quote::{ToTokens, quote};
 use crate::analysis::{
     attribute_parser,
     expect_analysis::{self, ExpectMode},
     field_analysis::FieldProcessingContext,
     type_analysis,
 };
+use crate::debug::CallStackDebug;
+use quote::{ToTokens, quote};
 
 /// Result of build-time metadata detection for field optionality
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
@@ -172,7 +172,8 @@ impl FieldOptionality {
                 "has_explicit_optional_usage_indicators",
                 ctx.struct_name,
                 ctx.field_name,
-            ).checkpoint_data(
+            )
+            .checkpoint_data(
                 "explicit_usage_found",
                 &[
                     ("has_explicit_expect", &has_explicit_expect.to_string()),

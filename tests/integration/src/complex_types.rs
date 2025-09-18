@@ -233,12 +233,14 @@ pub struct VecWithErrorStruct {
 }
 
 #[derive(Debug, PartialEq, Clone)]
+#[allow(unused)]
 pub enum VecError {
     EmptyTracks(String),
     MissingTags(String),
     ConversionFailed(String),
 }
 
+#[allow(unused)]
 impl VecError {
     pub fn empty_tracks(field_name: &str) -> Self {
         Self::EmptyTracks(field_name.to_string())

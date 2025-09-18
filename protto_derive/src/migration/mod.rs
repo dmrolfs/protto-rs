@@ -1,5 +1,5 @@
-pub mod core;
 pub mod compatibility;
+pub mod core;
 
 pub use core::*;
 

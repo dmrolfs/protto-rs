@@ -1,9 +1,9 @@
-use quote::quote;
+use crate::analysis::{attribute_parser, error_analysis};
 use crate::conversion::ConversionStrategy;
 use crate::debug::CallStackDebug;
-use crate::analysis::{ attribute_parser, error_analysis, };
 use crate::error_codegen;
 use crate::error_types;
+use quote::quote;
 
 pub use error_types::{default_error_name, get_actual_error_type};
 

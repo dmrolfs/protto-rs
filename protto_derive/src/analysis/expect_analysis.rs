@@ -1,7 +1,7 @@
-use syn::{Field, Meta};
-use crate::debug::CallStackDebug;
 use crate::analysis::attribute_parser;
 use crate::constants;
+use crate::debug::CallStackDebug;
+use syn::{Field, Meta};
 
 #[derive(Debug, Default, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum ExpectMode {

@@ -1,9 +1,8 @@
+use crate::debug::CallStackDebug;
 use proc_macro::TokenStream;
 use proc_macro2::Span;
 use quote::quote;
-use syn::parse::Parser;
-use syn::{self, DeriveInput, };
-use crate::debug::CallStackDebug;
+use syn::{self, DeriveInput};
 
 mod constants {
     pub const PRIMITIVE_TYPES: &[&str] =
@@ -27,7 +26,6 @@ mod field;
 mod migration;
 mod struct_impl;
 mod tuple_impl;
-
 
 mod utils {
     pub fn to_screaming_snake_case(s: &str) -> String {
@@ -71,8 +69,8 @@ mod registry {
 }
 
 mod validation {
-    use crate::conversion::ConversionStrategy;
     use crate::analysis::field_analysis::FieldProcessingContext;
+    use crate::conversion::ConversionStrategy;
     use crate::field::info::{ProtoFieldInfo, RustFieldInfo};
 
     #[derive(Debug, Clone)]
@@ -126,13 +124,16 @@ pub fn protto_derive(input: TokenStream) -> TokenStream {
     let parsed_input = analysis::macro_input::parse_derive_input(ast.clone());
 
     let name = parsed_input.name;
-    
+
     let _trace = CallStackDebug::with_context(
         "protto_derive::lib",
         "protto_derive",
         &name,
         "",
-        &[("migration", &format!("{:?}", migration::get_global_migration())),]
+        &[(
+            "migration",
+            &format!("{:?}", migration::get_global_migration()),
+        )],
     );
 
     // -- phase 1 - check if this is an enum type with #[proto(enum)] --
@@ -154,10 +155,10 @@ pub fn protto_derive(input: TokenStream) -> TokenStream {
                     struct_level_error_fn: &parsed_input.struct_level_error_fn,
                 };
 
-                struct_impl::generate_struct_implementations_with_migration(config).into()
+                struct_impl::generate_struct_implementations_with_migration(config)
             }
             syn::Fields::Unnamed(fields_unnamed) => {
-                tuple_impl::generate_tuple_implementations(&name, fields_unnamed).into()
+                tuple_impl::generate_tuple_implementations(&name, fields_unnamed)
             }
             syn::Fields::Unit => {
                 panic!("Protto does not support unit structs");
@@ -166,18 +167,11 @@ pub fn protto_derive(input: TokenStream) -> TokenStream {
         syn::Data::Enum(data_enum) => {
             let variants = &data_enum.variants;
             enum_processor::generate_enum_conversions(&name, variants, &parsed_input.proto_module)
-                .into()
         }
         _ => panic!("Protto only supports structs and enums, not unions"),
     };
 
-    _trace.generated_code(
-        &generated,
-        name,
-        "",
-        "bidirectional_proto_to_rust",
-        &[],
-    );
+    _trace.generated_code(&generated, name, "", "bidirectional_proto_to_rust", &[]);
 
     generated.into()
 }

@@ -1,16 +1,12 @@
-use crate::error::mode::ErrorMode;
-use crate::analysis::{
-    field_analysis::FieldProcessingContext,
-    type_analysis,
-};
+use crate::analysis::{field_analysis::FieldProcessingContext, type_analysis};
 use crate::conversion::custom_strategy::CustomConversionStrategy;
+use crate::debug::CallStackDebug;
+use crate::error::mode::ErrorMode;
 use crate::field::conversion_strategy::{
     CollectionStrategy, DirectStrategy, FieldConversionStrategy, OptionStrategy,
 };
-use quote::quote;
-use crate::analysis::type_analysis::is_enum_type;
-use crate::debug::CallStackDebug;
 use crate::field::info::{ProtoFieldInfo, RustFieldInfo};
+use quote::quote;
 
 impl FieldConversionStrategy {
     /// Generate proto->rust conversion code using new simplified logic
@@ -27,32 +23,52 @@ impl FieldConversionStrategy {
         match self {
             Self::Ignore => generate_ignore_proto_to_rust(ctx),
 
-            Self::Custom(custom_strategy) => {
-                generate_custom_proto_to_rust(custom_strategy, field, field_name, proto_field, None, ctx)
-            }
+            Self::Custom(custom_strategy) => generate_custom_proto_to_rust(
+                custom_strategy,
+                field,
+                field_name,
+                proto_field,
+                None,
+                ctx,
+            ),
 
-            Self::CustomWithError(custom_strategy, error_mode) => {
-                generate_custom_proto_to_rust(custom_strategy, field, field_name, proto_field, Some(error_mode), ctx)
-            }
+            Self::CustomWithError(custom_strategy, error_mode) => generate_custom_proto_to_rust(
+                custom_strategy,
+                field,
+                field_name,
+                proto_field,
+                Some(error_mode),
+                ctx,
+            ),
 
             Self::Direct(direct_strategy) => {
                 generate_direct_proto_to_rust(direct_strategy, field_name, proto_field)
             }
 
-            Self::Option(option_strategy) => {
-                generate_option_proto_to_rust(option_strategy, field_name, proto_field, ctx, &rust_field_info, &proto_field_info)
-            }
+            Self::Option(option_strategy) => generate_option_proto_to_rust(
+                option_strategy,
+                field_name,
+                proto_field,
+                ctx,
+                rust_field_info,
+                proto_field_info,
+            ),
 
             Self::Transparent(error_mode) => {
                 if proto_field_info.is_optional() {
-                    generate_transparent_proto_to_rust(error_mode, ctx, &rust_field_info, &proto_field_info)
+                    generate_transparent_proto_to_rust(
+                        error_mode,
+                        ctx,
+                        rust_field_info,
+                        proto_field_info,
+                    )
                 } else {
                     let field_name = ctx.field_name;
                     let proto_field = &ctx.proto_field_ident;
                     let field_type = ctx.field_type;
                     quote! { #field_name: #field_type::from(proto_struct.#proto_field) }
                 }
-            },
+            }
 
             Self::Collection(collection_strategy) => {
                 generate_collection_proto_to_rust(collection_strategy, ctx)
@@ -64,7 +80,7 @@ impl FieldConversionStrategy {
     pub fn generate_rust_to_proto_conversion(
         &self,
         ctx: &FieldProcessingContext,
-        field: &syn::Field,
+        _field: &syn::Field,
         rust_field_info: &RustFieldInfo,
         proto_field_info: &ProtoFieldInfo,
     ) -> proc_macro2::TokenStream {
@@ -77,14 +93,13 @@ impl FieldConversionStrategy {
                 quote! { /* field ignored */ }
             }
 
-            Self::Custom(custom_strategy) |
-            Self::CustomWithError(custom_strategy, _) => {
+            Self::Custom(custom_strategy) | Self::CustomWithError(custom_strategy, _) => {
                 generate_custom_rust_to_proto(
                     custom_strategy,
                     field_name,
-                    &rust_field_info,
                     proto_field,
-                    &proto_field_info
+                    rust_field_info,
+                    proto_field_info,
                 )
             }
 
@@ -92,19 +107,21 @@ impl FieldConversionStrategy {
                 generate_direct_rust_to_proto(direct_strategy, field_name, proto_field)
             }
 
-            Self::Option(option_strategy) => {
-                generate_option_rust_to_proto(option_strategy, field_name, proto_field, rust_field_info, proto_field_info)
-            }
+            Self::Option(option_strategy) => generate_option_rust_to_proto(
+                option_strategy,
+                field_name,
+                proto_field,
+                rust_field_info,
+                proto_field_info,
+            ),
 
-            Self::Transparent(error_mode) => {
-                generate_transparent_rust_to_proto(
-                    error_mode,
-                    field_name,
-                    &rust_field_info,
-                    proto_field,
-                    &proto_field_info
-                )
-            }
+            Self::Transparent(error_mode) => generate_transparent_rust_to_proto(
+                error_mode,
+                field_name,
+                proto_field,
+                rust_field_info,
+                proto_field_info,
+            ),
 
             Self::Collection(collection_strategy) => {
                 generate_collection_rust_to_proto(collection_strategy, field_name, proto_field)
@@ -162,63 +179,63 @@ fn generate_custom_proto_to_rust(
             } else {
                 quote! { #field_name: #from_fn(proto_struct.#proto_field) }
             }
-        },
+        }
         CustomConversionStrategy::IntoFn(_) => {
             // Fallback to .into() for proto->rust when only rust->proto function provided
             quote! { #field_name: proto_struct.#proto_field.into() }
-        },
-    }
-}
-
-fn generate_custom_with_error_mode(
-    error_mode: &ErrorMode,
-    field_name: &syn::Ident,
-    proto_field: &syn::Ident,
-    custom_fn: &syn::Path,
-    ctx: &FieldProcessingContext,
-) -> proc_macro2::TokenStream {
-    match error_mode {
-        ErrorMode::None | ErrorMode::Panic => {
-            quote! {
-                #field_name: #custom_fn(
-                    proto_struct.#proto_field.expect(&format!(
-                        "Proto field {} is required for custom conversion",
-                        stringify!(#proto_field)
-                    ))
-                )
-            }
-        }
-        ErrorMode::Error => {
-            let struct_name = &ctx.struct_name;
-            let error_type_name = format!("{}ConversionError", struct_name);
-            let error_type: syn::Ident = syn::parse_str(&error_type_name)
-                .expect("Failed to parse error type name");
-
-            quote! {
-                #field_name: #custom_fn(
-                    proto_struct.#proto_field
-                        .ok_or_else(|| #error_type::MissingField(stringify!(#proto_field).to_string()))?
-                )
-            }
-        }
-        ErrorMode::Default(Some(default_fn)) => {
-            let default_fn_path: syn::Path =
-                syn::parse_str(default_fn).expect("Failed to parse default function");
-            quote! {
-                #field_name: proto_struct.#proto_field
-                    .map(|v| #custom_fn(v))
-                    .unwrap_or_else(|| #default_fn_path())
-            }
-        }
-        ErrorMode::Default(None) => {
-            quote! {
-                #field_name: proto_struct.#proto_field
-                    .map(|v| #custom_fn(v))
-                    .unwrap_or_default()
-            }
         }
     }
 }
+
+// fn generate_custom_with_error_mode(
+//     error_mode: &ErrorMode,
+//     field_name: &syn::Ident,
+//     proto_field: &syn::Ident,
+//     custom_fn: &syn::Path,
+//     ctx: &FieldProcessingContext,
+// ) -> proc_macro2::TokenStream {
+//     match error_mode {
+//         ErrorMode::None | ErrorMode::Panic => {
+//             quote! {
+//                 #field_name: #custom_fn(
+//                     proto_struct.#proto_field.expect(&format!(
+//                         "Proto field {} is required for custom conversion",
+//                         stringify!(#proto_field)
+//                     ))
+//                 )
+//             }
+//         }
+//         ErrorMode::Error => {
+//             let struct_name = &ctx.struct_name;
+//             let error_type_name = format!("{}ConversionError", struct_name);
+//             let error_type: syn::Ident =
+//                 syn::parse_str(&error_type_name).expect("Failed to parse error type name");
+//
+//             quote! {
+//                 #field_name: #custom_fn(
+//                     proto_struct.#proto_field
+//                         .ok_or_else(|| #error_type::MissingField(stringify!(#proto_field).to_string()))?
+//                 )
+//             }
+//         }
+//         ErrorMode::Default(Some(default_fn)) => {
+//             let default_fn_path: syn::Path =
+//                 syn::parse_str(default_fn).expect("Failed to parse default function");
+//             quote! {
+//                 #field_name: proto_struct.#proto_field
+//                     .map(|v| #custom_fn(v))
+//                     .unwrap_or_else(|| #default_fn_path())
+//             }
+//         }
+//         ErrorMode::Default(None) => {
+//             quote! {
+//                 #field_name: proto_struct.#proto_field
+//                     .map(|v| #custom_fn(v))
+//                     .unwrap_or_default()
+//             }
+//         }
+//     }
+// }
 
 fn generate_direct_proto_to_rust(
     direct_strategy: &DirectStrategy,
@@ -246,7 +263,8 @@ fn generate_option_proto_to_rust(
     let _trace = CallStackDebug::new(
         "field::field_codegen",
         "generate_option_proto_to_rust",
-        "", ""
+        "",
+        "",
     );
     match option_strategy {
         OptionStrategy::Wrap => {
@@ -255,7 +273,14 @@ fn generate_option_proto_to_rust(
         }
         OptionStrategy::Unwrap(error_mode) => {
             _trace.decision("unwrap_option", "unwrap field considering error mode");
-            generate_unwrap_with_error_mode(error_mode, field_name, proto_field, ctx, rust_field_info, proto_field_info)
+            generate_unwrap_with_error_mode(
+                error_mode,
+                field_name,
+                proto_field,
+                ctx,
+                rust_field_info,
+                proto_field_info,
+            )
         }
         OptionStrategy::Map => {
             _trace.decision("map_option", "unwrap field and map");
@@ -323,7 +348,7 @@ fn generate_transparent_proto_to_rust(
                 proto_field,
                 field_type,
                 &get_error_type,
-                &error_message
+                &error_message,
             );
             quote! { #field_name: #field_type::from(#conversion_expr) }
         }
@@ -385,66 +410,67 @@ fn generate_collection_proto_to_rust(
     let proto_field = &ctx.proto_field_ident;
 
     match collection_strategy {
-        CollectionStrategy::Collect(error_mode) => {
-            match error_mode {
-                ErrorMode::Default(Some(default_fn)) => {
-                    let default_fn_path: syn::Path =
-                        syn::parse_str(default_fn).expect("Failed to parse default function");
-                    quote! {
-                        #field_name: if proto_struct.#proto_field.is_empty() {
-                            #default_fn_path()
-                        } else {
-                            proto_struct.#proto_field.into_iter().map(Into::into).collect()
-                        }
-                    }
-                }
-                ErrorMode::Default(None) => {
-                    quote! {
-                        #field_name: if proto_struct.#proto_field.is_empty() {
-                            Default::default()
-                        } else {
-                            proto_struct.#proto_field.into_iter().map(Into::into).collect()
-                        }
-                    }
-                }
-                ErrorMode::Error if ctx.default_fn.is_some() => {
-                    let default_fn_path: syn::Path = ctx.default_fn
-                        .as_ref()
-                        .and_then(|default_fn| syn::parse_str(default_fn).ok())
-                        .expect("Failed to parse default function");
-                    quote! {
-                        #field_name: if proto_struct.#proto_field.is_empty() {
-                            #default_fn_path()
-                        } else {
-                            proto_struct.#proto_field.into_iter().map(Into::into).collect()
-                        }
-                    }
-                }
-                ErrorMode::Error if ctx.proto_meta.error_fn.is_some() => {
-                    let error_fn_path: syn::Path = ctx.proto_meta.error_fn
-                        .as_ref()
-                        .and_then(|error_fn| syn::parse_str(error_fn).ok())
-                        .expect("Failed to parse error function");
-                    quote! {
-                        #field_name: if proto_struct.#proto_field.is_empty() {
-                            return Err(#error_fn_path(stringify!(#proto_field)));
-                        } else {
-                            proto_struct.#proto_field.into_iter().map(Into::into).collect()
-                        }
-                    }
-                }
-                ErrorMode::Error => {
-                    quote! {
-                        #field_name: proto_struct.#proto_field.into_iter().map(Into::into).collect()
-                    }
-                }
-                ErrorMode::Panic | ErrorMode::None => {
-                    quote! {
-                        #field_name: proto_struct.#proto_field.into_iter().map(Into::into).collect()
+        CollectionStrategy::Collect(error_mode) => match error_mode {
+            ErrorMode::Default(Some(default_fn)) => {
+                let default_fn_path: syn::Path =
+                    syn::parse_str(default_fn).expect("Failed to parse default function");
+                quote! {
+                    #field_name: if proto_struct.#proto_field.is_empty() {
+                        #default_fn_path()
+                    } else {
+                        proto_struct.#proto_field.into_iter().map(Into::into).collect()
                     }
                 }
             }
-        }
+            ErrorMode::Default(None) => {
+                quote! {
+                    #field_name: if proto_struct.#proto_field.is_empty() {
+                        Default::default()
+                    } else {
+                        proto_struct.#proto_field.into_iter().map(Into::into).collect()
+                    }
+                }
+            }
+            ErrorMode::Error if ctx.default_fn.is_some() => {
+                let default_fn_path: syn::Path = ctx
+                    .default_fn
+                    .as_ref()
+                    .and_then(|default_fn| syn::parse_str(default_fn).ok())
+                    .expect("Failed to parse default function");
+                quote! {
+                    #field_name: if proto_struct.#proto_field.is_empty() {
+                        #default_fn_path()
+                    } else {
+                        proto_struct.#proto_field.into_iter().map(Into::into).collect()
+                    }
+                }
+            }
+            ErrorMode::Error if ctx.proto_meta.error_fn.is_some() => {
+                let error_fn_path: syn::Path = ctx
+                    .proto_meta
+                    .error_fn
+                    .as_ref()
+                    .and_then(|error_fn| syn::parse_str(error_fn).ok())
+                    .expect("Failed to parse error function");
+                quote! {
+                    #field_name: if proto_struct.#proto_field.is_empty() {
+                        return Err(#error_fn_path(stringify!(#proto_field)));
+                    } else {
+                        proto_struct.#proto_field.into_iter().map(Into::into).collect()
+                    }
+                }
+            }
+            ErrorMode::Error => {
+                quote! {
+                    #field_name: proto_struct.#proto_field.into_iter().map(Into::into).collect()
+                }
+            }
+            ErrorMode::Panic | ErrorMode::None => {
+                quote! {
+                    #field_name: proto_struct.#proto_field.into_iter().map(Into::into).collect()
+                }
+            }
+        },
         CollectionStrategy::MapOption => {
             // Check if rust field is Option<Vec<T>> -> handle empty vec as None
             if is_option_vec_type(ctx.field_type) {
@@ -473,8 +499,8 @@ fn generate_collection_proto_to_rust(
 fn generate_custom_rust_to_proto(
     custom_strategy: &CustomConversionStrategy,
     field_name: &syn::Ident,
-    rust_field_info: &RustFieldInfo,
     proto_field: &syn::Ident,
+    rust_field_info: &RustFieldInfo,
     proto_field_info: &ProtoFieldInfo,
 ) -> proc_macro2::TokenStream {
     match custom_strategy {
@@ -520,13 +546,15 @@ fn generate_option_rust_to_proto(
     field_name: &syn::Ident,
     proto_field: &syn::Ident,
     rust_field_info: &RustFieldInfo,
-    proto_field_info: &ProtoFieldInfo
+    proto_field_info: &ProtoFieldInfo,
 ) -> proc_macro2::TokenStream {
     match option_strategy {
         OptionStrategy::Wrap => {
             quote! { #proto_field: Some(my_struct.#field_name.into()) }
         }
-        OptionStrategy::Unwrap(_) if rust_field_info.is_option && proto_field_info.is_optional() => {
+        OptionStrategy::Unwrap(_)
+            if rust_field_info.is_option && proto_field_info.is_optional() =>
+        {
             quote! { #proto_field: my_struct.#field_name.map(|v| v.into()) }
         }
         OptionStrategy::Unwrap(_) => {
@@ -541,8 +569,8 @@ fn generate_option_rust_to_proto(
 fn generate_transparent_rust_to_proto(
     _error_mode: &ErrorMode,
     field_name: &syn::Ident,
-    rust_field_info: &RustFieldInfo,
     proto_field: &syn::Ident,
+    rust_field_info: &RustFieldInfo,
     proto_field_info: &ProtoFieldInfo,
 ) -> proc_macro2::TokenStream {
     if proto_field_info.is_optional() {
@@ -550,7 +578,7 @@ fn generate_transparent_rust_to_proto(
             .map(|_inner_type| {
                 quote! { #proto_field: my_struct.#field_name.map(|inner| inner.into()) }
             })
-            .unwrap_or_else(|| quote! { #proto_field: Some(my_struct.#field_name.into()) } )
+            .unwrap_or_else(|| quote! { #proto_field: Some(my_struct.#field_name.into()) })
     } else {
         quote! { #proto_field: my_struct.#field_name.into() }
     }
@@ -592,19 +620,20 @@ fn generate_unwrap_with_error_mode(
     let _trace = CallStackDebug::new(
         "field::field_codegen",
         "generate_unwrap_with_error_mode",
-        "", ""
+        "",
+        "",
     );
 
     let get_context_error_fn = |c: &FieldProcessingContext| {
-        c.proto_meta.error_fn
+        c.proto_meta
+            .error_fn
             .as_ref()
             .and_then(|error_fn| syn::parse_str::<syn::Path>(error_fn).ok())
             .expect("Failed to parse error function path")
     };
     let derive_struct_error_type = |c: &FieldProcessingContext| {
         let error_type_name = format!("{}ConversionError", c.struct_name);
-        syn::parse_str::<syn::Ident>(&error_type_name)
-            .expect("Failed to parse error type name")
+        syn::parse_str::<syn::Ident>(&error_type_name).expect("Failed to parse error type name")
     };
 
     match error_mode {
@@ -617,9 +646,15 @@ fn generate_unwrap_with_error_mode(
             }
         }
 
-
-        ErrorMode::Error if ctx.proto_meta.error_fn.is_some() && rust_field_info.is_option && proto_field_info.is_optional() => {
-            _trace.decision("optional_with_custom_error", "Option<T> -> Option<T> with custom error function");
+        ErrorMode::Error
+            if ctx.proto_meta.error_fn.is_some()
+                && rust_field_info.is_option
+                && proto_field_info.is_optional() =>
+        {
+            _trace.decision(
+                "optional_with_custom_error",
+                "Option<T> -> Option<T> with custom error function",
+            );
             let error_fn = get_context_error_fn(ctx);
             quote! {
                 #field_name: Some(proto_struct.#proto_field
@@ -628,7 +663,10 @@ fn generate_unwrap_with_error_mode(
             }
         }
         ErrorMode::Error if ctx.proto_meta.error_fn.is_some() => {
-            _trace.decision("unwrap_with_custom_error", "Required field with custom error function");
+            _trace.decision(
+                "unwrap_with_custom_error",
+                "Required field with custom error function",
+            );
             let error_fn = get_context_error_fn(ctx);
             quote! {
                 #field_name: proto_struct.#proto_field
@@ -637,7 +675,10 @@ fn generate_unwrap_with_error_mode(
             }
         }
         ErrorMode::Error if rust_field_info.is_option && proto_field_info.is_optional() => {
-            _trace.decision("optional_with_generated_error", "Option<T> -> Option<T> with generated error type");
+            _trace.decision(
+                "optional_with_generated_error",
+                "Option<T> -> Option<T> with generated error type",
+            );
             let error_type = derive_struct_error_type(ctx);
             quote! {
                 #field_name: Some(proto_struct.#proto_field
@@ -646,7 +687,10 @@ fn generate_unwrap_with_error_mode(
             }
         }
         ErrorMode::Error => {
-            _trace.decision("unwrap_with_generated_error", "Required field with generated error type");
+            _trace.decision(
+                "unwrap_with_generated_error",
+                "Required field with generated error type",
+            );
             let error_type = derive_struct_error_type(ctx);
             quote! {
                 #field_name: proto_struct.#proto_field
@@ -655,10 +699,9 @@ fn generate_unwrap_with_error_mode(
             }
         }
 
-
         ErrorMode::Default(Some(default_fn)) if rust_field_info.is_option => {
-            let default_fn: syn::Path = syn::parse_str(default_fn)
-                .expect("Failed to parse default function");
+            let default_fn: syn::Path =
+                syn::parse_str(default_fn).expect("Failed to parse default function");
             quote! {
                 #field_name: proto_struct.#proto_field
                     .map(|v| v.into())
@@ -666,7 +709,10 @@ fn generate_unwrap_with_error_mode(
             }
         }
         ErrorMode::Default(Some(default_fn)) => {
-            _trace.decision("optional_with_default_fn", "Option<T> field with custom default function");
+            _trace.decision(
+                "optional_with_default_fn",
+                "Option<T> field with custom default function",
+            );
             let default_fn: syn::Path =
                 syn::parse_str(default_fn).expect("Failed to parse default function");
             quote! {
@@ -686,8 +732,6 @@ fn generate_unwrap_with_error_mode(
     }
 }
 
-
-
 fn is_option_vec_type(field_type: &syn::Type) -> bool {
     type_analysis::get_inner_type_from_option(field_type)
         .map(|inner| type_analysis::is_vec_type(&inner))
@@ -697,10 +741,10 @@ fn is_option_vec_type(field_type: &syn::Type) -> bool {
 // Replace the placeholder implementation in compatibility testing
 #[cfg(test)]
 mod tests {
+    use super::*;
     use crate::analysis::optionality::FieldOptionality;
     use crate::debug;
     use crate::field::info::ProtoMapping;
-    use super::*;
     use crate::migration::compatibility::test_helpers;
 
     #[test]
@@ -729,8 +773,18 @@ mod tests {
             let rust_field_info = RustFieldInfo::analyze(&ctx, &field);
             let proto_field_info = ProtoFieldInfo::infer_from(&ctx, &field, &rust_field_info);
 
-            let proto_to_rust = strategy.generate_proto_to_rust_conversion(&ctx, &field, &rust_field_info, &proto_field_info);
-            let rust_to_proto = strategy.generate_rust_to_proto_conversion(&ctx, &field, &rust_field_info, &proto_field_info);
+            let proto_to_rust = strategy.generate_proto_to_rust_conversion(
+                &ctx,
+                &field,
+                &rust_field_info,
+                &proto_field_info,
+            );
+            let rust_to_proto = strategy.generate_rust_to_proto_conversion(
+                &ctx,
+                &field,
+                &rust_field_info,
+                &proto_field_info,
+            );
 
             // Verify tokens are not empty and parse correctly
             assert!(
@@ -792,22 +846,39 @@ mod tests {
                 optionality: FieldOptionality::Optional,
             };
 
-            let proto_to_rust = strategy.generate_proto_to_rust_conversion(&ctx, &field, &rust_field_info, &proto_field_info);
+            let proto_to_rust = strategy.generate_proto_to_rust_conversion(
+                &ctx,
+                &field,
+                &rust_field_info,
+                &proto_field_info,
+            );
             let code_str = proto_to_rust.to_string();
-            println!("Generated code for {:?}: {}", error_mode, code_str);  // DMR: Debug print
+            println!("Generated code for {:?}: {}", error_mode, code_str); // DMR: Debug print
 
             match &error_mode {
                 ErrorMode::Panic => {
                     assert!(code_str.contains("expect"), "Panic mode should use expect");
-                    assert!(code_str.contains("Some"), "Should wrap result in Some for Option field");
+                    assert!(
+                        code_str.contains("Some"),
+                        "Should wrap result in Some for Option field"
+                    );
                 }
                 ErrorMode::Default(Some(_)) => {
-                    assert!(code_str.contains("test_default"), "Should use custom default");
-                },
+                    assert!(
+                        code_str.contains("test_default"),
+                        "Should use custom default"
+                    );
+                }
                 ErrorMode::Default(None) => {
-                    assert!(code_str.contains("Default :: default"), "Should use Default trait");
-                    assert!(code_str.contains("or_else"), "Should use or_else for Option handling");
-                },
+                    assert!(
+                        code_str.contains("Default :: default"),
+                        "Should use Default trait"
+                    );
+                    assert!(
+                        code_str.contains("or_else"),
+                        "Should use or_else for Option handling"
+                    );
+                }
                 _ => {} // Other modes have different patterns
             }
         }
@@ -827,7 +898,7 @@ mod tests {
 
             // DMR: Create a context where proto field is actually optional
             // This would be a case like: Option<TransparentWrapper> -> Option<inner_proto_type>
-            let (field, mut ctx) = test_helpers::create_mock_context(
+            let (field, ctx) = test_helpers::create_mock_context(
                 "TestStruct",
                 "test_field",
                 "Option<TransparentWrapper>",
@@ -842,9 +913,14 @@ mod tests {
                 type_name: "Option<inner_type>".to_string(),
                 mapping: ProtoMapping::Scalar,
                 optionality: FieldOptionality::Optional, // This makes is_optional() return true
-            };;
+            };
 
-            let proto_to_rust = strategy.generate_proto_to_rust_conversion(&ctx, &field, &rust_field_info, &proto_field_info);
+            let proto_to_rust = strategy.generate_proto_to_rust_conversion(
+                &ctx,
+                &field,
+                &rust_field_info,
+                &proto_field_info,
+            );
             let code_str = proto_to_rust.to_string();
             println!("Generated code for {:?}: {}", error_mode, code_str);
 
@@ -853,19 +929,40 @@ mod tests {
                     assert!(code_str.contains("expect"), "Panic mode should use expect");
                 }
                 ErrorMode::Error => {
-                    assert!(code_str.contains("ok_or_else"), "Error mode should use ok_or_else");
-                    assert!(code_str.contains("TestStructConversionError"), "Should use generated error type");
+                    assert!(
+                        code_str.contains("ok_or_else"),
+                        "Error mode should use ok_or_else"
+                    );
+                    assert!(
+                        code_str.contains("TestStructConversionError"),
+                        "Should use generated error type"
+                    );
                 }
                 ErrorMode::Default(Some(_)) => {
-                    assert!(code_str.contains("test_default"), "Should use custom default");
+                    assert!(
+                        code_str.contains("test_default"),
+                        "Should use custom default"
+                    );
                 }
                 ErrorMode::Default(None) => {
-                    assert!(code_str.contains("Default :: default"), "Should use Default trait");
-                    assert!(code_str.contains("or_else"), "Should use or_else for Option handling");
+                    assert!(
+                        code_str.contains("Default :: default"),
+                        "Should use Default trait"
+                    );
+                    assert!(
+                        code_str.contains("or_else"),
+                        "Should use or_else for Option handling"
+                    );
                 }
                 ErrorMode::None => {
-                    assert!(code_str.contains("map"), "None mode should use map for optional");
-                    assert!(code_str.contains("TransparentWrapper :: from"), "Should map with From conversion");
+                    assert!(
+                        code_str.contains("map"),
+                        "None mode should use map for optional"
+                    );
+                    assert!(
+                        code_str.contains("TransparentWrapper :: from"),
+                        "Should map with From conversion"
+                    );
                 }
             }
         }
@@ -894,8 +991,18 @@ mod tests {
             let rust_field_info = RustFieldInfo::analyze(&ctx, &field);
             let proto_field_info = ProtoFieldInfo::infer_from(&ctx, &field, &rust_field_info);
 
-            let proto_to_rust = strategy.generate_proto_to_rust_conversion(&ctx, &field, &rust_field_info, &proto_field_info);
-            let rust_to_proto = strategy.generate_rust_to_proto_conversion(&ctx, &field, &rust_field_info, &proto_field_info);
+            let proto_to_rust = strategy.generate_proto_to_rust_conversion(
+                &ctx,
+                &field,
+                &rust_field_info,
+                &proto_field_info,
+            );
+            let rust_to_proto = strategy.generate_rust_to_proto_conversion(
+                &ctx,
+                &field,
+                &rust_field_info,
+                &proto_field_info,
+            );
 
             let proto_to_rust_str = proto_to_rust.to_string();
             let rust_to_proto_str = rust_to_proto.to_string();
@@ -934,30 +1041,40 @@ mod tests {
             "custom_into".to_string(),
         );
 
-        let error_modes = vec![
-            ErrorMode::Panic,
-            ErrorMode::Error,
-            ErrorMode::Default(None),
-        ];
+        let error_modes = vec![ErrorMode::Panic, ErrorMode::Error, ErrorMode::Default(None)];
 
         for error_mode in error_modes {
-            let strategy = FieldConversionStrategy::CustomWithError(custom_strategy.clone(), error_mode.clone());
+            let strategy = FieldConversionStrategy::CustomWithError(
+                custom_strategy.clone(),
+                error_mode.clone(),
+            );
             let (field, ctx) = test_helpers::create_mock_context(
                 "TestStruct",
                 "test_field",
                 "CustomComplexType",
                 "proto",
-                &["proto_to_rust_fn = \"custom_from\"", "rust_to_proto_fn = \"custom_into\""],
+                &[
+                    "proto_to_rust_fn = \"custom_from\"",
+                    "rust_to_proto_fn = \"custom_into\"",
+                ],
             );
             let rust_field_info = RustFieldInfo::analyze(&ctx, &field);
             let proto_field_info = ProtoFieldInfo::infer_from(&ctx, &field, &rust_field_info);
 
-            let proto_to_rust = strategy.generate_proto_to_rust_conversion(&ctx, &field, &rust_field_info, &proto_field_info);
+            let proto_to_rust = strategy.generate_proto_to_rust_conversion(
+                &ctx,
+                &field,
+                &rust_field_info,
+                &proto_field_info,
+            );
             let code_str = proto_to_rust.to_string();
             println!("generated code: {}", debug::format_rust_code(&code_str));
 
             // Should contain the custom function name
-            assert!(code_str.contains("custom_from"), "Should use custom from function");
+            assert!(
+                code_str.contains("custom_from"),
+                "Should use custom from function"
+            );
 
             // Should have appropriate error handling based on mode
             match &error_mode {
@@ -965,12 +1082,24 @@ mod tests {
                     assert!(code_str.contains("expect"), "Panic mode should use expect");
                 }
                 ErrorMode::Error => {
-                    assert!(code_str.contains("expect"), "Error mode should use expect for custom conversion");
-                    assert!(code_str.contains("custom_from"), "Should use custom from function");
+                    assert!(
+                        code_str.contains("expect"),
+                        "Error mode should use expect for custom conversion"
+                    );
+                    assert!(
+                        code_str.contains("custom_from"),
+                        "Should use custom from function"
+                    );
                 }
                 ErrorMode::Default(None) => {
-                    assert!(code_str.contains("expect"), "Custom conversion uses expect for all error modes");
-                    assert!(code_str.contains("custom_from"), "Should use custom from function");
+                    assert!(
+                        code_str.contains("expect"),
+                        "Custom conversion uses expect for all error modes"
+                    );
+                    assert!(
+                        code_str.contains("custom_from"),
+                        "Should use custom from function"
+                    );
                 }
                 _ => {}
             }

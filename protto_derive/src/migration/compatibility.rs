@@ -1,12 +1,13 @@
 use crate::analysis::field_analysis::{self, FieldProcessingContext};
 use crate::conversion::ConversionStrategy as OldConversionStrategy;
 use crate::field::{
-    conversion_strategy::{FieldConversionStrategy, },
+    conversion_strategy::FieldConversionStrategy,
     info::{ProtoFieldInfo, RustFieldInfo},
 };
 
 /// Results from running both old and new strategy selection systems
 #[derive(Debug, Clone)]
+#[allow(unused)]
 pub struct StrategyComparisonResult {
     pub old_strategy: OldConversionStrategy,
     pub new_strategy: FieldConversionStrategy,
@@ -37,32 +38,34 @@ impl StrategyCompatibilityTester {
             OldConversionStrategy::from_field_info(ctx, field, &rust_field_info, &proto_field_info);
 
         // Generate old code
-        let (old_from_proto, old_to_proto) =
-            field_analysis::generate_field_conversions(field, ctx)
-                .map_err(|e| format!("Old system code generation failed: {:?}", e))?;
+        let (old_from_proto, old_to_proto) = field_analysis::generate_field_conversions(field, ctx)
+            .map_err(|e| format!("Old system code generation failed: {:?}", e))?;
 
         // Run new system
-        let new_strategy =
-            FieldConversionStrategy::from_field_info(ctx, field, &rust_field_info, &proto_field_info);
+        let new_strategy = FieldConversionStrategy::from_field_info(
+            ctx,
+            field,
+            &rust_field_info,
+            &proto_field_info,
+        );
 
         // Generate new code (placeholder - we'll implement this in later steps)
-        let (new_from_proto, new_to_proto) =
-            Self::generate_new_field_conversions(&new_strategy, ctx, field, &rust_field_info, &proto_field_info);
+        let (new_from_proto, new_to_proto) = Self::generate_new_field_conversions(
+            &new_strategy,
+            ctx,
+            field,
+            &rust_field_info,
+            &proto_field_info,
+        );
 
         // Compare strategies
         let strategies_match = Self::strategies_are_equivalent(&old_strategy, &new_strategy);
 
         // Compare generated code
-        let from_proto_generation_matches = Self::compare_generated_code(
-            "from_proto",
-            &old_from_proto,
-            &new_from_proto
-        );
-        let to_proto_generation_matches = Self::compare_generated_code(
-            "to_proto",
-            &old_to_proto,
-            &new_to_proto
-        );
+        let from_proto_generation_matches =
+            Self::compare_generated_code("from_proto", &old_from_proto, &new_from_proto);
+        let to_proto_generation_matches =
+            Self::compare_generated_code("to_proto", &old_to_proto, &new_to_proto);
 
         Ok(StrategyComparisonResult {
             old_strategy,
@@ -86,9 +89,12 @@ impl StrategyCompatibilityTester {
     ) -> bool {
         // Try to map old strategy to new and see if it matches
         if let Some(mapped_new) = FieldConversionStrategy::from_old_strategy(old)
-        && &mapped_new == new {
+            && &mapped_new == new
+        {
             true
-        } else if let Some(mapped_old) = new.to_old_strategy() && &mapped_old == old {
+        } else if let Some(mapped_old) = new.to_old_strategy()
+            && &mapped_old == old
+        {
             true
         } else {
             // If we can't map the old strategy, they don't match
@@ -100,7 +106,7 @@ impl StrategyCompatibilityTester {
     fn compare_generated_code(
         label: &str,
         old: &proc_macro2::TokenStream,
-        new: &proc_macro2::TokenStream
+        new: &proc_macro2::TokenStream,
     ) -> bool {
         // For now, just compare the string representations
         // In a real implementation, you might want more sophisticated comparison
@@ -124,12 +130,23 @@ impl StrategyCompatibilityTester {
         rust_field_info: &RustFieldInfo,
         proto_field_info: &ProtoFieldInfo,
     ) -> (proc_macro2::TokenStream, proc_macro2::TokenStream) {
-        let proto_to_rust = strategy.generate_proto_to_rust_conversion(ctx, field, rust_field_info, proto_field_info);
-        let rust_to_proto = strategy.generate_rust_to_proto_conversion(ctx, field, rust_field_info, proto_field_info);
+        let proto_to_rust = strategy.generate_proto_to_rust_conversion(
+            ctx,
+            field,
+            rust_field_info,
+            proto_field_info,
+        );
+        let rust_to_proto = strategy.generate_rust_to_proto_conversion(
+            ctx,
+            field,
+            rust_field_info,
+            proto_field_info,
+        );
         (proto_to_rust, rust_to_proto)
     }
 
     /// Run compatibility tests on multiple fields and generate a report
+    #[allow(unused)]
     pub fn run_compatibility_report(
         fields_and_contexts: Vec<(&syn::Field, &FieldProcessingContext)>,
     ) -> CompatibilityReport {
@@ -174,6 +191,7 @@ impl StrategyCompatibilityTester {
 
 /// Report from running compatibility tests across multiple fields
 #[derive(Debug)]
+#[allow(unused)]
 pub struct CompatibilityReport {
     pub total_fields: usize,
     pub strategy_matches: usize,
@@ -183,6 +201,7 @@ pub struct CompatibilityReport {
 }
 
 #[derive(Debug)]
+#[allow(unused)]
 pub struct FieldComparisonFailure {
     pub field_name: String,
     pub struct_name: String,
@@ -191,6 +210,7 @@ pub struct FieldComparisonFailure {
 
 impl CompatibilityReport {
     /// Print a summary of the compatibility test results
+    #[allow(unused)]
     pub fn print_summary(&self) {
         println!("=== Strategy Compatibility Report ===");
         println!("Total fields tested: {}", self.total_fields);
@@ -234,6 +254,7 @@ impl CompatibilityReport {
     }
 
     /// Get fields where strategies don't match
+    #[allow(unused)]
     pub fn get_strategy_mismatches(&self) -> Vec<&StrategyComparisonResult> {
         self.results
             .iter()
@@ -242,6 +263,7 @@ impl CompatibilityReport {
     }
 
     /// Get fields where code generation doesn't match
+    #[allow(unused)]
     pub fn get_code_mismatches(&self) -> Vec<&StrategyComparisonResult> {
         self.results
             .iter()
@@ -250,6 +272,7 @@ impl CompatibilityReport {
     }
 
     /// Check if all tests passed
+    #[allow(unused)]
     pub fn all_tests_passed(&self) -> bool {
         self.failures.is_empty()
             && self.strategy_matches == self.total_fields
@@ -259,8 +282,8 @@ impl CompatibilityReport {
 
 #[cfg(test)]
 mod tests {
-    use crate::field::conversion_strategy;
     use super::*;
+    use crate::field::conversion_strategy;
 
     #[test]
     fn test_strategy_equivalence_detection() {
@@ -393,6 +416,7 @@ pub mod test_helpers {
 
     /// Create test cases based on patterns observed in your test files
     /// This extracts common field patterns from your actual tests
+    #[allow(unused)]
     pub fn create_common_test_cases() -> Vec<(syn::Field, FieldProcessingContext<'static>)> {
         let mut test_cases = Vec::new();
 

@@ -3,7 +3,9 @@ use crate::migration::config;
 
 #[cfg(test)]
 pub fn with_env_var<F>(key: &str, value: &str, test: F)
-where F: FnOnce() {
+where
+    F: FnOnce(),
+{
     unsafe {
         let old_value = std::env::var(key).ok();
         std::env::set_var(key, value);
@@ -39,24 +41,26 @@ mod baseline_migration_test {
         if let Some((field, context)) = result {
             match crate::migration::generate_field_conversions_with_migration(&field, &context) {
                 Ok((proto_to_rust, rust_to_proto)) => {
-                    assert!(!proto_to_rust.is_empty(), "Proto->Rust conversion should not be empty");
-                    assert!(!rust_to_proto.is_empty(), "Rust->Proto conversion should not be empty");
+                    assert!(
+                        !proto_to_rust.is_empty(),
+                        "Proto->Rust conversion should not be empty"
+                    );
+                    assert!(
+                        !rust_to_proto.is_empty(),
+                        "Rust->Proto conversion should not be empty"
+                    );
                     println!("✓ Migration function (old_only mode): OK");
-                },
+                }
                 Err(e) => {
                     panic!("Migration function failed: {}", e);
                 }
             }
         }
 
-        with_env_var(
-            "PROTTO_MIGRATION_MODE",
-            "validate_both",
-            || {
-                config::from_env();
-                println!("✓ Environment configuration: OK");
-            }
-        );
+        with_env_var("PROTTO_MIGRATION_MODE", "validate_both", || {
+            config::from_env();
+            println!("✓ Environment configuration: OK");
+        });
 
         println!("Migration framework baseline: OK");
     }
@@ -72,7 +76,10 @@ mod baseline_migration_test {
             attrs: vec![],
             vis: syn::Visibility::Public(Default::default()),
             mutability: syn::FieldMutability::None,
-            ident: Some(syn::Ident::new("test_field", proc_macro2::Span::call_site())),
+            ident: Some(syn::Ident::new(
+                "test_field",
+                proc_macro2::Span::call_site(),
+            )),
             colon_token: Some(syn::Token![:](proc_macro2::Span::call_site())),
             ty: field_type,
         };
@@ -95,7 +102,7 @@ mod baseline_migration_test {
                 assert!(!proto_to_rust.is_empty());
                 assert!(!rust_to_proto.is_empty());
                 println!("✓ Existing field analysis: OK");
-            },
+            }
             Err(e) => {
                 println!("⚠️ Existing field analysis error: {}", e);
                 // This might fail for complex cases, which is expected
@@ -109,7 +116,6 @@ mod baseline_migration_test {
     #[test]
     fn test_error_mode_integration() {
         use crate::error::mode::ErrorMode;
-        use crate::analysis::expect_analysis::ExpectMode;
 
         // Test ErrorMode creation
         let error_modes = vec![
@@ -217,11 +223,16 @@ mod challenging_migration_tests {
             match StrategyCompatibilityTester::compare_field_strategies(&context, &field) {
                 Ok(comparison) => {
                     println!("  Strategies match: {}", comparison.strategies_match);
-                    println!("  Code matches: {}", comparison.from_proto_generation_matches && comparison.to_proto_generation_matches);
+                    println!(
+                        "  Code matches: {}",
+                        comparison.from_proto_generation_matches
+                            && comparison.to_proto_generation_matches
+                    );
 
-                    if comparison.strategies_match &&
-                    comparison.from_proto_generation_matches &&
-                    comparison.to_proto_generation_matches {
+                    if comparison.strategies_match
+                        && comparison.from_proto_generation_matches
+                        && comparison.to_proto_generation_matches
+                    {
                         passed += 1;
                     } else {
                         failed += 1;
@@ -276,7 +287,10 @@ mod challenging_migration_tests {
             ],
         );
         println!("Proto meta: {:?}", context.proto_meta);
-        println!("Old system proto field is_optional: {}", context.proto_meta.is_proto_optional());
+        println!(
+            "Old system proto field is_optional: {}",
+            context.proto_meta.is_proto_optional()
+        );
 
         let result = StrategyCompatibilityTester::compare_field_strategies(&context, &field);
 
@@ -352,7 +366,8 @@ mod challenging_migration_tests {
                         struct_name,
                         field_name,
                         comparison.strategies_match,
-                        comparison.from_proto_generation_matches && comparison.to_proto_generation_matches
+                        comparison.from_proto_generation_matches
+                            && comparison.to_proto_generation_matches
                     );
 
                     if !comparison.strategies_match {
@@ -427,12 +442,14 @@ mod challenging_migration_tests {
                         struct_name,
                         field_name,
                         comparison.strategies_match,
-                        comparison.from_proto_generation_matches && comparison.to_proto_generation_matches,
+                        comparison.from_proto_generation_matches
+                            && comparison.to_proto_generation_matches,
                     ));
 
-                    if !comparison.strategies_match ||
-                    !comparison.from_proto_generation_matches ||
-                    !comparison.to_proto_generation_matches {
+                    if !comparison.strategies_match
+                        || !comparison.from_proto_generation_matches
+                        || !comparison.to_proto_generation_matches
+                    {
                         println!(
                             "Collection case {}.{}: strategies={}, from_proto_code={}, to_proto_code={}",
                             struct_name,

@@ -1,18 +1,12 @@
-
 pub mod custom_strategy;
 
-use crate::debug::CallStackDebug;
 use crate::analysis::{
-    expect_analysis::ExpectMode,
-    field_analysis::FieldProcessingContext,
-    optionality::FieldOptionality,
-    type_analysis,
+    expect_analysis::ExpectMode, field_analysis::FieldProcessingContext,
+    optionality::FieldOptionality, type_analysis,
 };
+use crate::debug::CallStackDebug;
 use crate::field::info::{ProtoFieldInfo, ProtoMapping, RustFieldInfo};
 use quote::quote;
-
-
-
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum ConversionStrategy {
@@ -174,7 +168,11 @@ impl ConversionStrategy {
                     return Err(format!(
                         "MapOption strategy requires at least one side to be Option type. \
                          Rust: {}, Proto: {} - use DirectWithInto instead.",
-                        if rust_field_info.is_option { "Option" } else { "Required" },
+                        if rust_field_info.is_option {
+                            "Option"
+                        } else {
+                            "Required"
+                        },
                         if proto_field_info.is_optional() {
                             "Option"
                         } else {
@@ -212,7 +210,9 @@ impl ConversionStrategy {
 
             // -- Validate option vec strategy --
             Self::MapVecInOption => {
-                if !Self::is_option_vec_type(ctx.field_type) && !proto_field_info.mapping.is_repeated() {
+                if !Self::is_option_vec_type(ctx.field_type)
+                    && !proto_field_info.mapping.is_repeated()
+                {
                     return Err(format!(
                         "MapVecInOption strategy requires Option<Vec<T>> type, found: {}",
                         quote!(ctx.field_type)
@@ -314,9 +314,18 @@ impl ConversionStrategy {
             &[
                 ("rust_is_option", &rust_field_info.is_option.to_string()),
                 ("rust_is_vec", &rust_field_info.is_vec.to_string()),
-                ("proto_is_option", &proto_field_info.is_optional().to_string()),
-                ("proto_is_repeated", &proto_field_info.is_repeated().to_string()),
-                ("proto_optionality", &format!("{:?}", proto_field_info.optionality)),
+                (
+                    "proto_is_option",
+                    &proto_field_info.is_optional().to_string(),
+                ),
+                (
+                    "proto_is_repeated",
+                    &proto_field_info.is_repeated().to_string(),
+                ),
+                (
+                    "proto_optionality",
+                    &format!("{:?}", proto_field_info.optionality),
+                ),
             ],
         );
 
@@ -345,7 +354,11 @@ impl ConversionStrategy {
             // -- Handle transparent fields --
             Self::determine_transparent_strategy(ctx, rust_field_info, proto_field_info, &_trace)
         } else {
-            match (rust_field_info.is_option, proto_field_info.mapping, rust_field_info.expect_mode) {
+            match (
+                rust_field_info.is_option,
+                proto_field_info.mapping,
+                rust_field_info.expect_mode,
+            ) {
                 // -- Collection handling first --
                 (false, ProtoMapping::Repeated, _) => {
                     _trace.decision("rust_required + proto_repeated", "CollectVec or variant");
@@ -391,7 +404,9 @@ impl ConversionStrategy {
                     );
                     Self::UnwrapOptionalWithError
                 }
-                (false, _, ExpectMode::None) if proto_field_info.is_optional() && rust_field_info.has_default => {
+                (false, _, ExpectMode::None)
+                    if proto_field_info.is_optional() && rust_field_info.has_default =>
+                {
                     _trace.decision(
                         "rust_required + proto_optional + has_default",
                         "UnwrapOptionalWithDefault",
@@ -496,7 +511,9 @@ impl ConversionStrategy {
                     );
                     Self::UnwrapOptionalWithError
                 }
-                (false, ProtoMapping::Optional, ExpectMode::None) if rust_field_info.has_default => {
+                (false, ProtoMapping::Optional, ExpectMode::None)
+                    if rust_field_info.has_default =>
+                {
                     _trace.decision(
                         "rust_required + proto_optional + has_default",
                         "UnwrapOptionalWithDefault",
@@ -538,7 +555,9 @@ impl ConversionStrategy {
             }
         };
 
-        if let Err(validation_error) = Self::validate_proto_optional_attribute(ctx, rust_field_info, &result) {
+        if let Err(validation_error) =
+            Self::validate_proto_optional_attribute(ctx, rust_field_info, &result)
+        {
             panic!("Protto validation error: {}", validation_error);
         }
 
@@ -753,7 +772,10 @@ impl ConversionStrategy {
     }
 
     // proto type detection - more resilient than just checking first segment
-    fn is_proto_type_conversion(ctx: &FieldProcessingContext, rust_field_info: &RustFieldInfo) -> bool {
+    fn is_proto_type_conversion(
+        ctx: &FieldProcessingContext,
+        rust_field_info: &RustFieldInfo,
+    ) -> bool {
         // Check if this is a conversion between proto module types
         type_analysis::is_proto_type(&rust_field_info.field_type, ctx.proto_module)
     }

@@ -1,7 +1,7 @@
-use quote::quote;
+use crate::analysis::field_analysis::FieldProcessingContext;
 use crate::debug::CallStackDebug;
 use crate::migration::{self, MigrationError, generate_field_conversions_with_migration};
-use crate::analysis::field_analysis::FieldProcessingContext;
+use quote::quote;
 
 /// Initialize migration system at macro startup
 pub fn initialize_migration_system() {
@@ -22,7 +22,10 @@ pub fn generate_bidirectional_field_conversion(
         &[
             ("rust_field_type", &quote!(ctx.field_type).to_string()),
             ("proto_field_ident", &ctx.proto_field_ident.to_string()),
-            ("migration_mode", &format!("{:?}", migration::get_global_migration())),
+            (
+                "migration_mode",
+                &format!("{:?}", migration::get_global_migration()),
+            ),
         ],
     );
 
@@ -47,7 +50,7 @@ pub fn generate_bidirectional_field_conversion(
             (from_proto, to_proto)
         })
         .map_err(|err| {
-            _trace.error(&format!(
+            _trace.error(format!(
                 "Migration error for field '{}': {err}",
                 ctx.field_name
             ));
@@ -56,48 +59,48 @@ pub fn generate_bidirectional_field_conversion(
         })
 }
 
-/// Legacy function for proto->rust conversion (kept for backward compatibility)
-pub fn generate_from_proto_field(
-    field: &syn::Field,
-    ctx: &FieldProcessingContext,
-) -> proc_macro2::TokenStream {
-    let _trace = CallStackDebug::with_context(
-        "field::field_processor",
-        "generate_from_proto_field",
-        ctx.struct_name,
-        ctx.field_name,
-        &[("legacy_mode", "proto_to_rust_only")],
-    );
+// /// Legacy function for proto->rust conversion (kept for backward compatibility)
+// pub fn generate_from_proto_field(
+//     field: &syn::Field,
+//     ctx: &FieldProcessingContext,
+// ) -> proc_macro2::TokenStream {
+//     let _trace = CallStackDebug::with_context(
+//         "field::field_processor",
+//         "generate_from_proto_field",
+//         ctx.struct_name,
+//         ctx.field_name,
+//         &[("legacy_mode", "proto_to_rust_only")],
+//     );
+//
+//     generate_bidirectional_field_conversion(field, ctx)
+//         .map(|(from_proto, _)| from_proto)
+//         .unwrap_or_else(|err| {
+//             let error_msg = err.to_string();
+//             _trace.error(&format!("Legacy conversion failed: {err}"));
+//             quote! { compile_error!(#error_msg); }
+//         })
+// }
 
-    generate_bidirectional_field_conversion(field, ctx)
-        .map(|(from_proto, _)| from_proto)
-        .unwrap_or_else(|err| {
-            let error_msg = err.to_string();
-            _trace.error(&format!("Legacy conversion failed: {err}"));
-            quote! { compile_error!(error_msg); }
-        })
-}
-
-/// Legacy function for rust->proto conversion (kept for backward compatibility)
-pub fn generate_from_my_field(
-    field: &syn::Field,
-    ctx: &FieldProcessingContext,
-) -> proc_macro2::TokenStream {
-    let _trace = CallStackDebug::new(
-        "field::field_processor",
-        "generate_from_my_field",
-        ctx.struct_name,
-        ctx.field_name
-    );
-
-    generate_bidirectional_field_conversion(field, ctx)
-        .map(|(_, to_proto)| to_proto)
-        .unwrap_or_else(|err| {
-            let error_msg = err.to_string();
-            _trace.error(&format!("Legacy conversion failed: {err}"));
-            quote! { compile_error!(error_msg); }
-        })
-}
+// /// Legacy function for rust->proto conversion (kept for backward compatibility)
+// pub fn generate_from_my_field(
+//     field: &syn::Field,
+//     ctx: &FieldProcessingContext,
+// ) -> proc_macro2::TokenStream {
+//     let _trace = CallStackDebug::new(
+//         "field::field_processor",
+//         "generate_from_my_field",
+//         ctx.struct_name,
+//         ctx.field_name,
+//     );
+//
+//     generate_bidirectional_field_conversion(field, ctx)
+//         .map(|(_, to_proto)| to_proto)
+//         .unwrap_or_else(|err| {
+//             let error_msg = err.to_string();
+//             _trace.error(&format!("Legacy conversion failed: {err}"));
+//             quote! { compile_error!(#error_msg); }
+//         })
+// }
 
 pub fn generate_default_value(
     field_type: &syn::Type,

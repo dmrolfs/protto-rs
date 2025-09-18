@@ -1,12 +1,12 @@
-use crate::debug::CallStackDebug;
-use quote::quote;
 use crate::analysis::{
     attribute_parser,
     expect_analysis::ExpectMode,
-    field_analysis::{CollectionType, FieldProcessingContext,},
+    field_analysis::{CollectionType, FieldProcessingContext},
     optionality::FieldOptionality,
     type_analysis,
 };
+use crate::debug::CallStackDebug;
+use quote::quote;
 
 #[derive(Clone)]
 pub struct RustFieldInfo {
@@ -161,7 +161,10 @@ impl ProtoFieldInfo {
             &[
                 ("is_rust_option", &rust_field_info.is_option.to_string()),
                 ("is_rust_vec", &rust_field_info.is_vec.to_string()),
-                ("is_rust_primitive", &rust_field_info.is_primitive.to_string()),
+                (
+                    "is_rust_primitive",
+                    &rust_field_info.is_primitive.to_string(),
+                ),
                 ("is_rust_custom", &rust_field_info.is_custom.to_string()),
                 ("is_rust_enum", &rust_field_info.is_enum.to_string()),
             ],
@@ -169,16 +172,17 @@ impl ProtoFieldInfo {
 
         let type_name = Self::infer_proto_type_name(ctx, rust_field_info);
 
-        let info = if rust_field_info.from_proto_fn.is_some() || rust_field_info.to_proto_fn.is_some() {
-            // Priority 1 - Handle custom derive scenarios first
-            Self::infer_for_custom_derive(ctx, field, rust_field_info, type_name, &_trace)
-        } else if Self::is_any_collection_type(ctx.field_type) {
-            // Priority 2 - Handle collection types (including nested Options)
-            Self::infer_for_collection_type(ctx, field, rust_field_info, type_name, &_trace)
-        } else {
-            // Priority 3 - Handle standard field patterns
-            Self::infer_for_standard_field(ctx, field, rust_field_info, type_name, &_trace)
-        };
+        let info =
+            if rust_field_info.from_proto_fn.is_some() || rust_field_info.to_proto_fn.is_some() {
+                // Priority 1 - Handle custom derive scenarios first
+                Self::infer_for_custom_derive(ctx, field, rust_field_info, type_name, &_trace)
+            } else if Self::is_any_collection_type(ctx.field_type) {
+                // Priority 2 - Handle collection types (including nested Options)
+                Self::infer_for_collection_type(ctx, field, rust_field_info, type_name, &_trace)
+            } else {
+                // Priority 3 - Handle standard field patterns
+                Self::infer_for_standard_field(ctx, field, rust_field_info, type_name, &_trace)
+            };
 
         _trace.checkpoint_data(
             "proto_field_info",
@@ -188,7 +192,7 @@ impl ProtoFieldInfo {
                 ("is_repeated", &info.is_repeated().to_string()),
                 ("mapping", &format!("{:?}", info.mapping)),
                 ("optionality", &format!("{}", info.optionality)),
-            ]
+            ],
         );
 
         info
@@ -301,7 +305,9 @@ impl ProtoFieldInfo {
         type_name: String,
         trace: &CallStackDebug,
     ) -> Self {
-        if let Some(user_specified) = Self::get_explicit_user_optionality(ctx, rust_field_info, trace) {
+        if let Some(user_specified) =
+            Self::get_explicit_user_optionality(ctx, rust_field_info, trace)
+        {
             // Check for explicit user annotations
             let mapping = Self::determine_mapping_from_optionality_and_type(
                 user_specified,
@@ -344,7 +350,8 @@ impl ProtoFieldInfo {
                 mapping,
                 optionality: FieldOptionality::Optional,
             })
-        } else if let Some(inferred) = Self::infer_from_struct_context(ctx, rust_field_info, trace) {
+        } else if let Some(inferred) = Self::infer_from_struct_context(ctx, rust_field_info, trace)
+        {
             // Pattern - Analyze field's structural context within the struct
             Some(inferred)
         } else if rust_field_info.has_transparent {
@@ -440,14 +447,19 @@ impl ProtoFieldInfo {
         }
     }
 
-    fn is_likely_message_type(ctx: &FieldProcessingContext, rust_field_info: &RustFieldInfo) -> bool {
+    fn is_likely_message_type(
+        ctx: &FieldProcessingContext,
+        rust_field_info: &RustFieldInfo,
+    ) -> bool {
         // Use existing type analysis rather than hardcoded patterns
         let is_enum = rust_field_info.is_enum;
         let is_proto_module_type =
             type_analysis::is_proto_type(&rust_field_info.field_type, ctx.proto_module);
 
         // Enums typically become scalar fields (i32), proto module types become messages
-        !is_enum && (is_proto_module_type || (!rust_field_info.is_primitive && rust_field_info.is_custom))
+        !is_enum
+            && (is_proto_module_type
+                || (!rust_field_info.is_primitive && rust_field_info.is_custom))
     }
 
     fn get_explicit_user_optionality(
@@ -829,7 +841,10 @@ impl ProtoFieldInfo {
         }
     }
 
-    fn infer_proto_type_name(ctx: &FieldProcessingContext, rust_field_info: &RustFieldInfo) -> String {
+    fn infer_proto_type_name(
+        ctx: &FieldProcessingContext,
+        rust_field_info: &RustFieldInfo,
+    ) -> String {
         if rust_field_info.has_transparent {
             // transparent fields use inner type
             "inner_type".to_string()

@@ -1,17 +1,13 @@
-use quote::quote;
+use crate::analysis::{attribute_parser, expect_analysis::ExpectMode, type_analysis};
 use crate::conversion::ConversionStrategy;
 use crate::debug::CallStackDebug;
+use crate::error_handler;
 use crate::field::{
-    info::{ProtoFieldInfo, ProtoMapping, RustFieldInfo},
     field_processor::generate_default_value,
+    info::{ProtoFieldInfo, ProtoMapping, RustFieldInfo},
 };
 use crate::validation::ValidationError;
-use crate::analysis::{
-    attribute_parser,
-    expect_analysis::ExpectMode,
-    type_analysis,
-};
-use crate::error_handler;
+use quote::quote;
 
 pub fn generate_field_conversions(
     field: &syn::Field,
@@ -55,7 +51,7 @@ impl FieldAnalysis {
             "analysis::field_analysis::FieldAnalysis",
             "analyze",
             ctx.struct_name,
-            ctx.field_name
+            ctx.field_name,
         );
 
         let rust_field_info = RustFieldInfo::analyze(ctx, field);
@@ -66,7 +62,7 @@ impl FieldAnalysis {
         if let Err(validation_message) =
             conversion_strategy.validate_for_context(ctx, &rust_field_info, &proto_field_info)
         {
-            _trace.error(&format!(
+            _trace.error(format!(
                 "Invalid conversion strategy for field `{}.{}`: {}",
                 ctx.struct_name, ctx.field_name, validation_message,
             ));

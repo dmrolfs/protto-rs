@@ -1,5 +1,4 @@
 use crate::debug::CallStackDebug;
-use crate::error::mode::ErrorMode;
 use crate::field::info::RustFieldInfo;
 
 /// Consolidated custom function strategy that replaces separate strategies
@@ -35,9 +34,7 @@ impl CustomConversionStrategy {
                 Some(Self::Bidirectional(from_fn.clone(), into_fn.clone()))
             }
 
-            (Some(from_fn), None) => {
-                Some(Self::FromFn(from_fn.clone()))
-            },
+            (Some(from_fn), None) => Some(Self::FromFn(from_fn.clone())),
 
             (None, Some(into_fn)) => Some(Self::IntoFn(into_fn.clone())),
 
@@ -46,13 +43,14 @@ impl CustomConversionStrategy {
 
         _trace.checkpoint_data(
             "custom_conversion_strategy",
-            &[("strategy", &format!("{:?}", strategy)),]
+            &[("strategy", &format!("{:?}", strategy))],
         );
 
         strategy
     }
 
     /// Get the proto->rust function name if available
+    #[cfg(test)]
     pub fn from_proto_fn(&self) -> Option<&str> {
         match self {
             Self::FromFn(fn_name) | Self::Bidirectional(fn_name, _) => Some(fn_name),
@@ -61,6 +59,7 @@ impl CustomConversionStrategy {
     }
 
     /// Get the rust->proto function name if available
+    #[cfg(test)]
     pub fn to_proto_fn(&self) -> Option<&str> {
         match self {
             Self::IntoFn(fn_name) | Self::Bidirectional(_, fn_name) => Some(fn_name),
@@ -69,16 +68,19 @@ impl CustomConversionStrategy {
     }
 
     /// Check if proto->rust conversion is available
+    #[cfg(test)]
     pub fn has_from_proto_fn(&self) -> bool {
         matches!(self, Self::FromFn(_) | Self::Bidirectional(_, _))
     }
 
     /// Check if rust->proto conversion is available
+    #[cfg(test)]
     pub fn has_to_proto_fn(&self) -> bool {
         matches!(self, Self::IntoFn(_) | Self::Bidirectional(_, _))
     }
 
     /// Check if both directions are available
+    #[cfg(test)]
     pub fn is_bidirectional(&self) -> bool {
         matches!(self, Self::Bidirectional(_, _))
     }
@@ -97,9 +99,7 @@ impl CustomConversionStrategy {
         };
 
         match self {
-            Self::FromFn(path) => {
-                validate_path(path, "proto_to_rust")
-            },
+            Self::FromFn(path) => validate_path(path, "proto_to_rust"),
             Self::IntoFn(path) => validate_path(path, "rust_to_proto"),
             Self::Bidirectional(from_path, into_path) => {
                 validate_path(from_path, "proto_to_rust")?;
@@ -109,18 +109,17 @@ impl CustomConversionStrategy {
         }
     }
 
-    /// Determine if custom function needs error handling
-    fn needs_error_handling(rust_field_info: &RustFieldInfo) -> bool {
-        // If field has explicit error handling attributes
-        if rust_field_info.expect_mode != crate::analysis::expect_analysis::ExpectMode::None {
-            return true;
-        }
-
-        // Default behavior for custom functions with no explicit error attributes
-        // The old system would apply UnwrapOptionalWithExpect for complex types with custom functions
-        !rust_field_info.is_option && !rust_field_info.is_primitive && rust_field_info.is_custom
-    }
-
+    // /// Determine if custom function needs error handling
+    // fn needs_error_handling(rust_field_info: &RustFieldInfo) -> bool {
+    //     // If field has explicit error handling attributes
+    //     if rust_field_info.expect_mode != crate::analysis::expect_analysis::ExpectMode::None {
+    //         return true;
+    //     }
+    //
+    //     // Default behavior for custom functions with no explicit error attributes
+    //     // The old system would apply UnwrapOptionalWithExpect for complex types with custom functions
+    //     !rust_field_info.is_option && !rust_field_info.is_primitive && rust_field_info.is_custom
+    // }
 }
 
 #[cfg(test)]
@@ -236,21 +235,21 @@ mod tests {
 
 // Mapping from old strategies to new custom strategy (for migration/testing)
 impl CustomConversionStrategy {
-    /// Map from old strategy to new custom strategy (for migration/testing)
-    pub fn from_old_strategy(strategy: &crate::conversion::ConversionStrategy) -> Option<Self> {
-        match strategy {
-            crate::conversion::ConversionStrategy::DeriveProtoToRust(path) => {
-                Some(Self::FromFn(path.clone()))
-            }
-            crate::conversion::ConversionStrategy::DeriveRustToProto(path) => {
-                Some(Self::IntoFn(path.clone()))
-            }
-            crate::conversion::ConversionStrategy::DeriveBidirectional(from_path, into_path) => {
-                Some(Self::Bidirectional(from_path.clone(), into_path.clone()))
-            }
-            _ => None,
-        }
-    }
+    // /// Map from old strategy to new custom strategy (for migration/testing)
+    // pub fn from_old_strategy(strategy: &crate::conversion::ConversionStrategy) -> Option<Self> {
+    //     match strategy {
+    //         crate::conversion::ConversionStrategy::DeriveProtoToRust(path) => {
+    //             Some(Self::FromFn(path.clone()))
+    //         }
+    //         crate::conversion::ConversionStrategy::DeriveRustToProto(path) => {
+    //             Some(Self::IntoFn(path.clone()))
+    //         }
+    //         crate::conversion::ConversionStrategy::DeriveBidirectional(from_path, into_path) => {
+    //             Some(Self::Bidirectional(from_path.clone(), into_path.clone()))
+    //         }
+    //         _ => None,
+    //     }
+    // }
 
     /// Convert back to old strategy format (for compatibility during migration)
     pub fn to_old_strategy(&self) -> crate::conversion::ConversionStrategy {

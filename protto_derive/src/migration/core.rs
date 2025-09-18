@@ -1,21 +1,16 @@
 // Safe migration path from old system to new system
 
-use crate::migration::compatibility::StrategyCompatibilityTester;
-use crate::analysis::field_analysis::FieldProcessingContext;
-use crate::field::{
-    conversion_strategy::FieldConversionStrategy,
-    info as field_info,
-};
-use quote::quote;
 use crate::analysis::field_analysis;
-use crate::debug::CallStackDebug;
+use crate::analysis::field_analysis::FieldProcessingContext;
+use crate::field::{conversion_strategy::FieldConversionStrategy, info as field_info};
+use crate::migration::compatibility::StrategyCompatibilityTester;
 
 /// Migration mode configuration
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum MigrationMode {
     /// Use old system only (current production mode)
     OldOnly,
-    /// Use new system with old system as fallback
+    // /// Use new system with old system as fallback
     // NewWithFallback,
     /// Use new system only (target end state)
     NewOnly,
@@ -36,6 +31,7 @@ impl std::fmt::Display for MigrationMode {
 
 /// Migration controller for gradual system replacement
 #[derive(Debug)]
+#[allow(unused)]
 pub struct FieldConversionMigration {
     pub mode: MigrationMode,
     validation_enabled: bool,
@@ -53,6 +49,7 @@ impl FieldConversionMigration {
     }
 
     /// Enable/disable validation during migration
+    #[allow(unused)]
     pub fn with_validation(mut self, enabled: bool) -> Self {
         self.validation_enabled = enabled;
         self
@@ -79,13 +76,10 @@ pub fn initialize_migration(mode: MigrationMode) {
 
 /// Get global migration configuration
 pub fn get_global_migration() -> &'static FieldConversionMigration {
-    let migration = GLOBAL_MIGRATION.get_or_init(|| {
+    GLOBAL_MIGRATION.get_or_init(|| {
         // Default to old system if not explicitly initialized
         FieldConversionMigration::new(MigrationMode::OldOnly)
-    });
-
-    // eprintln!("📊 migration_mode: {migration:?}");
-    migration
+    })
 }
 
 /// Environment variable configuration for migration mode
@@ -103,6 +97,7 @@ pub fn configure_migration_from_env() -> MigrationMode {
 pub mod config {
     use super::{MigrationMode, configure_migration_from_env, initialize_migration};
 
+    #[allow(unused)]
     pub fn old_only() {
         initialize_migration(MigrationMode::OldOnly);
     }
@@ -111,10 +106,12 @@ pub mod config {
     //     initialize_migration(MigrationMode::NewWithFallback);
     // }
 
+    #[allow(unused)]
     pub fn new_only() {
         initialize_migration(MigrationMode::NewOnly);
     }
 
+    #[allow(unused)]
     pub fn validate_both() {
         initialize_migration(MigrationMode::ValidateBoth);
     }
@@ -124,9 +121,7 @@ pub mod config {
     }
 }
 
-
 impl FieldConversionMigration {
-
     /// Generate field conversions using configured migration mode
     pub fn generate_field_conversions(
         &self,
@@ -154,6 +149,7 @@ impl FieldConversionMigration {
     }
 
     /// Generate using new system with old system fallback
+    #[allow(unused)]
     fn generate_with_new_system_and_fallback(
         &self,
         field: &syn::Field,
@@ -232,11 +228,16 @@ impl FieldConversionMigration {
         // Analyze field using new system
         let rust_field_info = field_info::RustFieldInfo::analyze(ctx, field);
         let proto_field_info = field_info::ProtoFieldInfo::infer_from(ctx, field, &rust_field_info);
-        let strategy =
-            FieldConversionStrategy::from_field_info(ctx, field, &rust_field_info, &proto_field_info);
+        let strategy = FieldConversionStrategy::from_field_info(
+            ctx,
+            field,
+            &rust_field_info,
+            &proto_field_info,
+        );
 
         // Validate strategy is reasonable
-        if let Err(validation_error) = strategy.validate_for_context(ctx, &rust_field_info, &proto_field_info)
+        if let Err(validation_error) =
+            strategy.validate_for_context(ctx, &rust_field_info, &proto_field_info)
         {
             return Err(MigrationError::NewSystemFailure(format!(
                 "Strategy validation failed: {}",
@@ -245,8 +246,18 @@ impl FieldConversionMigration {
         }
 
         // Generate code
-        let proto_to_rust = strategy.generate_proto_to_rust_conversion(ctx, field, &rust_field_info, &proto_field_info);
-        let rust_to_proto = strategy.generate_rust_to_proto_conversion(ctx, field, &rust_field_info, &proto_field_info);
+        let proto_to_rust = strategy.generate_proto_to_rust_conversion(
+            ctx,
+            field,
+            &rust_field_info,
+            &proto_field_info,
+        );
+        let rust_to_proto = strategy.generate_rust_to_proto_conversion(
+            ctx,
+            field,
+            &rust_field_info,
+            &proto_field_info,
+        );
 
         Ok((proto_to_rust, rust_to_proto))
     }
@@ -292,6 +303,7 @@ impl FieldConversionMigration {
     }
 
     /// Get migration statistics for reporting
+    #[allow(unused)]
     pub fn get_migration_stats(&self) -> MigrationStats {
         MigrationStats {
             mode: self.mode,
@@ -355,12 +367,12 @@ impl std::error::Error for MigrationError {}
 
 /// Migration statistics for reporting
 #[derive(Debug)]
+#[allow(unused)]
 pub struct MigrationStats {
     pub mode: MigrationMode,
     pub validation_enabled: bool,
     // pub fallback_enabled: bool,
 }
-
 
 /// Main entry point for field conversion with migration support
 pub fn generate_field_conversions_with_migration(
@@ -375,7 +387,7 @@ impl FieldConversionStrategy {
     /// Validate that this strategy is compatible with the given context
     pub fn validate_for_context(
         &self,
-        ctx: &FieldProcessingContext,
+        _ctx: &FieldProcessingContext,
         rust_field_info: &field_info::RustFieldInfo,
         proto_field_info: &field_info::ProtoFieldInfo,
     ) -> Result<(), String> {
@@ -389,7 +401,7 @@ impl FieldConversionStrategy {
             FieldConversionStrategy::Custom(custom_strategy) => {
                 custom_strategy.validate()?;
             }
-            FieldConversionStrategy::Transparent(error_mode) => {
+            FieldConversionStrategy::Transparent(_) => {
                 if !rust_field_info.has_transparent {
                     return Err(
                         "Transparent strategy requires #[protto(transparent)] attribute"
@@ -454,7 +466,7 @@ mod tests {
             || {
                 let mode = configure_migration_from_env();
                 assert_eq!(mode, MigrationMode::NewOnly);
-            }
+            },
         );
 
         crate::migration::migration_tests::with_env_var(
@@ -463,7 +475,7 @@ mod tests {
             || {
                 let mode = configure_migration_from_env();
                 assert_eq!(mode, MigrationMode::ValidateBoth);
-            }
+            },
         );
 
         let mode = configure_migration_from_env();

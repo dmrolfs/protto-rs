@@ -1,14 +1,10 @@
-use quote::quote;
+use crate::analysis::field_analysis::FieldProcessingContext;
 use crate::debug::CallStackDebug;
-use crate::analysis::{
-    attribute_parser,
-    field_analysis::FieldProcessingContext,
-};
-use crate::struct_impl;
-use crate::field::field_processor;
 use crate::error_handler;
-use crate::debug;
+use crate::field::field_processor;
+use quote::quote;
 
+#[allow(unused)]
 pub struct StructImplConfig<'a> {
     pub name: &'a syn::Ident,
     pub fields: &'a syn::punctuated::Punctuated<syn::Field, syn::token::Comma>,

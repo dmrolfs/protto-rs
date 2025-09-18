@@ -390,7 +390,7 @@ impl CallStackDebug {
         code_module: &str,
         function_name: &str,
         struct_name: impl Display,
-        field_name: impl Display
+        field_name: impl Display,
     ) -> Self {
         let function_name = format!("{code_module}::{function_name}");
         let struct_name = struct_name.to_string();
@@ -689,6 +689,7 @@ impl Drop for CallStackDebug {
     }
 }
 
+#[allow(unused)]
 pub fn debug_struct_conversion_generation(
     struct_name: impl Display,
     phase: &str,

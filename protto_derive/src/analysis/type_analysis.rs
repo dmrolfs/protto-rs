@@ -1,6 +1,6 @@
-use syn::Type;
 use crate::constants::PRIMITIVE_TYPES;
 use crate::registry;
+use syn::Type;
 
 pub fn is_option_type(ty: &Type) -> bool {
     matches!(ty, Type::Path(type_path) if type_path.path.segments.first().map(|s| s.ident == "Option").unwrap_or(false))
