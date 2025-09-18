@@ -9,6 +9,7 @@ use crate::field::conversion_strategy::{
 };
 use quote::quote;
 use crate::analysis::type_analysis::is_enum_type;
+use crate::debug::CallStackDebug;
 use crate::field::info::{ProtoFieldInfo, RustFieldInfo};
 
 impl FieldConversionStrategy {
@@ -39,7 +40,7 @@ impl FieldConversionStrategy {
             }
 
             Self::Option(option_strategy) => {
-                generate_option_proto_to_rust(option_strategy, field_name, rust_field_info, proto_field, ctx)
+                generate_option_proto_to_rust(option_strategy, field_name, proto_field, ctx, &rust_field_info, &proto_field_info)
             }
 
             Self::Transparent(error_mode) => {
@@ -237,18 +238,27 @@ fn generate_direct_proto_to_rust(
 fn generate_option_proto_to_rust(
     option_strategy: &OptionStrategy,
     field_name: &syn::Ident,
-    rust_field_info: &RustFieldInfo,
     proto_field: &syn::Ident,
     ctx: &FieldProcessingContext,
+    rust_field_info: &RustFieldInfo,
+    proto_field_info: &ProtoFieldInfo,
 ) -> proc_macro2::TokenStream {
+    let _trace = CallStackDebug::new(
+        "field::field_codegen",
+        "generate_option_proto_to_rust",
+        "", ""
+    );
     match option_strategy {
         OptionStrategy::Wrap => {
+            _trace.decision("wrap_option", "wrap field in Some()");
             quote! { #field_name: Some(proto_struct.#proto_field.into()) }
         }
         OptionStrategy::Unwrap(error_mode) => {
-            generate_unwrap_with_error_mode(error_mode, field_name, rust_field_info, proto_field, ctx)
+            _trace.decision("unwrap_option", "unwrap field considering error mode");
+            generate_unwrap_with_error_mode(error_mode, field_name, proto_field, ctx, rust_field_info, proto_field_info)
         }
         OptionStrategy::Map => {
+            _trace.decision("map_option", "unwrap field and map");
             quote! { #field_name: proto_struct.#proto_field.map(|v| v.into()) }
         }
     }
@@ -574,41 +584,78 @@ fn generate_collection_rust_to_proto(
 fn generate_unwrap_with_error_mode(
     error_mode: &ErrorMode,
     field_name: &syn::Ident,
-    rust_field_info: &RustFieldInfo,
     proto_field: &syn::Ident,
     ctx: &FieldProcessingContext,
+    rust_field_info: &RustFieldInfo,
+    proto_field_info: &ProtoFieldInfo,
 ) -> proc_macro2::TokenStream {
+    let _trace = CallStackDebug::new(
+        "field::field_codegen",
+        "generate_unwrap_with_error_mode",
+        "", ""
+    );
+
+    let get_context_error_fn = |c: &FieldProcessingContext| {
+        c.proto_meta.error_fn
+            .as_ref()
+            .and_then(|error_fn| syn::parse_str::<syn::Path>(error_fn).ok())
+            .expect("Failed to parse error function path")
+    };
+    let derive_struct_error_type = |c: &FieldProcessingContext| {
+        let error_type_name = format!("{}ConversionError", c.struct_name);
+        syn::parse_str::<syn::Ident>(&error_type_name)
+            .expect("Failed to parse error type name")
+    };
+
     match error_mode {
         ErrorMode::None | ErrorMode::Panic => {
+            _trace.decision("unwrap_with_expect", "Required field with panic on missing");
             quote! {
                 #field_name: proto_struct.#proto_field
                     .expect(&format!("Proto field {} is required", stringify!(#proto_field)))
                     .into()
             }
         }
+
+
+        ErrorMode::Error if ctx.proto_meta.error_fn.is_some() && rust_field_info.is_option && proto_field_info.is_optional() => {
+            _trace.decision("optional_with_custom_error", "Option<T> -> Option<T> with custom error function");
+            let error_fn = get_context_error_fn(ctx);
+            quote! {
+                #field_name: Some(proto_struct.#proto_field
+                    .ok_or_else(|| #error_fn(stringify!(#proto_field)))?
+                    .into())
+            }
+        }
         ErrorMode::Error if ctx.proto_meta.error_fn.is_some() => {
-            let error_fn: syn::Path = ctx.proto_meta.error_fn
-                .as_ref()
-                .and_then(|error_fn| syn::parse_str(error_fn).ok())
-                .expect("Failed to parse error function path");
+            _trace.decision("unwrap_with_custom_error", "Required field with custom error function");
+            let error_fn = get_context_error_fn(ctx);
             quote! {
                 #field_name: proto_struct.#proto_field
                     .ok_or_else(|| #error_fn(stringify!(#proto_field)))?
                     .into()
             }
         }
+        ErrorMode::Error if rust_field_info.is_option && proto_field_info.is_optional() => {
+            _trace.decision("optional_with_generated_error", "Option<T> -> Option<T> with generated error type");
+            let error_type = derive_struct_error_type(ctx);
+            quote! {
+                #field_name: Some(proto_struct.#proto_field
+                    .ok_or_else(|| #error_type::MissingField(stringify!(#proto_field).to_string()))?
+                    .into())
+            }
+        }
         ErrorMode::Error => {
-            let struct_name = &ctx.struct_name;
-            let error_type_name = format!("{}ConversionError", struct_name);
-            let error_type: syn::Ident = syn::parse_str(&error_type_name)
-                .expect("Failed to parse error type name");
-
+            _trace.decision("unwrap_with_generated_error", "Required field with generated error type");
+            let error_type = derive_struct_error_type(ctx);
             quote! {
                 #field_name: proto_struct.#proto_field
                     .ok_or_else(|| #error_type::MissingField(stringify!(#proto_field).to_string()))?
                     .into()
             }
         }
+
+
         ErrorMode::Default(Some(default_fn)) if rust_field_info.is_option => {
             let default_fn: syn::Path = syn::parse_str(default_fn)
                 .expect("Failed to parse default function");
@@ -619,6 +666,7 @@ fn generate_unwrap_with_error_mode(
             }
         }
         ErrorMode::Default(Some(default_fn)) => {
+            _trace.decision("optional_with_default_fn", "Option<T> field with custom default function");
             let default_fn: syn::Path =
                 syn::parse_str(default_fn).expect("Failed to parse default function");
             quote! {
@@ -628,6 +676,7 @@ fn generate_unwrap_with_error_mode(
             }
         }
         ErrorMode::Default(None) => {
+            _trace.decision("unwrap_with_default_trait", "Field with Default trait");
             quote! {
                 #field_name: proto_struct.#proto_field
                     .map(|v| v.into())

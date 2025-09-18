@@ -5,6 +5,7 @@ use crate::analysis::{
     field_analysis::FieldProcessingContext,
     type_analysis,
 };
+use crate::analysis::expect_analysis::ExpectMode;
 use crate::field::info::{self as field_info, ProtoFieldInfo, RustFieldInfo};
 
 /// Consolidated field conversion strategy
@@ -131,9 +132,14 @@ impl FieldConversionStrategy {
                     let error_mode = ErrorMode::from_field_context(ctx, rust_field_info);
                     Self::Option(OptionStrategy::Unwrap(error_mode))
                 }
-                (true, true) => {
+                (true, true) if rust_field_info.expect_mode == ExpectMode::None => {
                     trace.decision("map_optional", "Option<T> -> Option<U>");
                     Self::Option(OptionStrategy::Map)
+                }
+                (true, true) => {
+                    trace.decision("unwrap_optional_for_some_wrap", "Proto optional -> unwrap -> wrap in Some");
+                    let error_mode = ErrorMode::from_field_context(ctx, rust_field_info);
+                    Self::Option(OptionStrategy::Unwrap(error_mode))
                 }
                 (false, false) => {
                     trace.decision("direct_conversion", "Both required -> direct conversion");

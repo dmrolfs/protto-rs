@@ -157,9 +157,7 @@ fn test_expect_error_with_missing_field() {
     assert!(result.is_err());
     assert_eq!(
         result.unwrap_err(),
-        HasOptionalWithErrorConversionError::MissingField(
-            "track (strategy: proto optional -> rust required (error))".to_string()
-        )
+        HasOptionalWithErrorConversionError::MissingField("track".to_string())
     );
 }
 
