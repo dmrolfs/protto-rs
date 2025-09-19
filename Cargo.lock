@@ -741,14 +741,14 @@ dependencies = [
 
 [[package]]
 name = "protto"
-version = "0.2.0"
+version = "0.6.0"
 dependencies = [
  "protto_derive",
 ]
 
 [[package]]
 name = "protto_derive"
-version = "0.2.0"
+version = "0.6.0"
 dependencies = [
  "proc-macro2",
  "quote",

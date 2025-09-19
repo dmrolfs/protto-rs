@@ -1,0 +1,74 @@
+repos:
+  # General file quality checks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-toml
+      - id: check-yaml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+      - id: mixed-line-ending
+
+  # formatting
+  - repo: local
+    hooks:
+      - id: cargo-fmt
+        name: Format with rustfmt
+        entry: nix
+        language: system
+        args: ['develop', '--command', 'cargo', 'fmt', '--all', '--', '--check']
+        files: \.rs$
+
+      - id: cargo-clippy
+        name: Lint with clippy
+        entry: nix
+        language: system
+        args: ['develop', '--command', 'cargo', 'clippy', '--workspace', '--all-targets', '--', '-D', 'warnings']
+        files: \.rs$
+
+  # Security audit
+  - repo: local
+    hooks:
+      - id: cargo-audit
+        name: Security audit
+        entry: nix
+        language: system
+        args: ['develop', '--command', 'cargo', 'audit']
+        files: Cargo\.(toml|lock)$
+        pass_filenames: false
+
+  # Ensure no debugging artifacts
+  - repo: local
+    hooks:
+      - id: cargo-check
+        name: cargo check
+        entry: nix
+        language: system
+        args: ['develop', '--command', 'cargo', 'check', '--workspace', '--all-targets']
+        files: \.rs$
+        pass_filenames: false
+
+  # Optional: Ensure tests pass (can be slow)
+  - repo: local
+    hooks:
+      - id: cargo-test
+        name: cargo test
+        entry: cargo nextest run --workspace
+        language: system
+        files: \.rs$
+        pass_filenames: false
+        stages: [push]  # Only run on push, not every commit
+
+  # Nix formatting (if you want nix files formatted)
+  - repo: https://github.com/nix-community/nixpkgs-fmt
+    rev: master
+    hooks:
+      - id: nixpkgs-fmt
+
+# Configure which stages run which hooks
+default_stages: [commit]
+hooks:
+  - id: cargo-test
+    stages: [push]
