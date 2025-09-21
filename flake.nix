@@ -1,11 +1,13 @@
 {
-  description = "Automagically convert prost types to your own types.";
+  description = "Comprehensive Rust development environment with containerization tools and modern CLI utilities";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
     crane.url = "github:ipetkov/crane";
     flake-utils.url = "github:numtide/flake-utils";
     rust-overlay.url = "github:oxalica/rust-overlay";
+    fenix.url = "github:nix-community/fenix";
+    fenix.inputs.nixpkgs.follows = "nixpkgs";
 
     # Add advisory-db for cargo-audit
     advisory-db = {
@@ -14,7 +16,7 @@
     };
   };
 
-  outputs = { self, nixpkgs, crane, flake-utils, rust-overlay, advisory-db }:
+  outputs = { self, nixpkgs, crane, flake-utils, rust-overlay, fenix, advisory-db }:
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = import nixpkgs {
@@ -38,63 +40,32 @@
           ];
         };
 
-        # Use crane with the rust-overlay rust version
-        craneLib = (crane.mkLib pkgs).overrideToolchain rustToolchain;
+        # DMR: Make Crane usage configurable
+        useCrane = true; # Set to false to use traditional cargo builds
 
-        # Source filtering for better cache efficiency
-        src = craneLib.cleanCargoSource (craneLib.path ./.);
+        # DMR: Crane setup (when enabled)
+        craneLib = if useCrane then (crane.mkLib pkgs).overrideToolchain rustToolchain else null;
 
-        # Extract crate info
-        crateInfo = craneLib.crateNameFromCargoToml { cargoToml = ./Cargo.toml; };
+        # Modern CLI tools
+        modernCliTools = with pkgs; [
+          # Modern replacements for core utilities
+          ripgrep # rg - better grep
+          fd # fd - better find
+          bat # bat - better cat with syntax highlighting
+          eza # eza - better ls (successor to exa)
+          procs # procs - better ps
+          dust # dust - better du
+          htop # htop - better top
+          tokei # tokei - code statistics
+          bandwhich # bandwhich - network utilization by process
+          gping # gping - ping with graph
+          hyperfine # hyperfine - command-line benchmarking
+          starship # starship - cross-shell prompt
 
-        # Common arguments for all crane builds
-        commonArgs = {
-          inherit src;
-          strictDeps = true;
-          pname = "protto";
-          version = "0.6.0";
-
-          buildInputs = [
-            # Runtime dependencies would go here
-          ] ++ pkgs.lib.optionals pkgs.stdenv.isDarwin [
-            # macOS-specific dependencies
-            #            pkgs.darwin.apple_sdk.frameworks.Security
-            #            pkgs.darwin.apple_sdk.frameworks.SystemConfiguration
-            pkgs.libiconv
-          ];
-
-          nativeBuildInputs = [
-            pkgs.protobuf
-            # Build-time dependencies
-          ];
-
-          # Environment variables
-          PROTOC = "${pkgs.protobuf}/bin/protoc";
-          PROTOC_INCLUDE = "${pkgs.protobuf}/include";
-
-          # Improved build performance
-          CARGO_PROFILE_RELEASE_LTO = "thin";
-          CARGO_PROFILE_RELEASE_CODEGEN_UNITS = "1";
-        };
-
-        # Build dependencies separately for better caching
-        cargoArtifacts = craneLib.buildDepsOnly commonArgs;
-
-        workspaceBuild = craneLib.buildPackage (commonArgs // {
-          inherit cargoArtifacts;
-          cargoExtraArgs = "--workspace --locked";
-
-          # Generate documentation during build
-          postBuild = ''
-            cargo doc --workspace --no-deps
-          '';
-        });
-
-        # Documentation build
-        cargoDoc = craneLib.cargoDoc (commonArgs // {
-          inherit cargoArtifacts;
-          cargoDocExtraArgs = "--workspace --document-private-items";
-        });
+          # DMR: Log analysis and monitoring tools
+          lnav # lnav - log file navigator and analyzer
+          # loki-cli       # DMR: Alternative modern log viewer (uncomment if preferred)
+        ];
 
         # Development tools
         devTools = with pkgs; [
@@ -106,6 +77,17 @@
           # Protocol Buffers
           protobuf
           protoc-gen-rust
+
+          # Container tools
+          podman
+          podman-compose
+
+          # Task runner and build tools
+          just # Command runner
+          meson # Build system
+          ninja # Build system
+          pkg-config
+          openssl
 
           # Testing and coverage
           cargo-tarpaulin
@@ -125,142 +107,284 @@
 
           # Git hooks and formatting
           pre-commit
-          just # Command runner
 
           # Documentation
           mdbook # For additional documentation
-        ] ++ pkgs.lib.optionals pkgs.stdenv.isLinux [
+
+          # Network and API tools
+          curl
+          jq
+          httpie
+
+          # MinIO client for debugging/management
+          minio-client
+
+          # API stress testing
+          drill
+
+          # Database and lakehouse tools
+          sqlite # Local database for development
+
+        ] ++ modernCliTools ++ pkgs.lib.optionals pkgs.stdenv.isLinux [
           # Linux-only debugging tools
-          #          gdb
-          #          valgrind
-          #          heaptrack
+          gdb
+          valgrind
+          # heaptrack  # Uncomment if needed
         ] ++ pkgs.lib.optionals pkgs.stdenv.isDarwin [
+          # macOS-specific dependencies
+          pkgs.libiconv
           # macOS-specific debugging alternatives
-          #          lldb                   # Apple's debugger
+          # lldb       # Apple's debugger
         ];
+
+        # DMR: Reference external starship configuration file
+        starshipConfig = ./nix-config/starship.toml;
+
+        # DMR: Reference external shell aliases configuration
+        shellAliasesConfig = import ./nix-config/shell-aliases.nix;
+
+        # DMR: Reference external environment configuration (general app development)
+        commonEnvVars = import ./nix-config/env-vars.nix { inherit pkgs; };
+
+        # DMR: Reference external common shell hook
+        commonShellHook = import ./nix-config/shell-hook.nix { inherit pkgs rustToolchain; };
+
+        # DMR: Common arguments for builds (both crane and traditional)
+        commonArgs = {
+          strictDeps = true;
+
+          buildInputs = with pkgs; [
+            # Runtime dependencies would go here
+          ] ++ pkgs.lib.optionals pkgs.stdenv.isDarwin [
+            # macOS-specific dependencies
+            pkgs.libiconv
+          ];
+
+          nativeBuildInputs = with pkgs; [
+            protobuf
+            pkg-config
+            openssl
+          ];
+
+          # Environment variables for builds
+          PROTOC = "${pkgs.protobuf}/bin/protoc";
+          PROTOC_INCLUDE = "${pkgs.protobuf}/include";
+          CARGO_PROFILE_RELEASE_LTO = "thin";
+          CARGO_PROFILE_RELEASE_CODEGEN_UNITS = "1";
+        } // (if useCrane then {
+          src = craneLib.cleanCargoSource (craneLib.path ./.);
+        } else { });
+
+        # Build dependencies separately for better caching
+        cargoArtifacts = if useCrane then craneLib.buildDepsOnly commonArgs else null;
+
+        # DMR: Conditional Crane build artifacts and packages
+        cranePackages =
+          if useCrane then {
+            # Main build
+            workspaceBuild = craneLib.buildPackage (commonArgs // {
+              inherit cargoArtifacts;
+              cargoExtraArgs = "--workspace --locked";
+              postBuild = ''
+                cargo doc --workspace --no-deps
+              '';
+            });
+
+            # Documentation build
+            cargoDoc = craneLib.cargoDoc (commonArgs // {
+              inherit cargoArtifacts;
+              cargoDocExtraArgs = "--workspace --document-private-items";
+            });
+
+            # Comprehensive checks
+            checks = {
+              workspace-build = craneLib.cargoBuild (commonArgs // {
+                inherit cargoArtifacts;
+                cargoExtraArgs = "--workspace --all-targets --locked";
+              });
+
+              workspace-test = craneLib.cargoNextest (commonArgs // {
+                inherit cargoArtifacts;
+                partitions = 1;
+                partitionType = "count";
+              });
+
+              fmtCheck = craneLib.cargoFmt (commonArgs // {
+                inherit cargoArtifacts;
+                cargoExtraArgs = "--all";
+              });
+
+              clippyCheck = craneLib.cargoClippy (commonArgs // {
+                inherit cargoArtifacts;
+                cargoClippyExtraArgs = "--workspace --all-targets --locked -- -D warnings -W clippy::pedantic";
+              });
+
+              doc-check = craneLib.cargoDoc (commonArgs // {
+                inherit cargoArtifacts;
+                cargoDocExtraArgs = "--workspace --document-private-items";
+                RUSTDOCFLAGS = "-D warnings";
+              });
+
+              audit-check = craneLib.cargoAudit (commonArgs // {
+                inherit advisory-db;
+              });
+
+              coverage-check = craneLib.cargoTarpaulin (commonArgs // {
+                inherit cargoArtifacts;
+                cargoTarpaulinExtraArgs = "--workspace --timeout 300 --out xml --output-dir coverage/";
+              });
+            };
+          } else { };
 
       in
       {
-        packages = {
-          default = workspaceBuild;
-          doc = cargoDoc;
-        };
-
+        # Multiple development shells for different purposes
         devShells = {
-          # Default development shell
-          default = craneLib.devShell {
-            inputsFrom = [ workspaceBuild ];
-            packages = devTools;
-            #            packages = [ rustToolchain pkgs.protobuf ];
-
-            shellHook = ''
-              #              export LIBRARY_PATH="/System/Library/Frameworks:$LIBRARY_PATH"
-              #              export CPATH="/System/Library/Frameworks:$CPATH"
-
-                            echo "🦀 Rust development environment for protto"
-                            echo "📦 Rust toolchain: $(rustc --version)"
-                            echo "🔧 protoc version: $(protoc --version)"
-                            echo ""
-                            echo "Available commands:"
-                            echo "  cargo build          # Build the project"
-                            echo "  cargo test           # Run tests"
-                            echo "  cargo nextest run    # Run tests with nextest"
-                            echo "  cargo tarpaulin      # Coverage analysis"
-                            echo "  cargo audit          # Security audit"
-                            echo "  cargo doc --open     # Generate and open docs"
-                            echo "  cargo expand         # Expand macros"
-                            echo "  cargo watch -c -x test  # Watch and test"
-                            echo ""
-
-                            # Set up git hooks if pre-commit is available
-                            if command -v pre-commit >/dev/null 2>&1; then
-                              pre-commit install --install-hooks 2>/dev/null || true
-                            fi
-
-                            # Set RUST_SRC_PATH for IDE integration
-                            export RUST_SRC_PATH="${rustToolchain}/lib/rustlib/src/rust/library"
-            '';
-          };
+          # Default comprehensive development shell
+          default = pkgs.mkShell
+            {
+              buildInputs = devTools;
+              shellHook = commonShellHook;
+            } // commonEnvVars;
 
           # Minimal shell for CI/automation
-          ci = pkgs.mkShell {
-            buildInputs = [
-              rustToolchain
-              pkgs.protobuf
-              pkgs.cargo-tarpaulin
-            ];
-            PROTOC = "${pkgs.protobuf}/bin/protoc";
-          };
+          ci = pkgs.mkShell
+            {
+              buildInputs = with pkgs; [
+                rustToolchain
+                protobuf
+                pkg-config
+                openssl
+                cargo-tarpaulin
+                cargo-nextest
+              ];
+
+              shellHook = ''
+                echo "🤖 CI Environment Ready"
+                export RUST_SRC_PATH="${rustToolchain}/lib/rustlib/src/rust/library"
+              '';
+            } // commonEnvVars;
+
+          # DMR: Focused on containerization and API development tools
+          containerdev = pkgs.mkShell
+            {
+              buildInputs = with pkgs; [
+                rustToolchain
+                podman
+                podman-compose
+                just
+                drill
+                curl
+                jq
+                httpie
+                protobuf
+                pkg-config
+                openssl
+              ] ++ modernCliTools;
+
+              shellHook = ''
+                eval "$(starship init bash)"
+                echo "🐳 Container Development Environment"
+                echo "Available: podman, podman-compose, just, drill, modern CLI tools"
+                echo "Perfect for: API development, microservices, containerized applications"
+              '';
+            } // commonEnvVars // { shellAliases = shellAliasesConfig; };
+
+          # DMR: Enhanced crane shell with crane-specific features
+          crane =
+            if useCrane then craneLib.devShell
+              {
+                inputsFrom = [ cranePackages.workspaceBuild ];
+                packages = devTools;
+                shellHook = commonShellHook + ''
+                  echo "🏗️  Crane Build System Active"
+                  echo "  nix build          # Build with Crane (cached layers)"
+                  echo "  nix build .#doc    # Generate documentation"
+                  echo "  nix flake check    # Run all Crane checks"
+                '';
+              } // commonEnvVars else pkgs.mkShell
+              {
+                buildInputs = devTools;
+                shellHook = commonShellHook + ''
+                  echo "🏗️  Crane Build System (Disabled)"
+                  echo "  Set useCrane = true in flake.nix to enable"
+                '';
+              } // commonEnvVars;
         };
 
-        # Comprehensive checks
-        #      checks = {
-        #        # Build checks
-        #        workspace-build = craneLib.cargoBuild (commonArgs // {
-        #          inherit cargoArtifacts;
-        #          cargoExtraArgs = "--workspace --all-targets --locked";
-        #        });
-        #
-        #        # Test checks
-        #        workspace-test = craneLib.cargoNextest (commonArgs // {
-        #          inherit cargoArtifacts;
-        #          partitions = 1;
-        #          partitionType = "count";
-        #        });
-        #
-        #        # Formatting check
-        #        fmtCheck = craneLib.cargoFmt (commonArgs // {
-        #          inherit cargoArtifacts;
-        #          cargoExtraArgs = "--all";
-        #        });
-        #
-        #        clippyCheck = craneLib.cargoClippy (commonArgs // {
-        #          inherit cargoArtifacts;
-        #          cargoClippyExtraArgs = "--workspace --all-targets --locked -- -D warnings -W clippy::pedantic";
-        #        });
-        #
-        #        # Documentation check
-        #        doc-check = craneLib.cargoDoc (commonArgs // {
-        #          inherit cargoArtifacts;
-        #          cargoDocExtraArgs = "--workspace --document-private-items";
-        #          RUSTDOCFLAGS = "-D warnings";
-        #        });
-        #
-        #        # Security audit
-        #        audit-check = craneLib.cargoAudit (commonArgs // {
-        #          inherit advisory-db;
-        #        });
-        #
-        #        # Coverage check (optional, can be slow)
-        #        coverage-check = craneLib.cargoTarpaulin (commonArgs // {
-        #          inherit cargoArtifacts;
-        #          cargoTarpaulinExtraArgs = "--workspace --timeout 300 --out xml --output-dir coverage/";
-        #        });
-        #      };
+        # Packages (can be used by projects that include this flake)
+        packages = {
+          # Export the rust toolchain
+          rust-toolchain = rustToolchain;
+
+          # Export development tools bundle
+          dev-tools = pkgs.symlinkJoin {
+            name = "rust-dev-tools";
+            paths = devTools;
+          };
+        } // (if useCrane then {
+          # DMR: Crane-built packages
+          default = cranePackages.workspaceBuild;
+          doc = cranePackages.cargoDoc;
+          workspace = cranePackages.workspaceBuild;
+        } else {
+          # DMR: Traditional cargo-based packages (empty, use cargo directly)
+        });
 
         # Formatter for `nix fmt`
         formatter = pkgs.nixpkgs-fmt;
 
-        # Apps that can be run with `nix run .#<name>`
-        #      apps = {
-        #        # Run coverage and open report
-        #        coverage = flake-utils.lib.mkApp {
-        #          drv = pkgs.writeShellScriptBin "coverage" ''
-        #            ${pkgs.cargo-tarpaulin}/bin/cargo-tarpaulin tarpaulin --workspace --timeout 300 --out html --output-dir coverage/
-        #            if command -v xdg-open >/dev/null 2>&1; then
-        #              xdg-open coverage/tarpaulin-report.html
-        #            elif command -v open >/dev/null 2>&1; then
-        #              open coverage/tarpaulin-report.html
-        #            fi
-        #          '';
-        #        };
-        #
-        #        # Run mutation testing
-        #        mutants = flake-utils.lib.mkApp {
-        #          drv = pkgs.writeShellScriptBin "mutants" ''
-        #            ${pkgs.cargo-mutants}/bin/cargo-mutants mutants --in-place
-        #          '';
-        #        };
-        #      };
+        # DMR: Conditional checks (only when using Crane)
+        checks = if useCrane then cranePackages.checks else { };
+
+        # Apps that can be run with `nix run .#<n>`
+        apps = {
+          # Starship setup
+          setup-starship = flake-utils.lib.mkApp {
+            drv = pkgs.writeShellScriptBin "setup-starship" ''
+              echo "📦 Setting up Starship configuration..."
+              mkdir -p ~/.config
+              cp ${starshipConfig} ~/.config/starship.toml
+              echo "✅ Starship configuration installed to ~/.config/starship.toml"
+              echo "Add 'eval \"\$(starship init bash)\"' to your shell rc file if not using nix develop"
+            '';
+          };
+
+          # Pre-commit setup
+          setup-precommit = flake-utils.lib.mkApp {
+            drv = pkgs.writeShellScriptBin "setup-precommit" ''
+              echo "📦 Setting up pre-commit hooks..."
+              if [ -f .pre-commit-config.yaml ]; then
+                ${pkgs.pre-commit}/bin/pre-commit install --install-hooks
+                echo "✅ Pre-commit hooks installed"
+              else
+                echo "❌ No .pre-commit-config.yaml found"
+                echo "Create one with: nix run .#create-precommit-config"
+              fi
+            '';
+          };
+
+          # DMR: Setup project structure and copy template files
+          create-precommit-config = flake-utils.lib.mkApp {
+            drv = pkgs.writeShellScriptBin "create-precommit-config" ''
+              echo "📝 Creating .pre-commit-config.yaml from template..."
+              if [ -f nix-config/pre-commit-template.yaml ]; then
+                cp nix-config/pre-commit-template.yaml .pre-commit-config.yaml
+                echo "✅ .pre-commit-config.yaml created from template"
+              else
+                echo "❌ Template not found at nix-config/pre-commit-template.yaml"
+                exit 1
+              fi
+              echo "Run: nix run .#setup-precommit to install hooks"
+            '';
+          };
+        };
+
+        # Export commonly used configurations
+        lib = {
+          inherit commonArgs commonEnvVars;
+          inherit rustToolchain modernCliTools devTools;
+          shellAliases = shellAliasesConfig;
+        };
       });
 }

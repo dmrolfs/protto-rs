@@ -1,7 +1,7 @@
 repos:
   # General file quality checks
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.5.0
+    rev: v6.0.0
     hooks:
       - id: trailing-whitespace
       - id: end-of-file-fixer
@@ -63,7 +63,7 @@ repos:
 
   # Nix formatting (if you want nix files formatted)
   - repo: https://github.com/nix-community/nixpkgs-fmt
-    rev: master
+    rev: v1.3.0
     hooks:
       - id: nixpkgs-fmt
 
