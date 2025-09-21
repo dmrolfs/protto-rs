@@ -59,7 +59,7 @@ repos:
         language: system
         files: \.rs$
         pass_filenames: false
-        stages: [push]  # Only run on push, not every commit
+        stages: [pre-push]  # Only run on push, not every commit
 
   # Nix formatting (if you want nix files formatted)
   - repo: https://github.com/nix-community/nixpkgs-fmt
@@ -68,7 +68,7 @@ repos:
       - id: nixpkgs-fmt
 
 # Configure which stages run which hooks
-default_stages: [commit]
+default_stages: [pre-commit]
 hooks:
   - id: cargo-test
     stages: [push]

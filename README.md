@@ -427,27 +427,193 @@ nix develop
 # - All formatting and linting tools
 ```
 
-#### Available Nix Commands:
+#### Development Tools Available
+##### Core Rust Toolchain:
+```bash
+rustc --version       # Rust compiler with rust-src, rustc-dev, llvm-tools-preview
+cargo --version       # Package manager
+rustfmt --version     # Code formatter
+clippy --version      # Linter
+rust-analyzer         # LSP support (for IDEs)
+miri                  # Undefined behavior detection
+```
+
+##### Testing and Coverage:
+```bash
+# Fast test runner (alternative to cargo test)
+cargo nextest run
+
+# Code coverage analysis
+cargo tarpaulin --out html --output-dir coverage/
+# Or use the convenience script:
+nix run .#coverage
+
+# Mutation testing for test quality
+cargo mutants --in-place
+# Or use the convenience script:
+nix run .#mutants
+```
+
+##### Security and Code Quality:
+```bash
+# Security vulnerability audit
+cargo audit
+
+# Dependency license and policy checking
+cargo deny check
+
+# Find unused dependencies
+cargo machete
+
+# Check for outdated dependencies
+cargo outdated
+
+# Macro expansion debugging
+cargo expand
+```
+
+##### Development Workflow:
+```bash
+# File watching - rebuild/retest on changes
+cargo watch -c -x test
+cargo watch -c -x 'nextest run'
+
+# Release management
+cargo release patch  # Bump patch version
+cargo release minor  # Bump minor version
+
+# Documentation with private items
+cargo doc --document-private-items --open
+```
+
+##### Protocol Buffers:
+```bash
+protoc --version           # Protocol Buffer compiler
+protoc-gen-rust --version  # Rust code generator
+```
+
+##### Development Utilities:
+```bash
+# Command runner (like make but better)
+just --list               # Show available commands (if Justfile exists)
+
+# Git hooks management
+pre-commit install        # Set up git hooks
+pre-commit run --all-files # Run all hooks manually
+
+# Documentation generation
+mdbook build              # Build additional docs (if book.toml exists)
+```
+
+##### Available Nix Commands
+##### Building and Checking:
 ```bash
 # Build the project
 nix build
 
-# Run checks (formatting, clippy, build)
+# Build documentation
+nix build .#doc
+
+# Run comprehensive checks (formatting, clippy, build, tests, docs, audit)
 nix flake check
 
-# Enter development shell
-nix develop
+# Format nix files
+nix fmt
 ```
 
-#### Development Workflow:
+##### Development Environments:
 ```bash
-# Inside nix develop shell:
-cargo build                    # Build project
-cargo test                     # Run tests
-cargo fmt                      # Format code
-cargo clippy                   # Run linting
-cargo tarpaulin --out Html     # Generate coverage report
+# Full development shell (default)
+nix develop
+
+# Minimal CI shell (for automation)
+nix develop .#ci
 ```
+
+##### Convenience Scripts:
+```bash
+# Generate coverage report and open in browser
+nix run .#coverage
+
+# Run mutation testing
+nix run .#mutants
+```
+
+##### Development Wokflow Examples
+##### Daily Development:
+```bash
+# Enter development environment
+nix develop
+
+# Start file watching for continuous testing
+cargo watch -c -x 'nextest run'
+
+# In another terminal, work on code
+# Tests automatically run on file changes
+```
+
+##### Pre-commit Checklist:
+```bash
+# Format code
+cargo fmt
+
+# Run linting
+cargo clippy -- -D warnings
+
+# Run tests with coverage
+cargo tarpaulin --out terminal
+
+# Security audit
+cargo audit
+
+# Check documentation
+cargo doc --document-private-items
+```
+
+##### Release Preparation:
+```bash
+# Run full validation
+nix flake check
+
+# Generate final coverage report
+nix run .#coverage
+
+# Assess test quality with mutations
+nix run .#mutants
+
+# Check for outdated dependencies
+cargo outdated
+
+# Clean up unused dependencies
+cargo machete
+```
+
+##### Debugging and Analysis:
+```bash
+# Debug macro expansion issues
+PROTTO_DEBUG=all cargo expand
+# or
+PROTTO_DEBUG=all cargo test
+
+# Check for undefined behavior
+cargo +nightly miri test
+
+# Profile compilation time
+cargo build --timings
+
+# Analyze binary size
+cargo bloat --release
+```
+
+##### Cache issues?
+```bash
+# Clean cargo cache
+cargo clean
+
+# Rebuild nix environment
+nix develop --rebuild
+```
+
 The Nix environment ensures consistent toolchain versions and dependencies across different machines and CI/CD systems.
 
 #### Standard Setup (without Nix)
