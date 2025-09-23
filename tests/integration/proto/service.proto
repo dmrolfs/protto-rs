@@ -109,9 +109,9 @@ message CustomTypeMessage {
     optional string wrapper = 3;
 }
 
-// DMR: Add these messages to service.proto for complete test coverage
+// Add these messages to service.proto for complete test coverage
 
-// DMR: For BidirectionalConversionStruct
+// For BidirectionalConversionStruct
 message BidirectionalMessage {
     optional ComplexType custom_field = 1;
 }

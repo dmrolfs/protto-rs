@@ -542,7 +542,7 @@ fn test_module_override_behavior() {
 
 #[test]
 fn test_all_strategies_compilation() {
-    // DMR: This test ensures all strategy types compile and can be instantiated
+    // This test ensures all strategy types compile and can be instantiated
     // It doesn't test functionality, just that the macro generation works
 
     // DeriveBidirectional
@@ -628,7 +628,7 @@ fn test_all_strategies_compilation() {
 
 #[test]
 fn test_error_handling_strategies() {
-    // DMR: Test that error strategies actually produce errors when expected
+    // Test that error strategies actually produce errors when expected
 
     // Test TransparentOptionalWithError - should fail when proto field is None
     let proto_with_none = proto::TransparentOptionalMessage {
@@ -658,7 +658,7 @@ fn test_error_handling_strategies() {
 
 #[test]
 fn test_custom_derive_functions() {
-    // DMR: Test that custom derive functions are called correctly
+    // Test that custom derive functions are called correctly
 
     let original_type = CustomComplexType {
         inner: "custom_test".to_string(),
@@ -676,7 +676,7 @@ fn test_custom_derive_functions() {
 
 #[test]
 fn test_option_vec_empty_vs_none() {
-    // DMR: Test the critical distinction between empty Vec and None
+    // Test the critical distinction between empty Vec and None
 
     // Proto with empty repeated fields
     let proto_empty = proto::VecOptionMessage {

@@ -58,14 +58,14 @@ mod custom_type_tests {
 
     #[test]
     fn test_custom_type_field_conversion() {
-        // DMR: This test will expose the .-into() typo if it exists
+        // This test will expose the .-into() typo if it exists
         let proto_msg = proto::CustomTypeMessage {
             track: Some(proto::Track { track_id: 42 }),
             track_id: Some(123),
             wrapper: Some("test".to_string()),
         };
 
-        // DMR: This conversion should trigger generate_custom_type_field()
+        // This conversion should trigger generate_custom_type_field()
         let rust_struct: CustomTypeStruct = proto_msg.into();
 
         assert_eq!(rust_struct.track.id.into_inner(), 42);
@@ -75,7 +75,7 @@ mod custom_type_tests {
 
     #[test]
     fn test_custom_type_roundtrip() {
-        // DMR: Test the reverse conversion (generate_custom_type_from_my_field)
+        // Test the reverse conversion (generate_custom_type_from_my_field)
         let rust_struct = CustomTypeStruct {
             track: Track {
                 id: TrackId::new(99),
@@ -93,7 +93,7 @@ mod custom_type_tests {
     proptest! {
         #[test]
         fn roundtrip_custom_type_struct(original in any::<CustomTypeStruct>()) {
-            // DMR: Property-based test to catch edge cases in custom type conversion
+            // Property-based test to catch edge cases in custom type conversion
             let proto_msg: proto::CustomTypeMessage = original.clone().into();
             let converted_back: CustomTypeStruct = proto_msg.into();
             prop_assert_eq!(original, converted_back);
@@ -108,7 +108,7 @@ mod comprehensive_tests {
 
     #[test]
     fn test_bidirectional_conversion() {
-        // DMR: Test DeriveBidirectional strategy
+        // Test DeriveBidirectional strategy
         let proto_msg = proto::BidirectionalMessage {
             custom_field: Some(proto::ComplexType {
                 name: "test".to_string(),
@@ -128,7 +128,7 @@ mod comprehensive_tests {
 
     #[test]
     fn test_transparent_required() {
-        // DMR: Test TransparentRequired strategy
+        // Test TransparentRequired strategy
         let proto_msg = proto::TransparentMessage {
             wrapper_id: "42".to_string(),
         };
@@ -142,7 +142,7 @@ mod comprehensive_tests {
 
     #[test]
     fn test_transparent_optional_strategies() {
-        // DMR: Test TransparentOptionalWith* strategies
+        // Test TransparentOptionalWith* strategies
         let proto_msg = proto::TransparentOptionalMessage {
             panic_wrapper: Some("10".to_string()),
             error_wrapper: Some("20".to_string()),
@@ -157,7 +157,7 @@ mod comprehensive_tests {
 
     #[test]
     fn test_wrap_in_some() {
-        // DMR: Test WrapInSome strategy (rust required -> proto optional)
+        // Test WrapInSome strategy (rust required -> proto optional)
         let rust_struct = WrapInSomeStruct {
             required_rust_field: "test".to_string(),
             status: Status::Ok,
@@ -170,7 +170,7 @@ mod comprehensive_tests {
 
     #[test]
     fn test_map_option() {
-        // DMR: Test MapOption strategy (both sides optional, no expect/default)
+        // Test MapOption strategy (both sides optional, no expect/default)
         let proto_msg = proto::MapOptionMessage {
             simple_option: Some("test".to_string()),
             optional_status: Some(1), // Status::MovedPermanently as i32
@@ -193,7 +193,7 @@ mod comprehensive_tests {
 
     #[test]
     fn test_map_vec_in_option() {
-        // DMR: Test MapVecInOption strategy
+        // Test MapVecInOption strategy
         let track = proto::Track { track_id: 1 };
         let proto_msg = proto::VecOptionMessage {
             optional_tracks: vec![track.clone()],
@@ -220,7 +220,7 @@ mod comprehensive_tests {
 
     #[test]
     fn test_vec_direct_assignment() {
-        // DMR: Test VecDirectAssignment strategy
+        // Test VecDirectAssignment strategy
         let track = proto::Track { track_id: 1 };
         let header = proto::Header {
             request_id: "test".to_string(),
@@ -240,7 +240,7 @@ mod comprehensive_tests {
 
     #[test]
     fn test_vec_with_error_success() {
-        // DMR: Test CollectVecWithError strategy - success case
+        // Test CollectVecWithError strategy - success case
         let track = proto::Track { track_id: 1 };
         let proto_msg = proto::VecErrorMessage {
             tracks_with_error: vec![track],
@@ -254,7 +254,7 @@ mod comprehensive_tests {
 
     #[test]
     fn test_vec_with_error_default() {
-        // DMR: Test CollectVecWithError strategy - default case
+        // Test CollectVecWithError strategy - default case
         let proto_msg = proto::VecErrorMessage {
             tracks_with_error: vec![], // Empty, should use default
             tags_with_error: vec![],   // Empty, should use default
@@ -267,7 +267,7 @@ mod comprehensive_tests {
 
     #[test]
     fn test_direct_with_into() {
-        // DMR: Test DirectWithInto strategy
+        // Test DirectWithInto strategy
         let proto_msg = proto::DirectConversionMessage {
             status_field: 0, // Status::Ok as i32
             track_field: Some(proto::Track { track_id: 42 }),
@@ -282,7 +282,7 @@ mod comprehensive_tests {
 
     #[test]
     fn test_rust_to_proto_strategies() {
-        // DMR: Test rust->proto specific strategies
+        // Test rust->proto specific strategies
         let rust_struct = RustToProtoStruct {
             rust_required_field: "test".to_string(),
             rust_optional_field: Some("optional".to_string()),

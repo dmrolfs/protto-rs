@@ -282,7 +282,7 @@ fn generate_transparent_proto_to_rust(
                     quote! {
                         #field_name: #inner_type::from(
                             proto_struct.#proto_field
-                                .ok_or_else(|| #error_type::MissingField(stringify!(#proto_field).to_string()))?  // DMR: Use struct-specific error type
+                                .ok_or_else(|| #error_type::MissingField(stringify!(#proto_field).to_string()))?  // Use struct-specific error type
                         )
                     }
                 }
@@ -869,7 +869,7 @@ mod tests {
                 &proto_field_info,
             );
             let code_str = proto_to_rust.to_string();
-            println!("Generated code for {:?}: {}", error_mode, code_str); // DMR: Debug print
+            println!("Generated code for {:?}: {}", error_mode, code_str); // Debug print
 
             match &error_mode {
                 ErrorMode::Panic => {
@@ -912,7 +912,7 @@ mod tests {
         for error_mode in error_modes {
             let strategy = FieldConversionStrategy::Transparent(error_mode.clone());
 
-            // DMR: Create a context where proto field is actually optional
+            // Create a context where proto field is actually optional
             // This would be a case like: Option<TransparentWrapper> -> Option<inner_proto_type>
             let (field, ctx) = test_helpers::create_mock_context(
                 "TestStruct",
@@ -924,7 +924,7 @@ mod tests {
 
             let rust_field_info = RustFieldInfo::analyze(&ctx, &field);
 
-            // DMR: Manually create proto field info that's optional to trigger the error mode branches
+            // Manually create proto field info that's optional to trigger the error mode branches
             let proto_field_info = ProtoFieldInfo {
                 type_name: "Option<inner_type>".to_string(),
                 mapping: ProtoMapping::Scalar,
