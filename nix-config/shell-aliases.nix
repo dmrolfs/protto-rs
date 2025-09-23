@@ -1,4 +1,4 @@
-# DMR: Externalized shell aliases configuration
+# Externalized shell aliases configuration
 {
   # Modern CLI replacements
   ls = "eza --color=always --group-directories-first";
@@ -55,7 +55,7 @@
   backup = "cp -r";
   mkdir = "mkdir -p";
 
-  # DMR: Log analysis shortcuts
+  # Log analysis shortcuts
   logs = "lnav";
   logf = "lnav -f"; # Follow mode
   logwatch = "lnav -t"; # Tail mode

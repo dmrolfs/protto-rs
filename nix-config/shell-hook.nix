@@ -22,7 +22,7 @@ in
   # Set RUST_SRC_PATH for IDE integration
   export RUST_SRC_PATH="${rustToolchain}/lib/rustlib/src/rust/library"
 
-  # DMR: Enhanced welcome message for general app development
+  # Enhanced welcome message for general app development
   echo "🦀 Comprehensive Rust Development Environment"
   echo "📦 Rust toolchain: $(rustc --version)"
   echo "🔧 protoc version: $(protoc --version)"

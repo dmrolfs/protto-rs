@@ -1,4 +1,4 @@
-# DMR: Externalized Starship configuration
+# Externalized Starship configuration
 format = """
 $username\
 $hostname\

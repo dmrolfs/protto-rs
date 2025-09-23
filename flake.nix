@@ -40,10 +40,10 @@
           ];
         };
 
-        # DMR: Make Crane usage configurable
+        # Make Crane usage configurable
         useCrane = true; # Set to false to use traditional cargo builds
 
-        # DMR: Crane setup (when enabled)
+        # Crane setup (when enabled)
         craneLib = if useCrane then (crane.mkLib pkgs).overrideToolchain rustToolchain else null;
 
         # Modern CLI tools
@@ -62,9 +62,9 @@
           hyperfine # hyperfine - command-line benchmarking
           starship # starship - cross-shell prompt
 
-          # DMR: Log analysis and monitoring tools
+          # Log analysis and monitoring tools
           lnav # lnav - log file navigator and analyzer
-          # loki-cli       # DMR: Alternative modern log viewer (uncomment if preferred)
+          # loki-cli       # Alternative modern log viewer (uncomment if preferred)
         ];
 
         # Development tools
@@ -137,19 +137,19 @@
           # lldb       # Apple's debugger
         ];
 
-        # DMR: Reference external starship configuration file
+        # Reference external starship configuration file
         starshipConfig = ./nix-config/starship.toml;
 
-        # DMR: Reference external shell aliases configuration
+        # Reference external shell aliases configuration
         shellAliasesConfig = import ./nix-config/shell-aliases.nix;
 
-        # DMR: Reference external environment configuration (general app development)
+        # Reference external environment configuration (general app development)
         commonEnvVars = import ./nix-config/env-vars.nix { inherit pkgs; };
 
-        # DMR: Reference external common shell hook
+        # Reference external common shell hook
         commonShellHook = import ./nix-config/shell-hook.nix { inherit pkgs rustToolchain; };
 
-        # DMR: Common arguments for builds (both crane and traditional)
+        # Common arguments for builds (both crane and traditional)
         commonArgs = {
           strictDeps = true;
 
@@ -178,7 +178,7 @@
         # Build dependencies separately for better caching
         cargoArtifacts = if useCrane then craneLib.buildDepsOnly commonArgs else null;
 
-        # DMR: Conditional Crane build artifacts and packages
+        # Conditional Crane build artifacts and packages
         cranePackages =
           if useCrane then {
             # Main build
@@ -265,7 +265,7 @@
               '';
             } // commonEnvVars;
 
-          # DMR: Focused on containerization and API development tools
+          # Focused on containerization and API development tools
           containerdev = pkgs.mkShell
             {
               buildInputs = with pkgs; [
@@ -290,7 +290,7 @@
               '';
             } // commonEnvVars // { shellAliases = shellAliasesConfig; };
 
-          # DMR: Enhanced crane shell with crane-specific features
+          # Enhanced crane shell with crane-specific features
           crane =
             if useCrane then craneLib.devShell
               {
@@ -323,18 +323,18 @@
             paths = devTools;
           };
         } // (if useCrane then {
-          # DMR: Crane-built packages
+          # Crane-built packages
           default = cranePackages.workspaceBuild;
           doc = cranePackages.cargoDoc;
           workspace = cranePackages.workspaceBuild;
         } else {
-          # DMR: Traditional cargo-based packages (empty, use cargo directly)
+          # Traditional cargo-based packages (empty, use cargo directly)
         });
 
         # Formatter for `nix fmt`
         formatter = pkgs.nixpkgs-fmt;
 
-        # DMR: Conditional checks (only when using Crane)
+        # Conditional checks (only when using Crane)
         checks = if useCrane then cranePackages.checks else { };
 
         # Apps that can be run with `nix run .#<n>`
@@ -364,7 +364,7 @@
             '';
           };
 
-          # DMR: Setup project structure and copy template files
+          # Setup project structure and copy template files
           create-precommit-config = flake-utils.lib.mkApp {
             drv = pkgs.writeShellScriptBin "create-precommit-config" ''
               echo "📝 Creating .pre-commit-config.yaml from template..."

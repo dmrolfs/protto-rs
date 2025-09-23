@@ -7,7 +7,7 @@
   CARGO_PROFILE_RELEASE_LTO = "thin";
   CARGO_PROFILE_RELEASE_CODEGEN_UNITS = "1";
 
-  # DMR: General application development (not lakehouse-specific)
+  # General application development (not lakehouse-specific)
   # Container development
   CONTAINER_REGISTRY = "localhost:5000";
 
