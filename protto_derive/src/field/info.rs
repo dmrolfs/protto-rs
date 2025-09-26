@@ -64,8 +64,14 @@ impl RustFieldInfo {
             has_default: ctx.has_default,
             expect_mode: ctx.expect_mode,
             has_proto_ignore: attribute_parser::has_proto_ignore(field),
-            from_proto_fn: ctx.proto_meta.get_proto_to_rust_fn().map(|s| s.to_string()),
-            to_proto_fn: ctx.proto_meta.get_rust_to_proto_fn().map(|s| s.to_string()),
+            from_proto_fn: ctx
+                .protto_meta
+                .get_proto_to_rust_fn()
+                .map(|s| s.to_string()),
+            to_proto_fn: ctx
+                .protto_meta
+                .get_rust_to_proto_fn()
+                .map(|s| s.to_string()),
         }
     }
 
@@ -221,16 +227,25 @@ impl ProtoFieldInfo {
                 "Collection + custom derive -> repeated proto field",
             );
             ProtoMapping::Repeated
-        } else if rust_field_info.is_primitive {
-            // Primitive with custom derive -> proto scalar/optional
-            trace.decision(
-                "custom_derive_primitive",
-                "Primitive + custom derive -> scalar/optional proto field",
-            );
-            if Self::has_optional_indicators(ctx, field) {
+        } else if attribute_parser::get_proto_field_name(field).is_some() {
+            //todo: fix why switch based on whether proto field is explicitly identified vs conventionally?
+
+            if rust_field_info.is_enum && !rust_field_info.is_option {
+                trace.decision(
+                    "custom_derive_enum_to_optional_proto",
+                    "Enum + custom derive -> likely optional proto field",
+                );
                 ProtoMapping::Optional
-            } else {
+            } else if rust_field_info.is_primitive {
+                trace.decision(
+                    "custom_derive_primitive",
+                    "Primitive + custom derive -> scalar proto field",
+                );
+                trace.decision("primitive_field", "scalar proto field");
                 ProtoMapping::Scalar
+            } else {
+                trace.decision("otherwise", "likely optional proto field");
+                ProtoMapping::Optional
             }
         } else {
             // Complex custom derive transformation
@@ -242,7 +257,7 @@ impl ProtoFieldInfo {
         };
 
         let optionality = ctx
-            .proto_meta
+            .protto_meta
             .get_proto_optionality()
             .copied()
             .unwrap_or_else(|| {
@@ -273,7 +288,7 @@ impl ProtoFieldInfo {
         );
 
         let optionality = ctx
-            .proto_meta
+            .protto_meta
             .get_proto_optionality()
             .copied()
             .unwrap_or(FieldOptionality::Required); // Collections are typically required
@@ -299,15 +314,15 @@ impl ProtoFieldInfo {
             let mapping = Self::determine_mapping_from_optionality_and_type(
                 user_specified,
                 rust_field_info,
-                trace,
+                ctx,
             );
             Self::create_field_info(type_name, mapping, user_specified, trace)
-        } else if let Some(info) = Self::infer_from_context_patterns(ctx, rust_field_info, trace) {
+        } else if let Some(info) = Self::infer_from_context_patterns(ctx, rust_field_info) {
             info
         } else {
             // Infer from actual proto schema generation patterns
             let (mapping, optionality) =
-                Self::infer_from_proto_schema_patterns(ctx, field, rust_field_info, trace);
+                Self::infer_from_proto_schema_patterns(ctx, field, rust_field_info);
             Self::create_field_info(type_name, mapping, optionality, trace)
         }
     }
@@ -315,9 +330,15 @@ impl ProtoFieldInfo {
     fn infer_from_context_patterns(
         ctx: &FieldProcessingContext,
         rust_field_info: &RustFieldInfo,
-        trace: &CallStackDebug,
     ) -> Option<Self> {
-        if Self::has_proto_optionality_indicators(ctx, rust_field_info, trace) {
+        let trace = CallStackDebug::new(
+            "field::conversion_strategy::ProtoFieldInfo",
+            "infer_from_context_patterns",
+            ctx.struct_name,
+            ctx.field_name,
+        );
+
+        if Self::has_proto_optionality_indicators(ctx, rust_field_info, &trace) {
             // Pattern - Use existing attribute analysis to detect proto optionality
             trace.decision(
                 "context_proto_optionality_detected",
@@ -337,7 +358,7 @@ impl ProtoFieldInfo {
                 mapping,
                 optionality: FieldOptionality::Optional,
             })
-        } else if let Some(inferred) = Self::infer_from_struct_context(ctx, rust_field_info, trace)
+        } else if let Some(inferred) = Self::infer_from_struct_context(ctx, rust_field_info, &trace)
         {
             // Pattern - Analyze field's structural context within the struct
             Some(inferred)
@@ -365,7 +386,7 @@ impl ProtoFieldInfo {
         // Check multiple systematic indicators (not hardcoded type patterns)
         let has_default_indicators = rust_field_info.has_default || ctx.default_fn.is_some();
         let has_expect_indicators = !matches!(rust_field_info.expect_mode, ExpectMode::None);
-        let has_explicit_optional = ctx.proto_meta.is_proto_optional();
+        let has_explicit_optional = ctx.protto_meta.is_proto_optional();
 
         let result = has_default_indicators || has_expect_indicators || has_explicit_optional;
 
@@ -454,13 +475,13 @@ impl ProtoFieldInfo {
         _rust_field_info: &RustFieldInfo,
         trace: &CallStackDebug,
     ) -> Option<FieldOptionality> {
-        if ctx.proto_meta.is_proto_optional() {
+        if ctx.protto_meta.is_proto_optional() {
             trace.decision(
                 "explicit_proto_optional_attribute",
                 "proto(optional = true) found",
             );
             Some(FieldOptionality::Optional)
-        } else if let Some(explicit_optionality) = ctx.proto_meta.get_proto_optionality() {
+        } else if let Some(explicit_optionality) = ctx.protto_meta.get_proto_optionality() {
             match explicit_optionality {
                 FieldOptionality::Optional => {
                     trace.decision("explicit_proto_optionality", "User specified: Optional");
@@ -485,25 +506,31 @@ impl ProtoFieldInfo {
         ctx: &FieldProcessingContext,
         field: &syn::Field,
         rust_field_info: &RustFieldInfo,
-        trace: &CallStackDebug,
     ) -> (ProtoMapping, FieldOptionality) {
+        let trace = CallStackDebug::new(
+            "field::conversation_strategy::ProtoFieldInfo",
+            "infer_from_proto_schema_patterns",
+            ctx.struct_name,
+            ctx.field_name,
+        );
+
         if rust_field_info.is_enum {
             // Pattern: Rust enums -> prost(enumeration = "EnumName") -> i32 (required scalar)
-            Self::handle_enum_pattern(ctx, trace)
+            Self::handle_enum_pattern(ctx, &trace)
         } else if rust_field_info.has_transparent {
             // Pattern: Transparent wrapper types -> unwrap to inner type
-            Self::handle_transparent_pattern(ctx, field, trace)
+            Self::handle_transparent_pattern(ctx, field, &trace)
         } else if rust_field_info.is_option {
             // Pattern: Option<T> wrapper -> prost(type, optional) -> Option<ProtoType>
-            Self::handle_option_wrapper_pattern(ctx, rust_field_info, trace)
+            Self::handle_option_wrapper_pattern(ctx, rust_field_info, &trace)
         } else if rust_field_info.is_primitive {
             // Pattern: Primitive types -> prost(primitive_type) -> PrimitiveType (required)
-            Self::handle_primitive_pattern(ctx, trace)
+            Self::handle_primitive_pattern(ctx, &trace)
         } else if rust_field_info.is_custom {
             // Pattern: Custom types - This was the problematic area
-            Self::handle_custom_type_pattern(ctx, rust_field_info, trace)
+            Self::handle_custom_type_pattern(ctx, rust_field_info, &trace)
         } else {
-            Self::handle_fallback_pattern(trace)
+            Self::handle_fallback_pattern(&trace)
         }
     }
 
@@ -639,17 +666,24 @@ impl ProtoFieldInfo {
         !matches!(ctx.expect_mode, ExpectMode::None)
             || ctx.has_default
             || ctx.default_fn.is_some()
-            || ctx.proto_meta.default_fn.is_some()
+            || ctx.protto_meta.default_fn.is_some()
     }
 
     fn determine_mapping_from_optionality_and_type(
         optionality: FieldOptionality,
         rust_field_info: &RustFieldInfo,
-        trace: &CallStackDebug,
+        ctx: &FieldProcessingContext,
     ) -> ProtoMapping {
+        let _trace = CallStackDebug::new(
+            "field::conversion_strategy::ProtoFieldInfo",
+            "determine_mapping_from_optionality_and_type",
+            ctx.struct_name,
+            ctx.field_name,
+        );
+
         match optionality {
             FieldOptionality::Optional => {
-                trace.decision(
+                _trace.decision(
                     "user_specified_optional",
                     "User specified optional -> Optional mapping",
                 );
@@ -657,13 +691,13 @@ impl ProtoFieldInfo {
             }
             FieldOptionality::Required => {
                 if rust_field_info.is_enum || rust_field_info.is_primitive {
-                    trace.decision(
+                    _trace.decision(
                         "user_specified_required_scalar",
                         "User specified required scalar type",
                     );
                     ProtoMapping::Scalar
                 } else {
-                    trace.decision(
+                    _trace.decision(
                         "user_specified_required_message",
                         "User specified required message type",
                     );
@@ -716,7 +750,7 @@ impl ProtoFieldInfo {
         trace: &CallStackDebug,
     ) -> FieldOptionality {
         // Priority 1 - Check for explicit user annotations
-        if let Some(explicit_optionality) = ctx.proto_meta.get_proto_optionality() {
+        if let Some(explicit_optionality) = ctx.protto_meta.get_proto_optionality() {
             trace.decision(
                 "explicit_proto_optionality",
                 &format!("User specified: {:?}", explicit_optionality),

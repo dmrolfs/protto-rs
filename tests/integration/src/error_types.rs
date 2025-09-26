@@ -21,7 +21,12 @@ pub struct HasOptionalWithCustomError {
 
 // Test error function with different error fns
 #[derive(Protto, PartialEq, Debug, Clone)]
-#[protto(module = "proto", proto_name = "ComplexExpectMessage", error_type = ValidationError)]
+#[protto(
+    module = "proto",
+    proto_name = "ComplexExpectMessage",
+    error_type = ValidationError,
+    error_fn = ValidationError::missing_field,
+)]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct ComplexExpectStruct {
     #[protto(expect(panic))]

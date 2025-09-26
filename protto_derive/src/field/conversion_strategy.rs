@@ -79,6 +79,10 @@ impl FieldConversionStrategy {
             ctx.struct_name,
             ctx.field_name,
             &[
+                (
+                    "rust_has_ignore",
+                    &rust_field_info.has_proto_ignore.to_string(),
+                ),
                 ("rust_is_option", &rust_field_info.is_option.to_string()),
                 ("rust_is_vec", &rust_field_info.is_vec.to_string()),
                 (
@@ -144,6 +148,10 @@ impl FieldConversionStrategy {
                 (false, true) => {
                     trace.decision("unwrap_optional", "Proto Option<T> -> Rust T");
                     let error_mode = ErrorMode::from_field_context(ctx, rust_field_info);
+                    trace.checkpoint_data(
+                        "optional_strategy",
+                        &[("error_mode", &format!("{error_mode:?}"))],
+                    );
                     Self::Option(OptionStrategy::Unwrap(error_mode))
                 }
                 (true, true) if rust_field_info.expect_mode == ExpectMode::None => {
@@ -421,9 +429,18 @@ pub fn generate_field_conversions(
     let proto_field_info = ProtoFieldInfo::infer_from(ctx, field, &rust_field_info);
     let strategy =
         FieldConversionStrategy::from_field_info(ctx, field, &rust_field_info, &proto_field_info);
-
-    // Validate strategy is reasonable
     strategy.validate_for_context(ctx, &rust_field_info, &proto_field_info)?;
+
+    let _trace = CallStackDebug::with_context(
+        "field::conversion_strategy",
+        "generate_field_conversions",
+        ctx.struct_name,
+        &rust_field_info.field_name,
+        &[
+            ("conversion_category", strategy.category()),
+            ("conversion_strategy", strategy.description()),
+        ],
+    );
 
     // Generate code
     let proto_to_rust =

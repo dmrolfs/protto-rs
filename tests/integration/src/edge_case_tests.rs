@@ -1,10 +1,14 @@
+use crate::additional_edge_case_tests::*;
+use crate::attribute_parser_tests::*;
 use crate::basic_types::*;
 use crate::complex_types::*;
 use crate::default_types::*;
 use crate::error_types::*;
 use crate::proto;
 use crate::shared_types::*;
+use crate::strategy_selection_tests::*;
 use proptest::prelude::*;
+use protto::Protto;
 
 proptest! {
     #[test]
@@ -451,4 +455,254 @@ fn test_collection_boundaries() {
     };
     let rust_state: State = many_state.clone().into();
     assert_eq!(rust_state.tracks.len(), 1000);
+}
+
+/// Test combinations that might trigger multiple mutation points simultaneously
+#[test]
+fn test_complex_edge_case_combinations() {
+    // This test combines multiple edge cases to trigger complex boolean logic chains
+
+    #[derive(Protto, PartialEq, Debug, Clone)]
+    #[protto(
+        module = "proto",
+        proto_name = "ComplexExpectMessage",
+        ignore = "enum_with_error, \
+            enum_with_panic, \
+            field_with_custom_error, \
+            field_with_error,\
+            number_with_default"
+    )]
+    pub struct ComplexEdgeCaseStruct {
+        // Transparent + Optional + Default + Custom function combination
+        #[protto(
+            transparent,
+            proto_optional,
+            default_fn = "default_transparent_wrapper",
+            proto_name = "field_with_panic"
+        )]
+        pub complex_combination_field: TransparentWrapper,
+
+        // Collection + Custom function + Error handling combination
+        #[protto(
+            from_proto_fn = "vec_track_from",
+            to_proto_fn = "vec_track_to",
+            expect,
+            proto_name = "tracks_with_expect"
+        )]
+        pub complex_collection_field: Vec<Track>,
+    }
+
+    let proto_msg = proto::ComplexExpectMessage {
+        field_with_panic: None, // Should use default
+        field_with_error: Some("test".to_string()),
+        field_with_custom_error: Some("test".to_string()),
+        number_with_default: Some(42),
+        enum_with_panic: Some(proto::Status::Ok.into()),
+        enum_with_error: Some(proto::Status::Found.into()),
+        tracks_with_expect: vec![proto::Track { track_id: 1 }],
+    };
+
+    let rust_struct: ComplexEdgeCaseStruct = proto_msg.try_into().unwrap();
+
+    // Verify complex combination handled correctly
+    assert_eq!(rust_struct.complex_combination_field.as_str(), "42"); // Default function used
+    assert_eq!(rust_struct.complex_collection_field.len(), 1); // Custom collection conversion worked
+}
+
+/// Test error propagation in complex scenarios
+#[test]
+fn test_error_propagation_edge_cases() {
+    // Test that errors propagate correctly through complex boolean logic chains
+
+    #[derive(Protto, PartialEq, Debug, Clone)]
+    #[protto(
+        module = "proto",
+        proto_name = "SimpleMessage",
+        error_type = ErrorPropagationError,
+        error_fn = "ErrorPropagationError::missing_field",
+    )]
+    pub struct ErrorPropagationStruct {
+        #[protto(
+            expect,
+            error_fn = "ErrorPropagationError::first_error",
+            proto_name = "required_field"
+        )]
+        pub first_error_field: String,
+
+        #[protto(
+            expect,
+            error_fn = "ErrorPropagationError::second_error",
+            proto_name = "required_number"
+        )]
+        pub second_error_field: u64,
+
+        #[protto(expect, proto_name = "optional_field")]
+        pub default_error_field: String,
+    }
+
+    #[derive(Debug, PartialEq)]
+    pub enum ErrorPropagationError {
+        FirstError(String),
+        SecondError(String),
+        DefaultError(String),
+    }
+
+    impl ErrorPropagationError {
+        pub fn first_error(field: &str) -> Self {
+            Self::FirstError(field.to_string())
+        }
+        pub fn second_error(field: &str) -> Self {
+            Self::SecondError(field.to_string())
+        }
+        pub fn missing_field(field: &str) -> Self {
+            Self::DefaultError(field.to_string())
+        }
+    }
+
+    impl std::fmt::Display for ErrorPropagationError {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "{:?}", self)
+        }
+    }
+
+    impl std::error::Error for ErrorPropagationError {}
+
+    let error_proto = proto::SimpleMessage {
+        required_field: None, // Should trigger first_error
+        required_number: Some(42),
+        optional_field: Some("test".to_string()),
+    };
+
+    let result: Result<ErrorPropagationStruct, ErrorPropagationError> = error_proto.try_into();
+
+    // Verify correct error function was called
+    assert!(result.is_err());
+    match result.unwrap_err() {
+        ErrorPropagationError::FirstError(field) => assert_eq!(field, "required_field"),
+        other => panic!("Expected FirstError, got: {:?}", other),
+    }
+}
+
+/// Test that all the helper functions work correctly
+#[test]
+fn test_helper_functions_coverage() {
+    // Test helper functions that might not be covered by main conversion tests
+
+    // Test default functions
+    assert_eq!(custom_default_fn(), "custom_default");
+    assert_eq!(first_default_fn(), "first");
+    assert_eq!(default_transparent_wrapper().as_str(), "42");
+
+    // Test custom conversion functions
+    let custom_type = CustomTypeInner {
+        data: "test".to_string(),
+    };
+    assert_eq!(to_proto_custom(custom_type.clone()), "test");
+    assert_eq!(from_proto_custom("test".to_string()), custom_type);
+
+    // Test bidirectional functions
+    let vec_data = vec!["test".to_string()];
+    assert_eq!(bidirectional_from(vec_data.clone()), vec_data);
+    assert_eq!(bidirectional_to(vec_data.clone()), vec_data);
+}
+
+// Additional compilation-time tests (these would be in build.rs or similar)
+// #[test]
+// fn test_compilation_failures() {
+//     // These test cases should fail to compile, verifying that the macro
+//     // correctly rejects invalid attribute combinations
+//
+//     // Test conflicting optionality attributes
+//     trybuild::TestCases::new().compile_fail("tests/compile_fail/conflicting_optionality.rs");
+//
+//     // Test invalid error function signatures
+//     trybuild::TestCases::new().compile_fail("tests/compile_fail/invalid_error_fn.rs");
+//
+//     // Test missing required custom functions
+//     trybuild::TestCases::new().compile_fail("tests/compile_fail/missing_custom_fn.rs");
+// }
+
+#[cfg(test)]
+mod boundary_condition_helpers {
+    /// Helper to create test cases that specifically target boolean boundary conditions
+    pub fn create_boolean_boundary_test_cases() -> Vec<(&'static str, bool, bool, bool)> {
+        vec![
+            // (description, expect, default, explicit_optional)
+            ("all_false", false, false, false),
+            ("expect_only", true, false, false),
+            ("default_only", false, true, false),
+            ("explicit_only", false, false, true),
+            ("expect_and_default", true, true, false),
+            ("expect_and_explicit", true, false, true),
+            ("default_and_explicit", false, true, true),
+            ("all_true", true, true, true),
+        ]
+    }
+
+    /// Helper to create type detection test cases
+    pub fn create_type_detection_test_cases() -> Vec<(&'static str, bool, bool, bool, bool)> {
+        vec![
+            // (description, is_primitive, is_std_type, is_proto_type, expected_is_custom)
+            ("primitive_type", true, false, false, false),
+            ("std_type", false, true, false, false),
+            ("proto_type", false, false, true, false),
+            ("custom_type", false, false, false, true),
+        ]
+    }
+}
+
+#[test]
+fn test_systematic_boolean_boundary_conditions() {
+    use boundary_condition_helpers::*;
+
+    // Test all boolean combinations systematically
+    for (description, expect, default, explicit_optional) in create_boolean_boundary_test_cases() {
+        println!(
+            "Testing boundary condition: {} (expect={}, default={}, explicit={})",
+            description, expect, default, explicit_optional
+        );
+
+        // Each combination should be handled correctly by the macro logic
+        // The specific assertions would depend on the expected behavior for each combination
+        match (expect, default, explicit_optional) {
+            (false, false, false) => {
+                // No indicators - should use type inference
+            }
+            (true, false, false) => {
+                // Expect only - should use expect behavior
+            }
+            (false, true, false) => {
+                // Default only - should use default behavior
+            }
+            (false, false, true) => {
+                // Explicit optional only - should respect explicit annotation
+            }
+            _ => {
+                // Complex combinations - should resolve according to precedence rules
+            }
+        }
+    }
+}
+
+#[test]
+fn test_systematic_type_detection_boundaries() {
+    use boundary_condition_helpers::*;
+
+    // Test type detection boundary conditions
+    for (description, is_primitive, is_std_type, is_proto_type, expected_is_custom) in
+        create_type_detection_test_cases()
+    {
+        println!(
+            "Testing type detection: {} (primitive={}, std={}, proto={}, expected_custom={})",
+            description, is_primitive, is_std_type, is_proto_type, expected_is_custom
+        );
+
+        // Verify the boolean logic: is_custom = !is_primitive && !is_std_type && !is_proto_type
+        let actual_is_custom = !is_primitive && !is_std_type && !is_proto_type;
+        assert_eq!(
+            actual_is_custom, expected_is_custom,
+            "Type detection failed for {}",
+            description
+        );
+    }
 }

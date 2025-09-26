@@ -1,5 +1,6 @@
 use crate::analysis::attribute_parser;
 use crate::analysis::expect_analysis::ExpectMode;
+use crate::constants::DEFAULT_CONVERSION_ERROR_SUFFIX;
 use quote::quote;
 
 #[derive(Clone)]
@@ -8,11 +9,12 @@ pub struct FieldProcessingContext<'a> {
     pub field_name: &'a syn::Ident,
     pub field_type: &'a syn::Type,
     pub proto_field_ident: syn::Ident,
-    pub proto_meta: attribute_parser::ProtoFieldMeta,
+    pub protto_meta: attribute_parser::ProtoFieldMeta,
     pub expect_mode: ExpectMode,
     pub has_default: bool,
     pub default_fn: Option<String>,
     pub error_name: &'a syn::Ident,
+    pub struct_level_error_type: &'a Option<syn::Type>,
     pub struct_level_error_fn: &'a Option<String>,
     pub proto_module: &'a str,
     pub proto_name: &'a str,
@@ -20,15 +22,21 @@ pub struct FieldProcessingContext<'a> {
 
 impl<'a> std::fmt::Debug for FieldProcessingContext<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let error_type = self
+            .struct_level_error_type
+            .as_ref()
+            .map(|et| quote! { #et }.to_string());
+
         f.debug_struct("FieldProcessingContext")
             .field("struct_name", &self.struct_name)
             .field("field_name", &self.field_name)
             .field("proto_field_ident", &self.proto_field_ident)
-            .field("proto_meta", &self.proto_meta)
+            .field("proto_meta", &self.protto_meta)
             .field("expect_mode", &self.expect_mode)
             .field("has_default", &self.has_default)
             .field("default_fn", &self.default_fn)
             .field("error_name", &self.error_name)
+            .field("struct_level_error_type", &error_type)
             .field("struct_level_error_fn", &self.struct_level_error_fn)
             .field("proto_module", &self.proto_module)
             .field("proto_name", &self.proto_name)
@@ -41,6 +49,7 @@ impl<'a> FieldProcessingContext<'a> {
         struct_name: &'a syn::Ident,
         field: &'a syn::Field,
         error_name: &'a syn::Ident,
+        struct_level_error_type: &'a Option<syn::Type>,
         struct_level_error_fn: &'a Option<String>,
         proto_module: &'a str,
         proto_name: &'a str,
@@ -61,15 +70,38 @@ impl<'a> FieldProcessingContext<'a> {
             field_name,
             field_type,
             proto_field_ident,
-            proto_meta,
+            protto_meta: proto_meta,
             expect_mode,
             has_default,
             default_fn,
             error_name,
+            struct_level_error_type,
             struct_level_error_fn,
             proto_module,
             proto_name,
         }
+    }
+
+    pub fn has_error_fn(&self) -> bool {
+        self.struct_level_error_fn.is_some() || self.field_level_error_fn().is_some()
+    }
+
+    pub fn get_effective_field_error_fn(&self) -> Option<syn::Path> {
+        self.field_level_error_fn()
+            .as_ref()
+            .or(self.struct_level_error_fn.as_ref())
+            .map(|error_fn| {
+                syn::parse_str::<syn::Path>(error_fn).expect("Failed to parse error function path")
+            })
+    }
+
+    pub fn field_level_error_fn(&self) -> &Option<String> {
+        &self.protto_meta.error_fn
+    }
+
+    pub fn default_error_ident(&self) -> syn::Ident {
+        let error_type_name = format!("{}{DEFAULT_CONVERSION_ERROR_SUFFIX}", self.struct_name);
+        syn::parse_str(&error_type_name).expect("Failed to parse error type name")
     }
 }
 

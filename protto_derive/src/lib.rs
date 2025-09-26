@@ -1,3 +1,4 @@
+use crate::analysis::macro_input::ParsedInput;
 use crate::debug::CallStackDebug;
 use proc_macro::TokenStream;
 use syn::{self, DeriveInput};
@@ -63,7 +64,7 @@ mod registry {
 #[proc_macro_derive(Protto, attributes(protto))]
 pub fn protto_derive(input: TokenStream) -> TokenStream {
     let ast: DeriveInput = syn::parse(input).unwrap();
-    let parsed_input = analysis::macro_input::parse_derive_input(ast.clone());
+    let parsed_input = ParsedInput::new(ast.clone());
 
     let name = parsed_input.name;
 
@@ -86,6 +87,7 @@ pub fn protto_derive(input: TokenStream) -> TokenStream {
                     proto_path: &parsed_input.proto_path,
                     struct_level_error_type: &parsed_input.struct_level_error_type,
                     struct_level_error_fn: &parsed_input.struct_level_error_fn,
+                    proto_ignored_fields: &parsed_input.proto_ignored_fields,
                 };
 
                 struct_generator::generate_struct_implementations(config)

@@ -291,17 +291,131 @@ pub fn get_struct_level_error_fn(attrs: &[Attribute]) -> Option<String> {
                 if let Meta::NameValue(meta_nv) = meta
                     && meta_nv.path.is_ident("error_fn")
                 {
-                    if let Expr::Lit(expr_lit) = &meta_nv.value
-                        && let Lit::Str(lit_str) = &expr_lit.lit
-                    {
-                        return Some(lit_str.value());
+                    match &meta_nv.value {
+                        Expr::Lit(expr_lit) => {
+                            if let Lit::Str(lit_str) = &expr_lit.lit {
+                                return Some(lit_str.value());
+                            }
+                        }
+                        Expr::Path(expr_path) => {
+                            return Some(quote!(#expr_path).to_string());
+                        }
+                        _ => {
+                            panic!(
+                                "error_fn value must be a string literal or path. \
+                                Examples: error_fn = \"my_function\" or error_fn = my_function"
+                            );
+                        }
                     }
-                    panic!("error_fn value must be a string literal");
                 }
             }
         }
     }
     None
+}
+
+pub fn validate_error_configuration(
+    struct_level_error_type: &Option<syn::Type>,
+    struct_level_error_fn: &Option<String>,
+    fields: &syn::punctuated::Punctuated<syn::Field, syn::token::Comma>,
+) -> Result<(), String> {
+    if struct_level_error_type.is_some() {
+        // Check if any field uses expect without error_fn
+        let mut fields_needing_fallback = Vec::new();
+
+        for field in fields {
+            // DMR_3: Check for expect attribute directly without ProtoFieldMeta
+            let has_expect = field.attrs.iter().any(|attr| {
+                if attr.path().is_ident(constants::PROTTO_ATTRIBUTE) {
+                    if let Meta::List(meta_list) = &attr.meta {
+                        let tokens_str = meta_list.tokens.to_string();
+                        tokens_str.contains("expect")
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                }
+            });
+
+            // DMR_3: Check for error_fn attribute directly
+            let has_error_fn = field.attrs.iter().any(|attr| {
+                if attr.path().is_ident(constants::PROTTO_ATTRIBUTE) {
+                    if let Meta::List(meta_list) = &attr.meta {
+                        let tokens_str = meta_list.tokens.to_string();
+                        tokens_str.contains("error_fn")
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                }
+            });
+
+            if has_expect && !has_error_fn {
+                fields_needing_fallback.push(field.ident.as_ref().unwrap().to_string());
+            }
+        }
+
+        if !fields_needing_fallback.is_empty() && struct_level_error_fn.is_none() {
+            return Err(format!(
+                "When 'error_type' is specified, fields with 'expect' but no 'error_fn' require \
+                a struct-level 'error_fn' as fallback. Fields needing fallback: {}. \
+                Add: #[protto(error_fn = \"YourErrorType::missing_field\")]",
+                fields_needing_fallback.join(", ")
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+/// Parse struct-level `ignore` attribute
+/// Returns a HashSet of field names to ignore during proto generation
+pub fn get_struct_level_proto_ignore(attrs: &[Attribute]) -> std::collections::HashSet<String> {
+    let mut ignored_fields = std::collections::HashSet::new();
+
+    for attr in attrs {
+        if attr.path().is_ident(constants::PROTTO_ATTRIBUTE)
+            && let Meta::List(meta_list) = &attr.meta
+        {
+            let nested_metas: Punctuated<Meta, Comma> = Punctuated::parse_terminated
+                .parse2(meta_list.tokens.clone())
+                .unwrap_or_else(|e| {
+                    panic!(
+                        "Failed to parse {} attribute: {e}",
+                        constants::PROTTO_ATTRIBUTE
+                    )
+                });
+
+            for meta in nested_metas {
+                if let Meta::NameValue(meta_nv) = meta
+                    && meta_nv.path.is_ident("ignore")
+                {
+                    if let Expr::Lit(expr_lit) = &meta_nv.value
+                        && let Lit::Str(lit_str) = &expr_lit.lit
+                    {
+                        // Parse comma-separated field names
+                        let field_names = lit_str.value();
+                        for field_name in field_names.split(',') {
+                            let trimmed = field_name.trim();
+                            if !trimmed.is_empty() {
+                                ignored_fields.insert(trimmed.to_string());
+                            }
+                        }
+                    } else {
+                        panic!(
+                            "ignore value must be a string literal with comma-separated field names, \
+                            e.g., #[{}(ignore = \"field1, field2\")]",
+                            constants::PROTTO_ATTRIBUTE
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    ignored_fields
 }
 
 pub fn get_proto_module(attrs: &[Attribute]) -> Option<String> {
@@ -375,10 +489,30 @@ pub fn has_transparent_attr(field: &Field) -> bool {
         if attr.path().is_ident(constants::PROTTO_ATTRIBUTE)
             && let Meta::List(meta_list) = &attr.meta
         {
-            let tokens = &meta_list.tokens;
-            let token_str = quote!(#tokens).to_string();
-            if token_str.contains("transparent") {
-                return true;
+            // Parse the nested metas properly instead of string searching
+            let nested_metas: Result<Punctuated<Meta, Comma>, _> =
+                Punctuated::parse_terminated.parse2(meta_list.tokens.clone());
+
+            if let Ok(metas) = nested_metas {
+                for nested_meta in metas {
+                    match nested_meta {
+                        // Only match actual transparent attribute, not values containing "transparent"
+                        Meta::Path(path) if path.is_ident("transparent") => {
+                            return true;
+                        }
+                        Meta::NameValue(nv) if nv.path.is_ident("transparent") => {
+                            // Handle transparent = true/false
+                            if let Expr::Lit(expr_lit) = &nv.value
+                                && let Lit::Bool(lit_bool) = &expr_lit.lit
+                            {
+                                return lit_bool.value;
+                            }
+
+                            return true; // Default to true if not a boolean
+                        }
+                        _ => {} // Ignore other attributes
+                    }
+                }
             }
         }
     }

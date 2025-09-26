@@ -21,14 +21,39 @@ pub enum ErrorMode {
 impl ErrorMode {
     /// Create ErrorMode from existing field analysis
     pub fn from_field_context(ctx: &FieldProcessingContext, rust: &RustFieldInfo) -> Self {
-        match rust.expect_mode {
-            ExpectMode::Panic => Self::Panic,
-            ExpectMode::Error => Self::Error,
-            ExpectMode::None if rust.has_default || ctx.default_fn.is_some() => {
-                Self::Default(ctx.default_fn.clone())
+        // Priority 1: Default takes precedence over everything (including error_type)
+        if rust.has_default || ctx.default_fn.is_some() {
+            return Self::Default(ctx.default_fn.clone());
+        }
+
+        // Priority 2: When error_type is specified, it overrides panic behavior
+        if ctx.struct_level_error_type.is_some() {
+            // Check if we have any error function available
+            if ctx.has_error_fn() {
+                return Self::Error; // Force error mode even if expect(panic) was specified
+            } else {
+                // Error case - error_type specified but no error function
+                panic!(
+                    "Field '{}': when struct-level 'error_type' is specified, \
+                either provide field-level 'error_fn' or struct-level 'error_fn' as fallback. \
+                Example: #[protto(error_type = MyError, error_fn = \"MyError::missing_field\")]",
+                    rust.field_name
+                );
             }
-            ExpectMode::None if Self::custom_functions_need_default_panic(rust) => Self::Panic,
-            ExpectMode::None => Self::None,
+        }
+
+        // Priority 3: Explicit expect modes (only when no error_type override)
+        if rust.expect_mode == ExpectMode::Panic {
+            return Self::Panic;
+        } else if rust.expect_mode == ExpectMode::Error {
+            return Self::Error;
+        }
+
+        // Priority 4: Handle remaining fallback patterns
+        if Self::custom_functions_need_default_panic(rust) {
+            Self::Panic
+        } else {
+            Self::None
         }
     }
 
@@ -41,6 +66,50 @@ impl ErrorMode {
             && !rust.is_primitive           // Complex type
             && !rust.is_option // Not already optional
     }
+
+    // /// Generate the appropriate error expression based on the error mode and context
+    // pub fn generate_error_expression(
+    //     &self,
+    //     _field_name: &syn::Ident,
+    //     proto_field_name: &str,
+    //     ctx: &FieldProcessingContext,
+    // ) -> proc_macro2::TokenStream {
+    //     match self {
+    //         ErrorMode::Error => {
+    //             if let Some(field_error_fn) = &ctx.field_level_error_fn() {
+    //                 // Priority 1: Field-level error_fn
+    //                 let error_fn: syn::Path = syn::parse_str(field_error_fn).unwrap();
+    //                 quote! { #error_fn(stringify!(#proto_field_name)) }
+    //             } else if let Some(struct_error_fn) = ctx.struct_level_error_fn {
+    //                 // Priority 2: Struct-level error_fn (when error_type is specified)
+    //                 let error_fn: syn::Path = syn::parse_str(struct_error_fn).unwrap();
+    //                 quote! { #error_fn(stringify!(#proto_field_name)) }
+    //             } else {
+    //                 // Priority 3: Default error generation (only when no error_type)
+    //                 let default_error_name = &ctx.default_error_ident();
+    //                 quote! {
+    //                     #default_error_name::MissingField(stringify!(#proto_field_name).to_string())
+    //                 }
+    //             }
+    //         }
+    //         ErrorMode::Panic => {
+    //             quote! { panic!("Missing required field: {}", stringify!(#proto_field_name)) }
+    //         }
+    //         ErrorMode::Default(default_fn) => {
+    //             if let Some(default_fn_name) = default_fn {
+    //                 let default_fn: syn::Path = syn::parse_str(default_fn_name).unwrap();
+    //                 quote! { #default_fn() }
+    //             } else {
+    //                 quote! { Default::default() }
+    //             }
+    //         }
+    //         ErrorMode::None => {
+    //             // This shouldn't happen for operations that need error expressions
+    //             // But provide a fallback
+    //             quote! { Default::default() }
+    //         }
+    //     }
+    // }
 
     /// Check if this mode requires error handling infrastructure
     #[cfg(test)]

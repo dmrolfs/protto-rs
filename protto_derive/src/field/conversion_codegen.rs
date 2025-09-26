@@ -45,7 +45,7 @@ impl FieldConversionStrategy {
             ),
 
             Self::Direct(direct_strategy) => {
-                generate_direct_proto_to_rust(direct_strategy, field_name, proto_field)
+                generate_direct_proto_to_rust(direct_strategy, field_name, proto_field, ctx)
             }
 
             Self::Option(option_strategy) => generate_option_proto_to_rust(
@@ -137,6 +137,13 @@ impl FieldConversionStrategy {
 fn generate_ignore_proto_to_rust(ctx: &FieldProcessingContext) -> proc_macro2::TokenStream {
     let field_name = ctx.field_name;
 
+    let _trace = CallStackDebug::new(
+        "field::conversion_codegen",
+        "generate_ignore_proto_to_rust",
+        ctx.struct_name,
+        field_name,
+    );
+
     if let Some(default_fn_name) = &ctx.default_fn {
         let default_fn_path: syn::Path =
             syn::parse_str(default_fn_name).expect("Failed to parse default_fn function path");
@@ -157,6 +164,13 @@ fn generate_custom_proto_to_rust(
     let rust_field_info = RustFieldInfo::analyze(ctx, field);
     let proto_field_info = ProtoFieldInfo::infer_from(ctx, field, &rust_field_info);
 
+    let _trace = CallStackDebug::new(
+        "field::conversion_codegen",
+        "generate_custom_proto_to_rust",
+        ctx.struct_name,
+        field_name,
+    );
+
     match custom_strategy {
         CustomConversionStrategy::FromFn(fn_path)
         | CustomConversionStrategy::Bidirectional(fn_path, _) => {
@@ -171,11 +185,10 @@ fn generate_custom_proto_to_rust(
                 } else {
                     quote! {
                         #field_name: #from_fn(
-                            proto_struct.#proto_field
-                                .expect(&format!(
-                                    "Proto field {} is required for custom conversion",
-                                    stringify!(#proto_field)
-                                ))
+                            proto_struct.#proto_field.expect(&format!(
+                                "Proto field {} is required for custom conversion",
+                                stringify!(#proto_field)
+                            ))
                         )
                     }
                 }
@@ -194,7 +207,15 @@ fn generate_direct_proto_to_rust(
     direct_strategy: &DirectStrategy,
     field_name: &syn::Ident,
     proto_field: &syn::Ident,
+    ctx: &FieldProcessingContext,
 ) -> proc_macro2::TokenStream {
+    let _trace = CallStackDebug::new(
+        "field::conversion_codegen",
+        "generate_direct_proto_to_rust",
+        ctx.struct_name,
+        field_name,
+    );
+
     match direct_strategy {
         DirectStrategy::Assignment => {
             quote! { #field_name: proto_struct.#proto_field }
@@ -214,11 +235,12 @@ fn generate_option_proto_to_rust(
     proto_field_info: &ProtoFieldInfo,
 ) -> proc_macro2::TokenStream {
     let _trace = CallStackDebug::new(
-        "field::field_codegen",
+        "field::conversion_codegen",
         "generate_option_proto_to_rust",
-        "",
-        "",
+        ctx.struct_name,
+        field_name,
     );
+
     match option_strategy {
         OptionStrategy::Wrap => {
             _trace.decision("wrap_option", "wrap field in Some()");
@@ -233,6 +255,7 @@ fn generate_option_proto_to_rust(
                 ctx,
                 rust_field_info,
                 proto_field_info,
+                &_trace,
             )
         }
         OptionStrategy::Map => {
@@ -252,12 +275,15 @@ fn generate_transparent_proto_to_rust(
     let proto_field = &ctx.proto_field_ident;
     let field_type = ctx.field_type;
 
+    let _trace = CallStackDebug::new(
+        "field::conversion_codegen",
+        "generate_transparent_proto_to_rust",
+        ctx.struct_name,
+        field_name,
+    );
+
     if proto_field_info.is_optional() {
-        let get_error_type = || -> syn::Ident {
-            let struct_name = &ctx.struct_name;
-            let error_type_name = format!("{}ConversionError", struct_name);
-            syn::parse_str(&error_type_name).expect("Failed to parse error type name")
-        };
+        let get_error_type = || -> syn::Ident { ctx.default_error_ident() };
 
         let error_message = quote! {
             &format!("Proto field {} is required for transparent conversion", stringify!(#proto_field))
@@ -281,17 +307,16 @@ fn generate_transparent_proto_to_rust(
                     let error_type = get_error_type();
                     quote! {
                         #field_name: #inner_type::from(
-                            proto_struct.#proto_field
-                                .ok_or_else(|| #error_type::MissingField(stringify!(#proto_field).to_string()))?  // Use struct-specific error type
+                            proto_struct.#proto_field.ok_or_else(|| {
+                                #error_type::MissingField(stringify!(#proto_field).to_string())
+                            })?
                         )
                     }
                 }
                 ErrorMode::Default(default_fn) => {
                     let default_expr = generate_default_expr(default_fn);
                     quote! {
-                        #field_name: proto_struct.#proto_field
-                            .map(#inner_type::from)
-                            .or_else(|| Some(#default_expr))
+                        #field_name: proto_struct.#proto_field.map(#inner_type::from).or_else(|| Some(#default_expr))
                     }
                 }
             }
@@ -324,8 +349,9 @@ fn generate_conversion_expr(
         ErrorMode::Error => {
             let error_type = get_error_type();
             quote! {
-                proto_struct.#proto_field
-                    .ok_or_else(|| #error_type::MissingField(stringify!(#proto_field).to_string()))?
+                proto_struct.#proto_field.ok_or_else(|| {
+                    #error_type::MissingField(stringify!(#proto_field).to_string())
+                })?
             }
         }
         ErrorMode::Default(Some(default_fn)) => {
@@ -361,6 +387,13 @@ fn generate_collection_proto_to_rust(
 ) -> proc_macro2::TokenStream {
     let field_name = ctx.field_name;
     let proto_field = &ctx.proto_field_ident;
+
+    let _trace = CallStackDebug::new(
+        "field::conversion_codegen",
+        "generate_collection_proto_to_rust",
+        ctx.struct_name,
+        field_name,
+    );
 
     match collection_strategy {
         CollectionStrategy::Collect(error_mode) => match error_mode {
@@ -398,13 +431,8 @@ fn generate_collection_proto_to_rust(
                     }
                 }
             }
-            ErrorMode::Error if ctx.proto_meta.error_fn.is_some() => {
-                let error_fn_path: syn::Path = ctx
-                    .proto_meta
-                    .error_fn
-                    .as_ref()
-                    .and_then(|error_fn| syn::parse_str(error_fn).ok())
-                    .expect("Failed to parse error function");
+            ErrorMode::Error if ctx.has_error_fn() => {
+                let error_fn_path: syn::Path = ctx.get_effective_field_error_fn().unwrap();
                 quote! {
                     #field_name: if proto_struct.#proto_field.is_empty() {
                         return Err(#error_fn_path(stringify!(#proto_field)));
@@ -437,8 +465,9 @@ fn generate_collection_proto_to_rust(
             } else {
                 // Option<Vec<T>> case where we map the option
                 quote! {
-                    #field_name: proto_struct.#proto_field
-                        .map(|vec| vec.into_iter().map(Into::into).collect())
+                    #field_name: proto_struct.#proto_field.map(|vec| {
+                        vec.into_iter().map(Into::into).collect()
+                    })
                 }
             }
         }
@@ -550,9 +579,9 @@ fn generate_collection_rust_to_proto(
         }
         CollectionStrategy::MapOption => {
             quote! {
-                #proto_field: my_struct.#field_name
-                    .map(|vec| vec.into_iter().map(Into::into).collect())
-                    .unwrap_or_default()
+                #proto_field: my_struct.#field_name.map(|vec| {
+                    vec.into_iter().map(Into::into).collect()
+                }).unwrap_or_default()
             }
         }
         CollectionStrategy::DirectAssignment => {
@@ -569,117 +598,130 @@ fn generate_unwrap_with_error_mode(
     ctx: &FieldProcessingContext,
     rust_field_info: &RustFieldInfo,
     proto_field_info: &ProtoFieldInfo,
+    trace: &CallStackDebug,
 ) -> proc_macro2::TokenStream {
-    let _trace = CallStackDebug::new(
-        "field::field_codegen",
-        "generate_unwrap_with_error_mode",
-        "",
-        "",
-    );
-
-    let get_context_error_fn = |c: &FieldProcessingContext| {
-        c.proto_meta
-            .error_fn
-            .as_ref()
-            .and_then(|error_fn| syn::parse_str::<syn::Path>(error_fn).ok())
-            .expect("Failed to parse error function path")
-    };
+    // let get_context_error_fn = |c: &FieldProcessingContext| {
+    //     c.get_effective_field_error_fn()
+    //         .and_then(|error_fn| syn::parse_str::<syn::Path>(error_fn).ok())
+    //         .expect("Failed to parse error function path")
+    //     // c.field_level_error_fn()
+    //     //     .as_ref()
+    //     //     .or_else(|| c.struct_level_error_fn.as_ref())
+    //     //     .and_then(|error_fn| syn::parse_str::<syn::Path>(error_fn).ok())
+    //     //     .expect("Failed to parse error function path")
+    // };
     let derive_struct_error_type = |c: &FieldProcessingContext| {
         let error_type_name = format!("{}ConversionError", c.struct_name);
         syn::parse_str::<syn::Ident>(&error_type_name).expect("Failed to parse error type name")
     };
 
+    trace.checkpoint_data(
+        "error_mode_factors",
+        &[
+            ("mode", &format!("{error_mode:?}")),
+            (
+                "field_error_fn",
+                &format!("{:?}", ctx.field_level_error_fn()),
+            ),
+            (
+                "struct_error_fn",
+                &format!("{:?}", ctx.struct_level_error_fn),
+            ),
+            ("rust_is_option", &rust_field_info.is_option.to_string()),
+            (
+                "proto_is_option",
+                &proto_field_info.is_optional().to_string(),
+            ),
+        ],
+    );
+
     match error_mode {
         ErrorMode::None | ErrorMode::Panic => {
-            _trace.decision("unwrap_with_expect", "Required field with panic on missing");
+            trace.decision("unwrap_with_expect", "Required field with panic on missing");
             quote! {
-                #field_name: proto_struct.#proto_field
-                    .expect(&format!("Proto field {} is required", stringify!(#proto_field)))
-                    .into()
+                #field_name: proto_struct.#proto_field.expect(&format!("Proto field {} is required", stringify!(#proto_field))).into()
             }
         }
 
         ErrorMode::Error
-            if ctx.proto_meta.error_fn.is_some()
+            if ctx.has_error_fn()
                 && rust_field_info.is_option
                 && proto_field_info.is_optional() =>
         {
-            _trace.decision(
+            trace.decision(
                 "optional_with_custom_error",
                 "Option<T> -> Option<T> with custom error function",
             );
-            let error_fn = get_context_error_fn(ctx);
+            let error_fn = ctx.get_effective_field_error_fn().unwrap();
             quote! {
-                #field_name: Some(proto_struct.#proto_field
-                    .ok_or_else(|| #error_fn(stringify!(#proto_field)))?
-                    .into())
+                #field_name: Some(proto_struct.#proto_field.ok_or_else(|| {
+                    #error_fn(stringify!(#proto_field))
+                })?.into())
             }
         }
-        ErrorMode::Error if ctx.proto_meta.error_fn.is_some() => {
-            _trace.decision(
+        ErrorMode::Error if ctx.has_error_fn() => {
+            trace.decision(
                 "unwrap_with_custom_error",
                 "Required field with custom error function",
             );
-            let error_fn = get_context_error_fn(ctx);
+            let error_fn = ctx.get_effective_field_error_fn().unwrap();
             quote! {
-                #field_name: proto_struct.#proto_field
-                    .ok_or_else(|| #error_fn(stringify!(#proto_field)))?
-                    .into()
+                #field_name: proto_struct.#proto_field .ok_or_else(|| {
+                    #error_fn(stringify!(#proto_field))
+                })?.into()
             }
         }
         ErrorMode::Error if rust_field_info.is_option && proto_field_info.is_optional() => {
-            _trace.decision(
+            trace.decision(
                 "optional_with_generated_error",
                 "Option<T> -> Option<T> with generated error type",
             );
             let error_type = derive_struct_error_type(ctx);
             quote! {
-                #field_name: Some(proto_struct.#proto_field
-                    .ok_or_else(|| #error_type::MissingField(stringify!(#proto_field).to_string()))?
-                    .into())
+                #field_name: Some(proto_struct.#proto_field.ok_or_else(|| {
+                    #error_type::MissingField(stringify!(#proto_field).to_string())
+                })?.into())
             }
         }
         ErrorMode::Error => {
-            _trace.decision(
+            trace.decision(
                 "unwrap_with_generated_error",
                 "Required field with generated error type",
             );
             let error_type = derive_struct_error_type(ctx);
             quote! {
-                #field_name: proto_struct.#proto_field
-                    .ok_or_else(|| #error_type::MissingField(stringify!(#proto_field).to_string()))?
-                    .into()
+                #field_name: proto_struct.#proto_field.ok_or_else(|| {
+                    #error_type::MissingField(stringify!(#proto_field).to_string())
+                })?.into()
             }
         }
 
         ErrorMode::Default(Some(default_fn)) if rust_field_info.is_option => {
-            let default_fn: syn::Path =
-                syn::parse_str(default_fn).expect("Failed to parse default function");
-            quote! {
-                #field_name: proto_struct.#proto_field
-                    .map(|v| v.into())
-                    .or_else(|| #default_fn())
-            }
-        }
-        ErrorMode::Default(Some(default_fn)) => {
-            _trace.decision(
+            trace.decision(
                 "optional_with_default_fn",
-                "Option<T> field with custom default function",
+                "Option<T> fiel with custom default function",
             );
             let default_fn: syn::Path =
                 syn::parse_str(default_fn).expect("Failed to parse default function");
             quote! {
-                #field_name: proto_struct.#proto_field
-                    .map(|v| v.into())
-                    .unwrap_or_else(|| #default_fn())
+                #field_name: proto_struct.#proto_field.map(|v| v.into()).or_else(|| #default_fn())
+            }
+        }
+        ErrorMode::Default(Some(default_fn)) => {
+            trace.decision(
+                "nonoptional_with_default_fn",
+                "T field with custom default function",
+            );
+            let default_fn: syn::Path =
+                syn::parse_str(default_fn).expect("Failed to parse default function");
+            quote! {
+                #field_name: proto_struct.#proto_field.map(|v| v.into()).unwrap_or_else(|| #default_fn())
             }
         }
         ErrorMode::Default(None) => {
-            _trace.decision("unwrap_with_default_trait", "Field with Default trait");
+            trace.decision("unwrap_with_default_trait", "Field with Default trait");
             quote! {
-                #field_name: proto_struct.#proto_field
-                    .map(|v| v.into())
-                    .unwrap_or_default()
+                #field_name: proto_struct.#proto_field.map(|v| v.into()).unwrap_or_default()
             }
         }
     }
@@ -747,6 +789,7 @@ pub mod test_helpers {
             struct_ident,
             field_static,
             error_ident,
+            &None, // struct_level_error_type
             &None, // struct_level_error_fn
             proto_module_static,
             proto_name_static,

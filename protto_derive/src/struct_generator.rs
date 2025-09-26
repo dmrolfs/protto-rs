@@ -2,6 +2,7 @@ use crate::analysis::error_analysis;
 use crate::debug::CallStackDebug;
 use crate::field::{self, FieldProcessingContext};
 use quote::quote;
+use std::collections::HashSet;
 
 #[allow(unused)]
 pub struct StructImplConfig<'a> {
@@ -12,9 +13,48 @@ pub struct StructImplConfig<'a> {
     pub proto_path: &'a syn::Path,
     pub struct_level_error_type: &'a Option<syn::Type>,
     pub struct_level_error_fn: &'a Option<String>,
+    pub proto_ignored_fields: &'a HashSet<String>,
 }
 
 pub fn generate_struct_implementations(config: StructImplConfig) -> proc_macro2::TokenStream {
+    let proto_path = &config.proto_path;
+
+    let _trace = CallStackDebug::with_context(
+        "struct_generator",
+        "generate_struct_implementations",
+        config.name,
+        "",
+        &[
+            ("proto_module", config.proto_module),
+            ("proto_name", config.proto_name),
+            ("proto_path", &quote! { #proto_path }.to_string()),
+            (
+                "struct_level_error_type",
+                &config
+                    .struct_level_error_type
+                    .as_ref()
+                    .map(|et| quote! { #et }.to_string())
+                    .unwrap_or_else(|| "none".to_string()),
+            ),
+            (
+                "struct_level_error_fn",
+                &config
+                    .struct_level_error_fn
+                    .clone()
+                    .unwrap_or_else(|| "none".to_string()),
+            ),
+            (
+                "proto_ignored_fields",
+                &config
+                    .proto_ignored_fields
+                    .iter()
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join(","),
+            ),
+        ],
+    );
+
     let struct_name = config.name;
     let fields = config.fields;
 
@@ -29,6 +69,8 @@ pub fn generate_struct_implementations(config: StructImplConfig) -> proc_macro2:
 
     let error_name = default_error_name(struct_name);
 
+    let proto_ignored_fields = config.proto_ignored_fields;
+
     // Generate bidirectional conversions in single pass
     let mut field_conversions = Vec::new();
     let mut conversion_errors = Vec::new();
@@ -38,7 +80,7 @@ pub fn generate_struct_implementations(config: StructImplConfig) -> proc_macro2:
 
         let _trace = CallStackDebug::with_context(
             "struct_impl",
-            "generate_struct_implementations_with_migration",
+            "generate_struct_implementations",
             config.name,
             field_name,
             &[],
@@ -48,6 +90,7 @@ pub fn generate_struct_implementations(config: StructImplConfig) -> proc_macro2:
             struct_name,
             field,
             &error_name,
+            config.struct_level_error_type,
             config.struct_level_error_fn,
             config.proto_module,
             config.proto_name,
@@ -85,6 +128,8 @@ pub fn generate_struct_implementations(config: StructImplConfig) -> proc_macro2:
         .filter(|ts| !ts.is_empty())
         .collect();
 
+    let proto_ignore_defaults = generate_proto_ignore_defaults(proto_ignored_fields);
+
     let proto_type_path = format!("{}::{}", config.proto_module, config.proto_name);
     let proto_type: syn::Path = syn::parse_str(&proto_type_path).unwrap();
 
@@ -118,6 +163,7 @@ pub fn generate_struct_implementations(config: StructImplConfig) -> proc_macro2:
                 let my_struct = self;
                 #proto_type {
                     #(#rust_to_proto_fields,)*
+                    #(#proto_ignore_defaults,)*
                 }
             }
         }
@@ -160,6 +206,23 @@ fn generate_error_definitions_if_needed(
         error_conversions,
         requirements.needs_try_from,
     )
+}
+
+/// Generate Default::default() assignments for `ignore` fields
+fn generate_proto_ignore_defaults(
+    proto_ignored_fields: &HashSet<String>,
+) -> Vec<proc_macro2::TokenStream> {
+    proto_ignored_fields
+        .iter()
+        .map(|field_name| {
+            let field_ident: syn::Ident = syn::parse_str(field_name)
+                .unwrap_or_else(|_| panic!("Invalid field name in proto_ignore: '{}'", field_name));
+
+            quote! {
+                #field_ident: Default::default()
+            }
+        })
+        .collect()
 }
 
 /// Generates the default error name for a struct
