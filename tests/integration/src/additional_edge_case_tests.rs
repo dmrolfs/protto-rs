@@ -146,10 +146,10 @@ pub fn conditional_conversion(status_i32: i32) -> Status {
 #[protto(module = "proto", proto_name = "SimpleMessage")]
 pub struct NotOperatorTestStruct {
     // Fields that trigger conditions with ! operators that might be deleted
-    #[protto(proto_name = "required_field")]
+    #[protto(proto_name = "required_field", proto_optional)]
     pub field_triggering_not_checks: String,
 
-    #[protto(proto_name = "required_number")]
+    #[protto(proto_name = "required_number", proto_optional)]
     pub another_not_check_field: u64,
 
     #[protto(proto_name = "optional_field")]
@@ -189,6 +189,7 @@ pub struct LogicalOperatorTestStruct {
 
     #[protto(
         from_proto_fn = "complex_condition_fn",
+        to_proto_fn = "complex_condition_to_field",
         proto_name = "field_with_custom_error"
     )]
     pub and_or_condition_field3: CustomComplexType,
@@ -206,11 +207,16 @@ pub struct LogicalOperatorTestStruct {
     pub tracks_field: Vec<Track>,
 }
 
-pub fn complex_condition_fn(complex: proto::ComplexType) -> CustomComplexType {
+pub fn complex_condition_fn(complex: String) -> CustomComplexType {
+    let value = complex.len() as u64;
     CustomComplexType {
-        inner: complex.name,
-        value: complex.id,
+        inner: complex,
+        value,
     }
+}
+
+pub fn complex_condition_to_field(complex: CustomComplexType) -> String {
+    complex.inner
 }
 
 pub fn vec_track_from(tracks: Vec<proto::Track>) -> Vec<Track> {

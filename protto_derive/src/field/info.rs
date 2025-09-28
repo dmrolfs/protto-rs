@@ -539,7 +539,7 @@ impl ProtoFieldInfo {
         trace: &CallStackDebug,
     ) -> (ProtoMapping, FieldOptionality) {
         // Check if user has optional indicators despite enum type
-        if Self::has_optional_usage_indicators(ctx) {
+        if Self::has_optional_usage_indicators(ctx, trace) {
             trace.decision(
                 "enum_with_optional_indicators",
                 "Enum + expect/default -> optional i32",
@@ -559,7 +559,7 @@ impl ProtoFieldInfo {
         _field: &syn::Field,
         trace: &CallStackDebug,
     ) -> (ProtoMapping, FieldOptionality) {
-        if Self::has_optional_usage_indicators(ctx) {
+        if Self::has_optional_usage_indicators(ctx, trace) {
             trace.decision(
                 "transparent_with_optional_usage",
                 "Transparent + optional indicators -> optional scalar/message",
@@ -602,7 +602,7 @@ impl ProtoFieldInfo {
         ctx: &FieldProcessingContext,
         trace: &CallStackDebug,
     ) -> (ProtoMapping, FieldOptionality) {
-        if Self::has_optional_usage_indicators(ctx) {
+        if Self::has_optional_usage_indicators(ctx, trace) {
             trace.decision(
                 "primitive_with_default_indicators",
                 "Primitive + default -> prost(primitive_type, optional) -> Option<PrimitiveType>",
@@ -637,7 +637,7 @@ impl ProtoFieldInfo {
                 "Custom type from proto module -> required message field",
             );
             (ProtoMapping::Message, FieldOptionality::Required)
-        } else if Self::has_optional_usage_indicators(ctx) {
+        } else if Self::has_optional_usage_indicators(ctx, trace) {
             trace.decision(
                 "custom_type_with_optional_indicators",
                 "Custom type + expect/default -> prost(message, optional) -> Option<MessageType>",
@@ -662,7 +662,19 @@ impl ProtoFieldInfo {
         (ProtoMapping::Scalar, FieldOptionality::Required)
     }
 
-    fn has_optional_usage_indicators(ctx: &FieldProcessingContext) -> bool {
+    fn has_optional_usage_indicators(
+        ctx: &FieldProcessingContext,
+        trace: &CallStackDebug,
+    ) -> bool {
+        trace.checkpoint_data(
+            "optional_usage_indicators",
+            &[
+                ("expect_mode", &format!("{:?}", ctx.expect_mode)),
+                ("has_default", &ctx.has_default.to_string()),
+                ("has_field_default_fn", &ctx.default_fn.is_some().to_string()),
+                ("has_protto_meta_default_fn", &ctx.protto_meta.default_fn.is_some().to_string()),
+            ]
+        );
         !matches!(ctx.expect_mode, ExpectMode::None)
             || ctx.has_default
             || ctx.default_fn.is_some()
