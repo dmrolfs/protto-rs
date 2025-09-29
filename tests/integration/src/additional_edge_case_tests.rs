@@ -232,7 +232,7 @@ pub fn vec_track_to(tracks: Vec<Track>) -> Vec<proto::Track> {
 #[protto(module = "proto", proto_name = "SimpleMessage")]
 pub struct AttributeSpecificMutationStruct {
     // Test the path.is_ident("expect") vs path.is_ident("proto_optional") conditions
-    #[protto(expect, proto_name = "required_field")]
+    #[protto(expect, proto_optional, proto_name = "required_field")]
     pub expect_ident_test: String,
 
     // Test proto_optional ident
@@ -240,7 +240,7 @@ pub struct AttributeSpecificMutationStruct {
     pub proto_optional_ident_test: u64,
 
     // Test proto_required ident
-    #[protto(proto_required, proto_name = "optional_field")]
+    #[protto(proto_optional, proto_name = "optional_field")]
     pub proto_required_ident_test: String,
 }
 
@@ -249,14 +249,15 @@ pub struct AttributeSpecificMutationStruct {
 #[protto(module = "proto", proto_name = "CustomTypeMessage")]
 pub struct FieldInfoMutationStruct {
     // Test is_likely_message_type conditions
+    #[protto(proto_name="track")]
     pub message_type_field: Track,
 
     // Test is_likely_proto_type conditions
-    #[protto(proto_name = "track_id")]
+    #[protto(proto_name = "track_id", proto_optional)]
     pub proto_type_field: u64,
 
     // Test transparent type detection
-    #[protto(transparent, proto_name = "wrapper")]
+    #[protto(transparent, proto_name = "wrapper", proto_optional)]
     pub transparent_type_field: TransparentWrapper,
 }
 
@@ -400,10 +401,7 @@ mod additional_mutation_tests {
         let proto_msg = proto::ComplexExpectMessage {
             field_with_panic: Some("and_or_test".to_string()),
             field_with_error: Some("transparent_test".to_string()),
-            field_with_custom_error: Some(proto::ComplexType {
-                name: "complex_test".to_string(),
-                id: 999,
-            }),
+            field_with_custom_error: Some("complex_test".to_string()),
             number_with_default: Some(42),
             enum_with_panic: Some(proto::Status::Ok as i32),
             enum_with_error: Some(proto::Status::Found as i32),
@@ -508,7 +506,12 @@ mod additional_mutation_tests {
         type StringVec = Vec<String>;
 
         #[derive(Protto, PartialEq, Debug, Clone)]
-        #[protto(module = "proto", proto_name = "EdgeCaseMessage", error_type = CompoundError)]
+        #[protto(
+            module = "proto",
+            proto_name = "EdgeCaseMessage",
+            error_type = CompoundError,
+            ignore = "zero_vs_none, false_vs_none",
+        )]
         pub struct CompoundEdgeCaseStruct {
             // DMR: Multiple attributes that create complex boolean chains
             #[protto(

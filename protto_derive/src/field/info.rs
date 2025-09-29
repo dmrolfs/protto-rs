@@ -662,18 +662,21 @@ impl ProtoFieldInfo {
         (ProtoMapping::Scalar, FieldOptionality::Required)
     }
 
-    fn has_optional_usage_indicators(
-        ctx: &FieldProcessingContext,
-        trace: &CallStackDebug,
-    ) -> bool {
+    fn has_optional_usage_indicators(ctx: &FieldProcessingContext, trace: &CallStackDebug) -> bool {
         trace.checkpoint_data(
             "optional_usage_indicators",
             &[
                 ("expect_mode", &format!("{:?}", ctx.expect_mode)),
                 ("has_default", &ctx.has_default.to_string()),
-                ("has_field_default_fn", &ctx.default_fn.is_some().to_string()),
-                ("has_protto_meta_default_fn", &ctx.protto_meta.default_fn.is_some().to_string()),
-            ]
+                (
+                    "has_field_default_fn",
+                    &ctx.default_fn.is_some().to_string(),
+                ),
+                (
+                    "has_protto_meta_default_fn",
+                    &ctx.protto_meta.default_fn.is_some().to_string(),
+                ),
+            ],
         );
         !matches!(ctx.expect_mode, ExpectMode::None)
             || ctx.has_default
