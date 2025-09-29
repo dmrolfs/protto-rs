@@ -23,7 +23,6 @@ protto_derive = { path = "protto_derive" }
 proc-macro2 = "1.0"
 quote = "1.0"
 syn = { version = "2.0", features = ["full"] }
-regex = "1.11"
 tonic = "0.12"
 prost = "0.13"
 proptest = "1.0"

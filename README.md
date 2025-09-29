@@ -77,13 +77,26 @@ pub struct State {
 The macro automatically selects from 6 streamlined conversion strategies:
 
 ### 1. Ignore Strategy
-Skip fields that don't exist in proto:
+#### Field-level Rust Field Ignoring
+Skip rust fields that don't exist in proto:
 ```rust
 #[derive(Protto)]
 pub struct User {
     pub name: String,
     #[protto(ignore)]
     pub runtime_cache: HashMap<String, String>, // Uses Default::default()
+}
+```
+
+#### Struct-level Proto Field Ignoring
+Proto fields can be ignored at the struct level using comma-separated names:
+```rust
+#[derive(Protto)]
+#[protto(ignore = "internal_cache, computed_value")]  // Multiple fields
+pub struct User {
+    pub name: String,
+    pub internal_cache: HashMap<String, String>,  // Uses Default::default()
+    pub computed_value: usize,                     // Uses Default::default()
 }
 ```
 
@@ -106,7 +119,7 @@ fn format_timestamp(dt: DateTime<Utc>) -> i64 {
 ```
 
 ### 3. Transparent Strategy
-Direct newtype wrapper conversion:
+Direct newtype wrapper conversion - bypasses normal conversion logic:
 ```rust
 #[derive(Protto)]
 pub struct UserId(#[protto(transparent)] u64);
@@ -117,6 +130,14 @@ pub struct User {
     pub id: UserId, // Directly converts inner u64
 }
 ```
+#### When to use: 
+Newtype wrappers around a single field
+
+#### When NOT to use:
+- Structs with multiple fields
+- Types requiring custom conversion logic
+- Collections (use Collection strategy instead)
+
 
 ### 4. Direct Strategy
 Primitive and simple type mapping:
@@ -148,6 +169,37 @@ pub struct Profile {
 }
 ```
 
+#### Manual Optionality Override
+
+By default, the macro infers proto field optionality from Rust types. Override when:
+- Proto definition doesn't match Rust expectations
+- Working with proto2 (required fields) vs proto3 (all fields implicitly optional)
+- You want explicit control
+
+**When Proto has `optional` but you want required Rust field**:
+```rust
+#[derive(Protto)]
+struct User {
+    // Proto: optional string email = 1;
+    // Rust: want String (not Option<String>)
+    #[protto(proto_optional, expect)]  // Unwrap with error
+    pub email: String,
+}
+```
+
+**When Proto is required but you want optional Rust field**:
+```rust
+#[derive(Protto)]
+struct User {
+    // Proto: string name = 1;  (proto3 - technically optional)
+    // Rust: want Option<String>
+    #[protto(proto_required)]  // Wrap in Some()
+    pub name: Option<String>,
+}
+```
+
+Most users don't need these - the macro infers correctly from types.
+
 ### 6. Collection Strategy
 Vector and repeated field conversion:
 ```rust
@@ -155,6 +207,68 @@ Vector and repeated field conversion:
 pub struct Playlist {
     pub tracks: Vec<Track>,              // Vec<T> -> repeated T
     pub tags: Option<Vec<String>>,       // Option<Vec<T>> -> repeated T (None for empty)
+}
+```
+
+## Attribute Precedence and Conflicts
+
+### Mutually Exclusive Attributes
+- `proto_optional` and `proto_required` - cannot use both
+- `default` and `default_fn` - use `default = "function"` syntax instead
+- `expect(panic)` and `expect` - panic takes precedence
+- `transparent` and custom functions - transparent ignores conversion functions
+
+### Precedence Order
+When multiple strategies could apply:
+1. `ignore` - skips all other processing
+2. Custom functions (`from_proto_fn`, `to_proto_fn`)
+3. `transparent` - direct wrapper conversion
+4. Collections - Vec/repeated handling
+5. Default/expect - optionality handling
+6. Direct - simple type mapping
+
+## Common Patterns
+
+### Pattern 1: ID wrappers
+```rust
+#[derive(Protto)]
+pub struct UserId(u64);
+
+#[derive(Protto)]
+pub struct User {
+    #[protto(transparent)]
+    pub id: UserId,
+}
+```
+
+### Pattern 2: Required proto → Optional Rust
+```rust
+#[derive(Protto)]
+struct User {
+    #[protto(proto_required)]
+    pub name: Option<String>,
+}
+```
+
+### Pattern 3: Optional proto → Required Rust with default
+```rust
+#[derive(Protto)]
+struct User {
+    #[protto(proto_optional, default = "default_role")]
+    pub role: UserRole,
+}
+```
+
+### Pattern 4: Collections with custom types
+```rust
+#[derive(Protto)]
+pub struct Track {
+    #[protto(transparent)]
+    pub id: TrackId,
+}
+
+pub struct Playlist {
+    pub tracks: Vec<Track>,  // Automatic collection conversion
 }
 ```
 
@@ -197,73 +311,81 @@ fn from_map(tracks: HashMap<TrackId, Track>) -> Vec<proto::Track> {
 }
 ```
 
+#### Default Value Strategies
+- `#[protto(default)]` - Use `Default::default()` for missing fields
+- `#[protto(default = "function_name")]` - Custom default function (preferred syntax)
+- `#[protto(default_fn = "function_name")]` - Legacy syntax (deprecated, use `default =` instead)
+
+**Important**: `default_fn` cannot be used with repeated/collection fields. Proto3 repeated fields
+cannot be "missing" (only empty `[]`). Use `default` attribute on individual field types if needed.
+```rust
+#[derive(Protto)]
+pub struct Config {
+    #[protto(default = "default_timeout")]
+    pub timeout: u32,
+}
+
+fn default_timeout() -> u32 {
+    30
+}
+```
+
 #### Error-handling Strategies
-The macro supports three distinct error handling approaches with different implementation strategies:
+#### Error Handling: Three Distinct Approaches
 
-##### 1. Panic-based Error-handling (`From` implementation)
+Proto fields can be optional (proto3 `optional` keyword). When converting to required Rust fields,
+you must handle the missing case:
+
+##### Strategy 1: Panic on Missing (implements `From`)
 ```rust
 #[derive(Protto)]
-pub struct User {
-    #[protto(proto_optional, expect(panic))]  // Uses .expect(), implements From
+struct User {
+    #[protto(proto_optional, expect(panic))]
     pub email: String,
+    // Panics with: "Proto field email is required"
+    // Implements: From<proto::User> for User
 }
-
-// Generated: impl From<proto::User> for User
-// Panics with: "Proto field email is required for transparent conversion"
 ```
 
-##### 2. Auto-generated Error Type (`TryFrom` implementation)
+##### Strategy 2: Return Error with Auto-generated Type (implements `TryFrom`)
 ```rust
 #[derive(Protto)]
-pub struct User {
-    #[protto(proto_optional, expect)]         // Auto-generates UserConversionError
+struct User {
+    #[protto(proto_optional, expect)]
     pub email: String,
+    // Generates: UserConversionError enum with MissingField(String) variant
+    // Implements: TryFrom<proto::User> for User { type Error = UserConversionError; }
 }
-
-// Generated error type:
-// #[derive(Debug, PartialEq, Clone)]
-// pub enum UserConversionError {
-//     MissingField(String),  // Note: Takes String, not &'static str
-// }
-//
-// Generated: impl TryFrom<proto::User> for User {
-//     type Error = UserConversionError;
-// }
 ```
 
-##### 3. Custom Error Type (`TryFrom` implementation)
+##### Strategy 3: Return Error with Custom Type (implements TryFrom)
 ```rust
-#[derive(Debug, PartialEq)]
-pub enum CustomError {
+#[derive(Debug)]
+pub enum UserError {
     MissingEmail,
-    InvalidData,
+}
+
+impl UserError {
+    fn missing_email(_field: &str) -> UserError {
+        UserError::MissingEmail
+    }
 }
 
 #[derive(Protto)]
-#[protto(error_type = CustomError)]           // Use custom error type
+#[protto(error_type = UserError)]
 pub struct User {
-    #[protto(proto_optional, expect)]         // Uses CustomError with auto-generated variant
+    #[protto(proto_optional, expect, error_fn = "UserError::missing_email")]
     pub email: String,
-
-    #[protto(proto_optional, expect, error_fn = "email_error")]  // Custom error function
-    pub phone: String,
 }
-
-// Error function signature: fn() -> ErrorType (no parameters)
-fn email_error(_field: &str) -> CustomError {
-    CustomError::MissingEmail
-}
-
-// Generated: impl TryFrom<proto::User> for User {
-//     type Error = CustomError;  // One error type per struct
-// }
+// Implements: TryFrom<proto::User> for User { type Error = UserError; }
 ```
 
 ##### Key Rules:
-- `expect(panic)` → `From` implementation with panic behavior
-- `expect` alone → `TryFrom` with auto-generated `<StructName>ConversionError`
-- `expect` + `error_type` → `TryFrom` with custom error type
+
 - Only one error type per struct (maps to `TryFrom::Error`)
+- `expect(panic)` → uses `From` trait (no error type)
+- `expect` alone → uses `TryFrom` with auto-generated error
+- `expect` + `error_type` → uses `TryFrom` with custom error
 - Error functions have signature `fn(field: &str) -> ErrorType`
 - Auto-generated error enums use `MissingField(String)` variant (not `&'static str`)
 
@@ -276,18 +398,24 @@ impl ValidationError {
     }
 }
 
-// Used as: error_fn = "ValidationError::missing_field"
-#[protto(expect, error_fn = "ValidationError::missing_field")]
-pub field: String,
+#[derive(Protto)]
+struct MyStruct {
+    // Used as: error_fn = "ValidationError::missing_field"
+    #[protto(expect, error_fn = "ValidationError::missing_field")]
+    pub field: String,
+}
 
 // Function-style error functions (no parameters)
 fn create_custom_error(_field: &str) -> CustomError {
     CustomError::MissingEmail
 }
 
-// Used as: error_fn = "create_custom_error"
-#[protto(expect, error_fn = "create_custom_error")]
-pub field: String,
+#[derive(Protto)]
+struct MyStruct {
+    // Used as: error_fn = "create_custom_error"
+    #[protto(expect, error_fn = "create_custom_error")]
+    pub field: String,
+}
 ```
 
 ##### Error Handling Strategies
@@ -326,6 +454,180 @@ fn default_role() -> UserRole {
 //     type Error = UserError;  // Only one error type per struct
 //     ...
 // }
+```
+
+## When `From` vs `TryFrom` is Generated
+
+The macro automatically chooses between `From` and `TryFrom` trait implementations based on your error handling strategy:
+
+### Generates `From` Implementation
+The macro generates infallible `From<ProtoType> for RustType` when:
+```rust
+// No expect attributes anywhere
+#[derive(Protto)]
+pub struct User {
+    pub name: String,
+    pub age: u32,
+}
+// Implements: From<proto::User> for User
+
+// All fields use expect(panic) 
+#[derive(Protto)]
+pub struct User {
+    #[protto(proto_optional, expect(panic))]
+    pub email: String,
+}
+// Implements: From<proto::User> for User
+// Panics at runtime if email is None
+```
+
+#### When `From` is used:
+
+- All conversions succeed or panic
+- No `Result` type needed
+- Use `.into()` without error handling: `let user: User = proto_user.into();`
+- Panics have clear messages: `"Proto field email is required"`
+
+### Generates `TryFrom` Implementation
+The macro generates fallible `TryFrom<ProtoType> for RustType` when ANY field uses `expect` without `panic`:
+```rust
+// Auto-generated error type
+#[derive(Protto)]
+pub struct User {
+    #[protto(proto_optional, expect)]  // DMR: No (panic), so TryFrom
+    pub email: String,
+}
+// Implements: TryFrom<proto::User> for User {
+//     type Error = UserConversionError;
+// }
+// Auto-generates:
+// #[derive(Debug, PartialEq, Clone)]
+// pub enum UserConversionError {
+//     MissingField(String),
+// }
+
+// Custom error type
+#[derive(Debug)]
+pub enum UserError {
+    MissingEmail,
+    InvalidData,
+}
+
+#[derive(Protto)]
+#[protto(error_type = UserError)]
+pub struct User {
+    #[protto(proto_optional, expect, error_fn = "UserError::missing_email")]
+    pub email: String,
+}
+// Implements: TryFrom<proto::User> for User {
+//     type Error = UserError;
+// }
+```
+
+#### When `TryFrom` is used:
+
+- Conversions return `Result<RustType, ErrorType>`
+` Requires error handling: `let user: User = proto_user.try_into()?;`
+- One error type per struct (maps to `TryFrom::Error`)
+- Mix of field-level error handling:
+  - `expect` with `error_fn` → custom error
+  - `expect` without `error_fn` → uses auto-generated error or struct-level `error_fn`
+  - `default` / `default_fn` → provides fallback value (no error generated)
+
+### Decision Tree
+```
+Does ANY field have `expect` (without `panic`)?
+├─ NO → From
+│  └─ Infallible conversion (.into())
+│
+└─ YES → TryFrom
+├─ Has struct-level `error_type`?
+│  ├─ YES → TryFrom with custom error type
+│  └─ NO  → TryFrom with auto-generated error type
+│
+└─ Error type is TryFrom::Error (one per struct)
+```
+
+### Mixed Strategies Example
+```rust
+#[derive(Debug)]
+pub enum UserError {
+    MissingEmail,
+}
+
+#[derive(Protto)]
+#[protto(error_type = UserError)]
+pub struct User {
+    // DMR: Different error handling per field
+    #[protto(proto_optional, expect(panic))]  // Panics immediately
+    pub id: UserId,
+    
+    #[protto(proto_optional, expect, error_fn = "UserError::missing_email")]
+    pub email: String,  // Returns Err(UserError::MissingEmail)
+    
+    #[protto(proto_optional, default = "guest_role")]
+    pub role: String,  // Uses default, never errors
+}
+// Implements: TryFrom because `email` uses `expect` without `panic`
+// id panics before TryFrom can return error
+// email returns error
+// role uses default (no error possible)
+```
+
+### Key Rules
+1. **One implementation per struct**: Either `From` OR `TryFrom`, never both
+2. **`expect(panic)` doesn't trigger `TryFrom`**: Only bare `expect` does
+3. **`default` doesn't require `TryFrom`**: It provides fallback values
+4. **One error type per struct**: `TryFrom::Error = YourErrorType` or auto-generated
+5. **Mix panic + error**: Valid combination. `TryFrom` is implemented, but `expect(panic)` fields panic during 
+conversion (preventing error return). Execution order is field declaration order - early panic fields prevent later 
+error fields from being evaluated.
+6. **Auto-generated error naming**: `<StructName>ConversionError`
+7. **Auto-generated error variant**: `MissingField(String)` (takes field name)
+
+### Common Patterns
+```rust
+// Pattern 1: Simple infallible conversion (From)
+#[derive(Protto)]
+pub struct SimpleConfig {
+    pub port: u32,
+    pub host: String,
+}
+
+// Pattern 2: All-panic strategy (From)
+#[derive(Protto)]
+pub struct StrictUser {
+    #[protto(expect(panic))]
+    pub id: UserId,
+    #[protto(expect(panic))]
+    pub email: String,
+}
+
+// Pattern 3: Graceful errors (TryFrom with auto-generated error)
+#[derive(Protto)]
+pub struct User {
+    #[protto(expect)]
+    pub id: UserId,
+    #[protto(expect)]
+    pub email: String,
+}
+
+// Pattern 4: Custom error type (TryFrom with custom error)
+#[derive(Protto)]
+#[protto(error_type = ValidationError)]
+pub struct ValidatedUser {
+    #[protto(expect, error_fn = "ValidationError::missing_id")]
+    pub id: UserId,
+}
+
+// Pattern 5: Defaults instead of errors (From)
+#[derive(Protto)]
+pub struct ConfigWithDefaults {
+    #[protto(default = "default_timeout")]
+    pub timeout: u32,
+    #[protto(default)]
+    pub retries: usize,
+}
 ```
 
 ## Debugging and Introspection
@@ -385,6 +687,7 @@ cargo clean && PROTTO_DEBUG="Track*,*User*" cargo build
 
 For complete documentation, advanced usage patterns, and programming interface details, see the
 [debug module](./protto_derive/src/debug.rs) documentation.
+
 
 ### Integration with Development Workflow
 The debug system integrates seamlessly with standard Rust tooling:
