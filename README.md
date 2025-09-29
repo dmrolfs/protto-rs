@@ -130,7 +130,7 @@ pub struct User {
     pub id: UserId, // Directly converts inner u64
 }
 ```
-#### When to use: 
+#### When to use:
 Newtype wrappers around a single field
 
 #### When NOT to use:
@@ -471,7 +471,7 @@ pub struct User {
 }
 // Implements: From<proto::User> for User
 
-// All fields use expect(panic) 
+// All fields use expect(panic)
 #[derive(Protto)]
 pub struct User {
     #[protto(proto_optional, expect(panic))]
@@ -561,10 +561,10 @@ pub struct User {
     // DMR: Different error handling per field
     #[protto(proto_optional, expect(panic))]  // Panics immediately
     pub id: UserId,
-    
+
     #[protto(proto_optional, expect, error_fn = "UserError::missing_email")]
     pub email: String,  // Returns Err(UserError::MissingEmail)
-    
+
     #[protto(proto_optional, default = "guest_role")]
     pub role: String,  // Uses default, never errors
 }
@@ -579,8 +579,8 @@ pub struct User {
 2. **`expect(panic)` doesn't trigger `TryFrom`**: Only bare `expect` does
 3. **`default` doesn't require `TryFrom`**: It provides fallback values
 4. **One error type per struct**: `TryFrom::Error = YourErrorType` or auto-generated
-5. **Mix panic + error**: Valid combination. `TryFrom` is implemented, but `expect(panic)` fields panic during 
-conversion (preventing error return). Execution order is field declaration order - early panic fields prevent later 
+5. **Mix panic + error**: Valid combination. `TryFrom` is implemented, but `expect(panic)` fields panic during
+conversion (preventing error return). Execution order is field declaration order - early panic fields prevent later
 error fields from being evaluated.
 6. **Auto-generated error naming**: `<StructName>ConversionError`
 7. **Auto-generated error variant**: `MissingField(String)` (takes field name)
