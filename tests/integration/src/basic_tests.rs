@@ -157,7 +157,7 @@ fn test_default_values_example() {
     assert_eq!(rust_track.name, ""); // String::default()
     assert_eq!(rust_track.count, 0); // u32::default()
     assert_eq!(rust_track.priority, 10); // custom default
-    assert_eq!(rust_track.tags, vec!["default"]); // custom default
+    assert_eq!(rust_track.tags, Vec::<String>::new()); // custom default
 }
 
 #[test]

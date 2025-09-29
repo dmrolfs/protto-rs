@@ -338,6 +338,24 @@ impl FieldConversionStrategy {
             || type_analysis::is_proto_type(&rust_field_info.field_type, ctx.proto_module) // Proto types (same module)
     }
 
+    /// Validate that default_fn is not used with repeated/collection fields
+    fn validate_default_fn_compatibility(
+        ctx: &FieldProcessingContext,
+        rust_field_info: &RustFieldInfo,
+        proto_field_info: &ProtoFieldInfo,
+    ) -> Result<(), FieldGenerationError> {
+        // Reject default_fn on repeated fields - they can't be "missing", only empty
+        if ctx.default_fn.is_some() && (proto_field_info.is_repeated() || rust_field_info.is_vec) {
+            return Err(FieldGenerationError::ConversionValidation(format!(
+                "default_fn cannot be used with repeated/collection fields. \
+                     Proto3 repeated fields cannot be 'missing' (only empty []). \
+                     Field '{}' is a collection type.",
+                rust_field_info.field_name
+            )));
+        }
+        Ok(())
+    }
+
     /// Get a human-readable description of this strategy
     #[allow(unused)]
     pub fn description(&self) -> &'static str {
@@ -456,10 +474,11 @@ impl FieldConversionStrategy {
     /// Validate that this strategy is compatible with the given context
     pub fn validate_for_context(
         &self,
-        _ctx: &FieldProcessingContext,
+        ctx: &FieldProcessingContext,
         rust_field_info: &RustFieldInfo,
         proto_field_info: &ProtoFieldInfo,
     ) -> Result<(), FieldGenerationError> {
+        Self::validate_default_fn_compatibility(ctx, rust_field_info, proto_field_info)?;
         // Use the existing validation logic from the new system
         match self {
             FieldConversionStrategy::Ignore => {

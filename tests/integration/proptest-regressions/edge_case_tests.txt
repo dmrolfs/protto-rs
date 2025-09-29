@@ -7,3 +7,4 @@
 cc 85e524c515e735205860bd4ff4f93fb3f3c0754eafcc99e896cb708af0350776 # shrinks to track_id = 0, has_name = false, has_priority = false, has_tags = false
 cc e8df9ec007fbf54861c04a9f90dd13f353d0629d7682e15076d5201fed1a0a5c # shrinks to field1 = Some(""), field2 = None, field3 = Some(0)
 cc 248b01d8c7eed5a804231ff4e7f60cb77ea52c6b95a53322adc19382b0b0bda3 # shrinks to string_value = None, vec_value = [], number_value = None, bool_value = None
+cc 727aa7ec767fc025b0a4335dce9b83e46edacab211b72ece882448efd3204f93 # shrinks to string_value = None, vec_value = [], number_value = None, bool_value = None

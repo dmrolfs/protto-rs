@@ -261,8 +261,8 @@ mod comprehensive_tests {
         };
 
         let rust_struct: VecWithErrorStruct = proto_msg.try_into().unwrap();
-        assert_eq!(rust_struct.tracks_with_error.len(), 1); // default_track_vec returns 1 item
-        assert_eq!(rust_struct.tags_with_error.len(), 1); // default_string_vec returns 1 item
+        assert_eq!(rust_struct.tracks_with_error.len(), 0);
+        assert_eq!(rust_struct.tags_with_error.len(), 0);
     }
 
     #[test]

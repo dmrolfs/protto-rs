@@ -91,22 +91,10 @@ fn custom_to_string(custom: CustomComplexType) -> String {
     custom.inner
 }
 
-pub fn primitive_from_fn(value: String) -> String {
-    value
-}
-pub fn primitive_to_fn(value: String) -> String {
-    value
-}
-pub fn from_only_fn(value: proto::ComplexType) -> CustomComplexType {
-    CustomComplexType {
-        inner: value.name,
-        value: value.id,
-    }
-}
-
 /// Test proto optionality indicator combinations
 #[derive(Protto, PartialEq, Debug, Clone)]
 #[protto(module = "proto", proto_name = "OptionalMessage")]
+#[allow(dead_code)]
 pub struct ProtoOptionalityIndicatorsStruct {
     // Test has_default_indicators = true, has_expect_indicators = false, has_explicit_optional = false
     #[protto(default, proto_name = "name")]
@@ -121,7 +109,7 @@ pub struct ProtoOptionalityIndicatorsStruct {
     pub explicit_optional_only: u32,
 
     // Test all true: has_default_indicators = true, has_expect_indicators = true, has_explicit_optional = true
-    #[protto(default, expect, proto_optional, proto_name = "tags")]
+    #[protto(expect, proto_optional, proto_name = "tags")]
     pub all_indicators_present: Vec<String>,
 
     // Test all false: has_default_indicators = false, has_expect_indicators = false, has_explicit_optional = false

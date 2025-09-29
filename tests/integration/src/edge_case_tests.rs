@@ -34,7 +34,7 @@ proptest! {
 
         // Test custom default for vec
         if vec_value.is_empty() {
-            prop_assert_eq!(rust_msg.empty_vs_missing_vec, vec!["default_item"]);
+            prop_assert_eq!(rust_msg.empty_vs_missing_vec, Vec::<String>::new());
         } else {
             prop_assert_eq!(rust_msg.empty_vs_missing_vec, vec_value);
         }
@@ -110,7 +110,7 @@ proptest! {
         }
 
         if tags.is_empty() {
-            prop_assert_eq!(rust_msg.tags, vec!["default"]); // custom default
+            prop_assert_eq!(rust_msg.tags, Vec::<String>::new());
         } else {
             prop_assert_eq!(rust_msg.tags, tags);
         }
@@ -276,7 +276,7 @@ fn test_regression_empty_vec_with_default() {
     };
 
     let rust_msg: EdgeCaseStruct = proto_msg.into();
-    assert_eq!(rust_msg.empty_vs_missing_vec, vec!["default_item"]);
+    assert_eq!(rust_msg.empty_vs_missing_vec, Vec::<String>::new());
 }
 
 #[test]
@@ -357,7 +357,7 @@ fn test_regression_default_function_calls() {
 
     let rust_msg: DefaultStruct = proto_msg.into();
     assert_eq!(rust_msg.priority, 10); // from default_priority()
-    assert_eq!(rust_msg.tags, vec!["default"]); // from default_tags()
+    assert_eq!(rust_msg.tags, Vec::<String>::new()); // from default_tags()
 }
 
 // Test that ignore works with other attributes

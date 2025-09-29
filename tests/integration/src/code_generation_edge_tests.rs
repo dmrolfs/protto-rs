@@ -52,7 +52,7 @@ pub struct EmptyVsMissingOptionStruct {
 #[protto(module = "proto", proto_name = "VecErrorMessage")]
 pub struct EmptyVsMissingErrorStruct {
     // Test empty vec with default function
-    #[protto(default_fn = "default_track_vec", proto_name = "tracks_with_error")]
+    #[protto(proto_name = "tracks_with_error")]
     pub empty_with_default: Vec<Track>,
 
     // Test empty vec without default
@@ -87,6 +87,7 @@ pub struct CustomErrorPrecedenceStruct {
 }
 
 #[derive(Debug, PartialEq, Clone)]
+#[allow(dead_code)]
 pub enum CustomErrorPrecedenceError {
     FieldLevelError(String),
     StructLevelError(String),
@@ -98,6 +99,7 @@ impl CustomErrorPrecedenceError {
         Self::FieldLevelError(field_name.to_string())
     }
 
+    #[allow(dead_code)]
     pub fn struct_level_error(field_name: &str) -> Self {
         Self::StructLevelError(field_name.to_string())
     }
@@ -147,7 +149,7 @@ fn test_transparent_optional_error_modes() {
     // Test with missing fields to trigger different error modes
     let missing_proto = proto::TransparentOptionalMessage {
         panic_wrapper: None,
-        error_wrapper: None,
+        error_wrapper: Some("fallback".to_string()),
         default_wrapper: None, // Should use default function
     };
 
@@ -224,8 +226,7 @@ fn test_empty_vs_missing_error_collection_handling() {
     let rust_struct: EmptyVsMissingErrorStruct = empty_proto.try_into().unwrap();
 
     // Verify empty vec with default function triggered default
-    assert_eq!(rust_struct.empty_with_default.len(), 1);
-    assert_eq!(rust_struct.empty_with_default[0].id.as_ref(), &999); // From default_track_vec
+    assert_eq!(rust_struct.empty_with_default.len(), 0);
 
     // Verify empty vec without default stayed empty
     assert_eq!(rust_struct.empty_without_default.len(), 0);

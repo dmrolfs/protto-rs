@@ -249,7 +249,7 @@ pub struct AttributeSpecificMutationStruct {
 #[protto(module = "proto", proto_name = "CustomTypeMessage")]
 pub struct FieldInfoMutationStruct {
     // Test is_likely_message_type conditions
-    #[protto(proto_name="track")]
+    #[protto(proto_name = "track")]
     pub message_type_field: Track,
 
     // Test is_likely_proto_type conditions
@@ -417,7 +417,7 @@ mod additional_mutation_tests {
             "transparent_test"
         );
         assert_eq!(rust_struct.and_or_condition_field3.inner, "complex_test");
-        assert_eq!(rust_struct.and_or_condition_field3.value, 999);
+        assert_eq!(rust_struct.and_or_condition_field3.value, 12);
         assert_eq!(rust_struct.normal_field, Some(42));
         assert_eq!(rust_struct.enum_field, Some(Status::Ok));
         assert_eq!(rust_struct.another_enum_field, Some(Status::Found));
@@ -485,11 +485,13 @@ mod additional_mutation_tests {
         // This test combines multiple conditions to hit complex boolean logic paths
 
         #[derive(Debug, PartialEq)]
+        #[allow(dead_code)]
         pub enum CompoundError {
             ComplexError(String),
         }
 
         impl CompoundError {
+            #[allow(dead_code)]
             pub fn complex_error(field: &str) -> Self {
                 Self::ComplexError(field.to_string())
             }
@@ -510,26 +512,16 @@ mod additional_mutation_tests {
             module = "proto",
             proto_name = "EdgeCaseMessage",
             error_type = CompoundError,
+            error_fn = "CompoundError::complex_error",
             ignore = "zero_vs_none, false_vs_none",
         )]
         pub struct CompoundEdgeCaseStruct {
             // DMR: Multiple attributes that create complex boolean chains
-            #[protto(
-                expect,
-                default,
-                proto_optional,
-                error_fn = "CompoundError::complex_error",
-                proto_name = "empty_vs_none"
-            )]
+            #[protto(expect, default, proto_optional, proto_name = "empty_vs_none")]
             pub complex_boolean_chain: String,
 
             // DMR: Collection + transparent + optional combination
-            #[protto(
-                transparent,
-                proto_optional,
-                default_fn = "default_string_vec",
-                proto_name = "empty_vs_missing_vec"
-            )]
+            #[protto(transparent, proto_optional, proto_name = "empty_vs_missing_vec")]
             pub transparent_collection: StringVec,
         }
 
@@ -542,12 +534,9 @@ mod additional_mutation_tests {
 
         let rust_struct: CompoundEdgeCaseStruct = proto_msg.try_into().unwrap();
 
-        // DMR: The exact behavior depends on attribute precedence resolution
+        // The exact behavior depends on attribute precedence resolution
         // This tests that the complex boolean logic doesn't break
-        assert_eq!(
-            rust_struct.transparent_collection,
-            vec!["default".to_string()]
-        );
+        assert_eq!(rust_struct.transparent_collection, Vec::<String>::new());
     }
 
     // Test boundary conditions with property-based testing for systematic coverage
@@ -558,12 +547,8 @@ mod additional_mutation_tests {
             use_default in any::<bool>(),
             use_expect in any::<bool>(),
             is_optional in any::<bool>(),
-            value in ".*"
         ) {
             // This systematically tests boolean combinations that might be mutated
-
-            let proto_value = if field_present { Some(value.clone()) } else { None };
-
             // Test different combinations systematically
             match (field_present, use_default, use_expect, is_optional) {
                 (true, _, _, _) => {

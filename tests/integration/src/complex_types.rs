@@ -103,7 +103,6 @@ pub struct ComprehensiveEnumStruct {
 #[protto(module = "proto", proto_name = "State")]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct CollectionWithDefault {
-    #[protto(default_fn = "default_track_vec")]
     pub tracks: Vec<Track>,
 }
 
@@ -225,10 +224,10 @@ pub struct VecDirectAssignmentStruct {
 #[derive(Protto, PartialEq, Debug, Clone)]
 #[protto(module = "proto", proto_name = "VecErrorMessage", error_type = VecError)]
 pub struct VecWithErrorStruct {
-    #[protto(expect, default_fn = default_track_vec, error_fn = VecError::empty_tracks)]
+    #[protto(expect, error_fn = VecError::empty_tracks)]
     pub tracks_with_error: Vec<Track>,
 
-    #[protto(expect, default_fn = default_string_vec, error_fn = VecError::missing_tags)]
+    #[protto(expect, error_fn = VecError::missing_tags)]
     pub tags_with_error: Vec<String>,
 }
 
@@ -262,10 +261,6 @@ impl std::fmt::Display for VecError {
 }
 
 impl std::error::Error for VecError {}
-
-pub fn default_string_vec() -> Vec<String> {
-    vec!["default".to_string()]
-}
 
 // Test DirectWithInto - clear custom type → proto type conversion
 #[derive(Protto, PartialEq, Debug, Clone)]

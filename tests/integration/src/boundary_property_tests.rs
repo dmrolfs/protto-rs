@@ -27,6 +27,14 @@ proptest! {
             collection_with_expect: vec![proto::Track { track_id: 1 }],
         };
 
+        if field_value.is_none() {
+            let handle = std::thread::spawn(move || {
+                let _: Result<BooleanLogicTestStruct, _> = proto_msg.try_into();
+            });
+            prop_assert!(handle.join().is_err(), "Expected panic for None transparent field");
+            return Ok(());
+        }
+
         // The exact struct would depend on the combination, but this tests the boolean logic
         let result: Result<BooleanLogicTestStruct, _> = proto_msg.try_into();
 

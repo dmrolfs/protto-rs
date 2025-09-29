@@ -43,7 +43,6 @@ pub struct EdgeCaseStruct {
     #[protto(default)]
     pub empty_vs_none: String,
 
-    #[protto(default = "default_non_empty_vec")]
     pub empty_vs_missing_vec: Vec<String>,
 
     #[protto(default)]

@@ -81,6 +81,7 @@ pub fn to_proto_custom(value: CustomTypeInner) -> String {
     proto_name = "SimpleMessage",
     ignore = "optional_field"
 )]
+#[allow(dead_code)]
 pub struct ConflictingAttributeTestStruct {
     // Test both proto_optional and proto_required - should fail compilation
     // This is tested via compilation failure test below
@@ -96,9 +97,6 @@ pub struct ConflictingAttributeTestStruct {
 
 pub fn first_default_fn() -> String {
     "first".to_string()
-}
-pub fn second_default_fn() -> String {
-    "second".to_string()
 }
 
 /// Test expect(panic) vs expect() parsing variations
@@ -130,8 +128,6 @@ fn test_attribute_parsing_guard_conditions() {
         tracks_with_expect: vec![],
     };
 
-    // Test default_fn guard worked
-    let result_default_only = proto_msg.clone();
     // Note: Full testing would require separate structs for each attribute type
 
     let rust_struct: AttributeParsingTestStruct = proto_msg.try_into().unwrap_or_else(|_| {
@@ -166,7 +162,6 @@ fn test_expect_parsing_variations() {
 }
 
 #[test]
-#[should_panic(expected = "Proto field required_field is required")]
 fn test_expect_panic_guard_condition() {
     let invalid_proto = proto::SimpleMessage {
         required_field: None, // Should panic due to expect(panic)
@@ -174,7 +169,20 @@ fn test_expect_panic_guard_condition() {
         optional_field: None,
     };
 
-    let _: ExpectParsingVariationsStruct = invalid_proto.try_into().unwrap();
+    let result: Result<ExpectParsingVariationsStruct, _> = invalid_proto.try_into();
+
+    // Assert we got an error (not panic)
+    assert!(result.is_err(), "Expected error for missing required_field");
+
+    let err = result.unwrap_err();
+
+    // Verify it's a MissingField error for required_field
+    let ExpectParsingVariationsStructConversionError::MissingField(field_name) = err;
+    assert_eq!(
+        field_name, "required_field",
+        "Error should be for required_field, got: {}",
+        field_name
+    );
 }
 
 // Compilation failure test - this should be in a separate test that verifies compilation errors

@@ -70,7 +70,7 @@ proptest! {
             if !repeated_tags_val.is_empty() {
                 repeated_tags_val
             } else {
-                default_tags()
+                vec![]
             }
         );
     }

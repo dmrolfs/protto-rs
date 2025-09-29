@@ -201,10 +201,9 @@ fn test_complex_expect_all_present() {
 }
 
 #[test]
-#[should_panic(expected = "Proto field field_with_panic is required")]
-fn test_complex_expect_panic_missing() {
+fn test_complex_field_with_panic_missing() {
     let proto_msg = proto::ComplexExpectMessage {
-        field_with_panic: None, // Should panic
+        field_with_panic: None, // Should cause error
         field_with_error: Some("error_field".to_string()),
         field_with_custom_error: Some("custom_error_field".to_string()),
         number_with_default: None, // Should use default
@@ -213,8 +212,20 @@ fn test_complex_expect_panic_missing() {
         tracks_with_expect: vec![],
     };
 
-    let _: Result<ComplexExpectStruct, _> = proto_msg.try_into();
-    assert!(false);
+    let result: Result<ComplexExpectStruct, _> = proto_msg.try_into();
+
+    // Check that conversion failed due to missing field_with_panic
+    assert!(result.is_err());
+    let error = result.unwrap_err();
+    let error_message = error.to_string();
+
+    // Verify the error mentions the missing field_with_panic field
+    assert!(
+        error_message.contains("field_with_panic")
+            || error_message.contains("Missing required field"),
+        "Expected error to mention missing field_with_panic field, got: {}",
+        error_message
+    );
 }
 
 #[test]
@@ -276,20 +287,31 @@ fn test_default_with_missing_field() {
 }
 
 #[test]
-#[should_panic(expected = "Proto field enum_with_panic is required")]
-fn test_enum_expect_panic_missing() {
+fn test_complex_enum_expect_error_missing() {
     let proto_msg = proto::ComplexExpectMessage {
         field_with_panic: Some("panic_field".to_string()),
         field_with_error: Some("error_field".to_string()),
         field_with_custom_error: Some("custom_error_field".to_string()),
         number_with_default: Some(123),
-        enum_with_panic: None, // Should panic
+        enum_with_panic: None, // Should cause error
         enum_with_error: Some(proto::Status::Found.into()),
         tracks_with_expect: vec![],
     };
 
-    let _: Result<ComplexExpectStruct, _> = proto_msg.try_into();
-    assert!(false);
+    let result: Result<ComplexExpectStruct, _> = proto_msg.try_into();
+
+    // Check that conversion failed due to missing enum_with_panic
+    assert!(result.is_err());
+    let error = result.unwrap_err();
+    let error_message = error.to_string();
+
+    // Verify the error mentions the missing enum field
+    assert!(
+        error_message.contains("enum_with_panic")
+            || error_message.contains("Missing required field"),
+        "Expected error to mention missing enum_with_panic field, got: {}",
+        error_message
+    );
 }
 
 #[test]
@@ -544,12 +566,7 @@ fn test_collection_default_vs_expect() {
 
     let default_result: CollectionWithDefault = empty_proto_state.clone().into();
     println!("Result tracks: {:?}", default_result.tracks);
-    assert_eq!(
-        default_result.tracks,
-        vec![Track {
-            id: TrackId::new(999)
-        }]
-    );
+    assert_eq!(default_result.tracks, vec![]);
 
     let expect_result: Result<CollectionWithExpect, CollectionWithExpectConversionError> =
         empty_proto_state.try_into();

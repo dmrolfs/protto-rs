@@ -86,7 +86,6 @@ pub struct DefaultStruct {
     #[protto(default_fn = "default_priority")]
     pub priority: u32, // Uses custom default function
 
-    #[protto(default_fn = default_tags)]
     pub tags: Vec<String>, // Uses custom default function
 }
 
@@ -139,6 +138,7 @@ pub struct ExpectErrorStruct {
     error_type = crate::error_types::ValidationError
 )]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
+#[allow(dead_code)]
 pub struct ExpectCustomErrorStruct {
     #[protto(
         expect,
