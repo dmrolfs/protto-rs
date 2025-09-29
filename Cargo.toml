@@ -16,8 +16,8 @@ license = "Apache-2.0"
 
 [workspace.dependencies]
 # internal crates
-protto = { path = "protto" }
-protto_derive = { path = "protto_derive" }
+protto = { version = "0.6.0", path = "protto" }
+protto_derive = { version = "0.6.0", path = "protto_derive" }
 
 # external crate
 proc-macro2 = "1.0"

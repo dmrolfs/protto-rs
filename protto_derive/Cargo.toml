@@ -1,6 +1,6 @@
 [package]
 name = "protto_derive"
-version = "0.6.0"
+version.workspace = true
 edition.workspace = true
 authors.workspace = true
 description = "Automatically derive Protobuf and Rust conversions."

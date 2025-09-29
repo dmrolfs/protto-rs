@@ -11,7 +11,7 @@ categories = ["development-tools", "encoding"]
 documentation = "https://docs.rs/protto"
 
 [dependencies]
-protto_derive = { workspace = true }
+protto_derive.workspace = true
 
 [features]
 default = []
