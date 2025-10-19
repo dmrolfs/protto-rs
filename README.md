@@ -650,7 +650,7 @@ struct MyStruct {
 // With quotes (string literal)
 #[protto(error_fn = "ValidationError::missing_field")]
 
-// Without quotes (path expression)  
+// Without quotes (path expression)
 #[protto(error_fn = ValidationError::missing_field)]
 ```
 
@@ -721,10 +721,10 @@ The macro generates **exactly one** trait implementation per struct:
 pub struct User {
     #[protto(expect(panic))]  // ← panic doesn't trigger TryFrom
     pub id: UserId,
-    
+
     #[protto(expect)]          // ← THIS triggers TryFrom for whole struct
     pub email: String,
-    
+
     #[protto(default)]         // ← default doesn't trigger TryFrom
     pub role: String,
 }
