@@ -8,7 +8,7 @@ pub fn generate_enum_conversions(
     proto_module: &str,
 ) -> proc_macro2::TokenStream {
     let enum_name_str = name.to_string();
-    let enum_prefix = enum_name_str.to_uppercase();
+    let enum_prefix = utils::to_screaming_snake_case(&enum_name_str);
     let proto_enum_path: syn::Path = syn::parse_str(&format!("{}::{}", proto_module, name))
         .expect("Failed to parse proto enum path");
 
@@ -60,16 +60,25 @@ fn generate_from_proto_enum_arms(
     name: &syn::Ident,
     enum_prefix: &str,
 ) -> Vec<proc_macro2::TokenStream> {
-    variants.iter().map(|variant| {
-        let variant_ident = &variant.ident;
-        let variant_str = variant_ident.to_string();
-        let screaming_variant = utils::to_screaming_snake_case(&variant_str);
-        let prefixed_candidate = format!("{}_{}", enum_prefix, screaming_variant);
+    variants
+        .iter()
+        .map(|variant| {
+            let variant_ident = &variant.ident;
+            let variant_str = variant_ident.to_string();
+            let screaming_variant = utils::to_screaming_snake_case(&variant_str);
+            let prefixed_candidate = format!("{}_{}", enum_prefix, screaming_variant);
 
-        quote! {
-            candidate if candidate == #variant_str || candidate == #prefixed_candidate => #name::#variant_ident,
-        }
-    }).collect()
+            // Match candidates in order: PascalCase (future-proofing for non-standard proto
+            // enums), bare SCREAMING_SNAKE (prefix-free convention), prefixed SCREAMING_SNAKE
+            // (standard convention). Prost's as_str_name() currently always returns
+            // SCREAMING_SNAKE, so the PascalCase arm is defensive.
+            quote! {
+                candidate if candidate == #variant_str
+                    || candidate == #screaming_variant
+                    || candidate == #prefixed_candidate => #name::#variant_ident,
+            }
+        })
+        .collect()
 }
 
 fn generate_from_proto_arms(
@@ -86,9 +95,11 @@ fn generate_from_proto_arms(
             let screaming_variant = utils::to_screaming_snake_case(&variant_str);
             let prefixed_candidate = format!("{}_{}", enum_prefix, screaming_variant);
             let prefixed_candidate_lit = syn::LitStr::new(&prefixed_candidate, Span::call_site());
+            let screaming_variant_lit = syn::LitStr::new(&screaming_variant, Span::call_site());
 
             quote! {
                 #name::#variant_ident => <#proto_enum_path>::from_str_name(#prefixed_candidate_lit)
+                    .or_else(|| <#proto_enum_path>::from_str_name(#screaming_variant_lit))
                     .unwrap_or_else(|| panic!("No matching proto variant for {rust_enum:?}")),
             }
         })

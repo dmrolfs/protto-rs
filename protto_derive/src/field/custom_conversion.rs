@@ -49,8 +49,10 @@ impl CustomConversionStrategy {
         strategy
     }
 
-    /// Get the proto->rust function name if available
+    /// Get the proto->rust function name if available.
+    /// Named to match the `from_proto_fn` attribute, not as a constructor.
     #[cfg(test)]
+    #[allow(clippy::wrong_self_convention)]
     pub fn from_proto_fn(&self) -> Option<&str> {
         match self {
             Self::FromFn(fn_name) | Self::Bidirectional(fn_name, _) => Some(fn_name),

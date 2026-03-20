@@ -29,3 +29,11 @@ mod error_tests;
 mod integration_tests;
 mod strategy_selection_tests;
 mod type_inference_edge_tests;
+
+// Bug fix verification tests
+#[cfg(test)]
+mod combined_bug_tests;
+#[cfg(test)]
+mod enum_prefix_tests;
+#[cfg(test)]
+mod required_field_tests;

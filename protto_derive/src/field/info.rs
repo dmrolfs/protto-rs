@@ -488,13 +488,11 @@ impl ProtoFieldInfo {
                     Some(FieldOptionality::Optional)
                 }
                 FieldOptionality::Required => {
-                    // proto_required is for validation semantics, not field type detection
-                    // Let the actual proto schema detection determine field optionality
                     trace.decision(
                         "proto_required_attribute",
-                        "proto_required affects validation only, not field type detection",
+                        "User specified proto_required -> Required field",
                     );
-                    None // Fall back to schema-based detection
+                    Some(FieldOptionality::Required)
                 }
             }
         } else {

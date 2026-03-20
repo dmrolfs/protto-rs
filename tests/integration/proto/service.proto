@@ -184,3 +184,34 @@ message ValidationTestMessage {
     optional string should_fail_validation = 1;  // For testing validation errors
     repeated Track impossible_combination = 2;   // For testing RequiresCustomLogic
 }
+
+// === Bug reproduction: multi-word enum WITH standard prefix ===
+enum PaymentMethod {
+  PAYMENT_METHOD_CREDIT_CARD = 0;
+  PAYMENT_METHOD_BANK_TRANSFER = 1;
+  PAYMENT_METHOD_CRYPTO = 2;
+}
+
+// === Bug reproduction: multi-word enum WITHOUT prefix convention ===
+enum SubscriptionTier {
+  FREE = 0;
+  TRIAL = 1;
+  PREMIUM = 2;
+}
+
+// === Bug reproduction: struct with multi-word enum fields ===
+message SubscriptionMessage {
+  SubscriptionTier tier = 1;
+  PaymentMethod payment = 2;
+  bool active = 3;
+  string name = 4;
+}
+
+// === Bug reproduction: required fields with custom Rust types ===
+message RequiredFieldsMessage {
+  Status required_enum = 1;
+  repeated int32 required_repeated = 2;
+  bool required_bool = 3;
+  string required_string = 4;
+  uint64 required_number = 5;
+}

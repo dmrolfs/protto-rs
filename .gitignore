@@ -1,6 +1,7 @@
-/target
+target/
 .direnv
 .idea
 .DS_Store
 coverage
 mutants.out
+history/

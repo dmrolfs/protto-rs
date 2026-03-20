@@ -329,8 +329,9 @@ pub struct RustToProtoStruct {
     #[protto(proto_name = "required_to_optional")]
     pub rust_required_field: String,
 
-    // This should trigger UnwrapOptional (rust optional -> proto required)
-    #[protto(proto_required, proto_name = "optional_to_required")]
+    // Proto field `optional_to_required` is explicit `optional` in proto3.
+    // Both sides are Option<String> → Map strategy (option-to-option passthrough).
+    #[protto(proto_optional, proto_name = "optional_to_required")]
     pub rust_optional_field: Option<String>,
 
     // This should trigger TransparentToRequired

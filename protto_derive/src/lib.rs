@@ -21,6 +21,12 @@ mod struct_generator;
 mod tuple_generator;
 
 mod utils {
+    /// Converts a PascalCase string to SCREAMING_SNAKE_CASE.
+    ///
+    /// Inserts `_` before each uppercase letter (except the first). This handles
+    /// standard PascalCase correctly but does NOT handle consecutive uppercase
+    /// (acronyms): `HTTPStatus` becomes `H_T_T_P_STATUS`, not `HTTP_STATUS`.
+    /// For acronym-aware conversion, consider the `heck` crate.
     pub fn to_screaming_snake_case(s: &str) -> String {
         let mut result = String::new();
         for (i, c) in s.chars().enumerate() {
@@ -30,6 +36,52 @@ mod utils {
             result.push(c.to_ascii_uppercase());
         }
         result
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn single_word() {
+            assert_eq!(to_screaming_snake_case("Status"), "STATUS");
+        }
+
+        #[test]
+        fn two_words() {
+            assert_eq!(
+                to_screaming_snake_case("SubscriptionTier"),
+                "SUBSCRIPTION_TIER"
+            );
+        }
+
+        #[test]
+        fn three_words() {
+            assert_eq!(to_screaming_snake_case("PaymentMethod"), "PAYMENT_METHOD");
+        }
+
+        #[test]
+        fn already_uppercase_single() {
+            assert_eq!(to_screaming_snake_case("OK"), "O_K");
+        }
+
+        #[test]
+        fn single_variant() {
+            assert_eq!(to_screaming_snake_case("Free"), "FREE");
+        }
+
+        #[test]
+        fn multi_word_variant() {
+            assert_eq!(to_screaming_snake_case("CreditCard"), "CREDIT_CARD");
+        }
+
+        /// Documents known limitation: consecutive uppercase chars each get a separator.
+        #[test]
+        fn consecutive_uppercase_known_limitation() {
+            // HTTPStatus → H_T_T_P_STATUS (not HTTP_STATUS)
+            // This is a known limitation; use `heck` crate for acronym-aware conversion.
+            assert_eq!(to_screaming_snake_case("HTTPStatus"), "H_T_T_P_STATUS");
+        }
     }
 }
 

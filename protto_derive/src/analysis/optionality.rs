@@ -8,19 +8,14 @@ use crate::field::FieldProcessingContext;
 use quote::{ToTokens, quote};
 
 /// Result of build-time metadata detection for field optionality
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Default, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum FieldOptionality {
     /// Indicates whether the proto field is optional.
     Optional,
 
     /// Indicates the proto field is required.
+    #[default]
     Required,
-}
-
-impl Default for FieldOptionality {
-    fn default() -> Self {
-        Self::Required
-    }
 }
 
 impl std::fmt::Display for FieldOptionality {
